@@ -12,7 +12,9 @@ struct AddRunnerView: View {
     @State private var currentStep: Step = .selectPlatform
     @State private var runnerName = ""
     @State private var runnerLabels = ""
+    @State private var runnerPath = ""
     @State private var errorMessage: String?
+    @StateObject private var runnerService = RunnerService.shared
     
     enum Step: CaseIterable {
         case selectPlatform
@@ -230,22 +232,36 @@ tar xzf ./actions-runner.tar.gz
                     }
                 }
                 
-                GroupBox("Step 3: Run") {
+                GroupBox("Step 3: Configure Local Runner") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Start the runner:")
+                        Text("After running the configuration command above, you can register this runner with Ghast for easy management:")
                         
-                        CodeBlock(code: """
-# Start the runner
-./run.sh
-
-# Or run as a service (macOS/Linux)
-sudo ./svc.sh install
-sudo ./svc.sh start
-""")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Runner Directory Path:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            HStack {
+                                TextField("Path to actions-runner directory", text: $runnerPath)
+                                    .textFieldStyle(.roundedBorder)
+                                
+                                Button("Browse") {
+                                    selectRunnerPath()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        
+                        Button("Register with Ghast") {
+                            registerWithGhast()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(runnerPath.isEmpty || runnerName.isEmpty)
                     }
                 }
                 
-                Text("Your runner will appear in the repository's runners list once it's connected.")
+                Text("After registration, you can start/stop the runner and view logs directly from Ghast.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.top)
@@ -352,6 +368,34 @@ sudo ./svc.sh start
         }
         
         return command
+    }
+    
+    private func selectRunnerPath() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Select Runner Directory"
+        panel.message = "Choose the directory containing the GitHub Actions runner"
+        
+        if panel.runModal() == .OK {
+            if let url = panel.url {
+                runnerPath = url.path
+            }
+        }
+    }
+    
+    private func registerWithGhast() {
+        let labels = runnerLabels.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        
+        let localRunner = LocalRunner(
+            name: runnerName,
+            repository: repository.fullName,
+            path: runnerPath,
+            labels: labels
+        )
+        
+        runnerService.addLocalRunner(localRunner)
     }
 }
 

@@ -32,6 +32,8 @@ struct MainAppView: View {
                 DashboardView()
             case .repository(let repo):
                 RepositoryDetailView(repository: repo)
+            case .localRunners:
+                LocalRunnersView()
             case .settings:
                 SettingsView()
             }
@@ -77,6 +79,7 @@ class AppState: ObservableObject {
     enum SelectedView: Equatable {
         case dashboard
         case repository(GitHubRepository)
+        case localRunners
         case settings
     }
 }

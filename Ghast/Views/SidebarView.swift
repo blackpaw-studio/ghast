@@ -26,6 +26,14 @@ struct SidebarView: View {
             .buttonStyle(PlainButtonStyle())
             .foregroundColor(appState.selectedView == .dashboard ? .accentColor : .primary)
             
+            Button(action: {
+                appState.selectedView = .localRunners
+            }) {
+                Label("Local Runners", systemImage: "server.rack")
+            }
+            .buttonStyle(PlainButtonStyle())
+            .foregroundColor(appState.selectedView == .localRunners ? .accentColor : .primary)
+            
             Section {
                 if appState.isLoadingRepositories {
                     HStack {
