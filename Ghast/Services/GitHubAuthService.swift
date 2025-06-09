@@ -54,8 +54,8 @@ class GitHubAuthService: NSObject, ObservableObject {
     private func performOAuthFlow() async {
         let authURL = buildAuthURL()
         
-        // Debug: Print the OAuth URL
-        print("🔗 Opening OAuth URL: \(authURL.absoluteString)")
+        print("🔐 OAuth: Starting OAuth flow")
+        print("🔐 OAuth: Auth URL: \(authURL.absoluteString)")
         
         // Open URL in default browser
         NSWorkspace.shared.open(authURL)
@@ -68,23 +68,37 @@ class GitHubAuthService: NSObject, ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                guard let callbackURL = notification.object as? URL,
-                      let code = self?.extractCode(from: callbackURL) else {
-                    print("Failed to extract authorization code")
+                print("🔐 OAuth: Received callback notification")
+                guard let callbackURL = notification.object as? URL else {
+                    print("🔐 OAuth: ERROR - No URL in notification object")
                     continuation.resume()
                     return
                 }
                 
+                print("🔐 OAuth: Callback URL: \(callbackURL.absoluteString)")
+                
+                guard let code = self?.extractCode(from: callbackURL) else {
+                    print("🔐 OAuth: ERROR - Failed to extract authorization code from URL")
+                    continuation.resume()
+                    return
+                }
+                
+                print("🔐 OAuth: Successfully extracted code: \(String(code.prefix(10)))...")
+                
                 // Remove observer
                 if let obs = observer {
                     NotificationCenter.default.removeObserver(obs)
+                    print("🔐 OAuth: Removed notification observer")
                 }
                 
                 Task {
+                    print("🔐 OAuth: Starting token exchange")
                     await self?.exchangeCodeForToken(code)
                     continuation.resume()
                 }
             }
+            
+            print("🔐 OAuth: Set up notification observer, waiting for callback...")
         }
     }
     
@@ -109,6 +123,8 @@ class GitHubAuthService: NSObject, ObservableObject {
     }
     
     private func exchangeCodeForToken(_ code: String) async {
+        print("🔐 OAuth: Starting token exchange for code: \(String(code.prefix(10)))...")
+        
         let tokenURL = URL(string: "https://github.com/login/oauth/access_token")!
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
@@ -123,21 +139,45 @@ class GitHubAuthService: NSObject, ObservableObject {
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, _) = try await URLSession.shared.data(for: request)
+            print("🔐 OAuth: Sending token request to GitHub")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔐 OAuth: Token response status: \(httpResponse.statusCode)")
+            }
+            
+            // Debug: Print raw response
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("🔐 OAuth: Token response: \(responseString)")
+            }
             
             if let tokenResponse = try? JSONDecoder().decode(TokenResponse.self, from: data) {
+                print("🔐 OAuth: Successfully decoded token response")
                 try keychain.set(tokenResponse.accessToken, key: "github_token")
                 GitHubAPIService.shared.setAccessToken(tokenResponse.accessToken)
                 
+                print("🔐 OAuth: Fetching user info")
                 // Fetch user info
                 let user = try await GitHubAPIService.shared.fetchCurrentUser()
                 await MainActor.run {
+                    print("🔐 OAuth: Setting user and authentication state")
                     self.currentUser = user
                     self.isAuthenticated = true
+                    self.isAuthenticating = false
+                }
+                print("🔐 OAuth: Authentication completed successfully!")
+            } else {
+                print("🔐 OAuth: ERROR - Failed to decode token response")
+                await MainActor.run {
+                    self.isAuthenticating = false
                 }
             }
         } catch {
-            print("Token exchange error: \(error)")
+            print("🔐 OAuth: Token exchange error: \(error)")
+            await MainActor.run {
+                self.isAuthenticating = false
+            }
         }
     }
 }

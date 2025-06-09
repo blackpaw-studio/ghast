@@ -10,6 +10,7 @@
 		07CABF8F13A6391999487756 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DED7F4DBFFAFA1B98FD5343A /* WelcomeView.swift */; };
 		191A76186CCE9F0333A48CAE /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 62E0E5C15653F1D8B60B3A1A /* KeychainAccess */; };
 		2ACEF3C91FADC61E77BF4BF5 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C91331F3D9BADDDB924033 /* DashboardView.swift */; };
+		2E8188F3E0A6EBA92C5B41B9 /* OAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B430CBEF388B8118C9758D86 /* OAuthTests.swift */; };
 		4F22BE38592B04892DCC5E88 /* AddRunnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */; };
 		629EC9EB6F9C5FE4C5D1651C /* RepositoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C619E19E881A963CEE07613F /* RepositoryDetailView.swift */; };
 		6519582100422C8166258CBC /* GitHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA31185E9B1E63D9080C9ADD /* GitHubModels.swift */; };
@@ -28,6 +29,16 @@
 		FD56CA74D61D1F480BBA7735 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = F8DA33CDB078D0387D3A6EB6 /* Alamofire */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AB08041796DE3C8759A77848 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DD0CDA8330767CF65022E674 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7FF4686D2BC24A938CAB0F52;
+			remoteInfo = Ghast;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		0B5F5CD18DA01D3971E15458 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		135B88A2EC50F1F27AC15925 /* Ghast.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghast.entitlements; sourceTree = "<group>"; };
@@ -35,11 +46,13 @@
 		33162F950B312A0408BB9672 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3608F0F196C224B9B9131F20 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		40DE10F2726E824E51451219 /* GitHubAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAPIService.swift; sourceTree = "<group>"; };
+		4905187598F558F30394061E /* GhastTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GhastTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRunnerView.swift; sourceTree = "<group>"; };
 		6A1D6A14E100A996F1CD6BDD /* Ghast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghast.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9C571C7DA5C94943378B7D6C /* RunnerLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerLogsView.swift; sourceTree = "<group>"; };
 		AB1F2083083927B9DDDF2021 /* EnvironmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentService.swift; sourceTree = "<group>"; };
 		AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAuthService.swift; sourceTree = "<group>"; };
+		B430CBEF388B8118C9758D86 /* OAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthTests.swift; sourceTree = "<group>"; };
 		B9C91331F3D9BADDDB924033 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		C60F78FD15C38E554C2126B0 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		C619E19E881A963CEE07613F /* RepositoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryDetailView.swift; sourceTree = "<group>"; };
@@ -99,6 +112,7 @@
 			isa = PBXGroup;
 			children = (
 				6A1D6A14E100A996F1CD6BDD /* Ghast.app */,
+				4905187598F558F30394061E /* GhastTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -107,6 +121,7 @@
 			isa = PBXGroup;
 			children = (
 				38716D4AD58C34CCAD380636 /* Ghast */,
+				E487CA7B333F5445DBEB708A /* GhastTests */,
 				4FA48B0B29807838139E3C64 /* Products */,
 			);
 			indentWidth = 4;
@@ -119,6 +134,14 @@
 				EA31185E9B1E63D9080C9ADD /* GitHubModels.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		E487CA7B333F5445DBEB708A /* GhastTests */ = {
+			isa = PBXGroup;
+			children = (
+				B430CBEF388B8118C9758D86 /* OAuthTests.swift */,
+			);
+			path = GhastTests;
 			sourceTree = "<group>";
 		};
 		F5F7CC935B157BBDAC9DAA1B /* Preview Content */ = {
@@ -164,6 +187,22 @@
 			productReference = 6A1D6A14E100A996F1CD6BDD /* Ghast.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F3F18B84C09E1E101041358F /* GhastTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0F9CCF0949DEF57528DF15E /* Build configuration list for PBXNativeTarget "GhastTests" */;
+			buildPhases = (
+				3C43909D98A0968301ABE8AF /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F8ECBE2A8EDD8D9EDA6EFE4F /* PBXTargetDependency */,
+			);
+			name = GhastTests;
+			productName = GhastTests;
+			productReference = 4905187598F558F30394061E /* GhastTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -195,6 +234,7 @@
 			projectRoot = "";
 			targets = (
 				7FF4686D2BC24A938CAB0F52 /* Ghast */,
+				F3F18B84C09E1E101041358F /* GhastTests */,
 			);
 		};
 /* End PBXProject section */
@@ -212,6 +252,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		3C43909D98A0968301ABE8AF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2E8188F3E0A6EBA92C5B41B9 /* OAuthTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6CFC53ED52F13389E95561C1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -236,7 +284,32 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		F8ECBE2A8EDD8D9EDA6EFE4F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7FF4686D2BC24A938CAB0F52 /* Ghast */;
+			targetProxy = AB08041796DE3C8759A77848 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		345254D051045400901F650D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/Ghast.app/Contents/MacOS/Ghast";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.evancoleman.ghast.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUNDLE_LOADER)";
+			};
+			name = Release;
+		};
 		429DEDD83F508EF26542FEE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -342,6 +415,23 @@
 			};
 			name = Release;
 		};
+		BE54DF7BDD6D8B518A450168 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/Ghast.app/Contents/MacOS/Ghast";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.evancoleman.ghast.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUNDLE_LOADER)";
+			};
+			name = Debug;
+		};
 		FF3871D064A64029F6C17668 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -419,6 +509,15 @@
 			buildConfigurations = (
 				63FB2EA1BB3A13707EDD85D0 /* Debug */,
 				FF3871D064A64029F6C17668 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F0F9CCF0949DEF57528DF15E /* Build configuration list for PBXNativeTarget "GhastTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BE54DF7BDD6D8B518A450168 /* Debug */,
+				345254D051045400901F650D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -42,6 +42,19 @@ targets:
     dependencies:
       - package: KeychainAccess
       - package: Alamofire
+
+  GhastTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: GhastTests
+    dependencies:
+      - target: Ghast
+    settings:
+      BUNDLE_LOADER: $(BUILT_PRODUCTS_DIR)/Ghast.app/Contents/MacOS/Ghast
+      TEST_HOST: $(BUNDLE_LOADER)
+      GENERATE_INFOPLIST_FILE: YES
+      PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast.tests
     
 packages:
   KeychainAccess:
