@@ -208,7 +208,7 @@ struct AddRunnerView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Download the runner for your platform:")
                         
-                        CodeBlock("""
+                        CodeBlock(code: """
 # Create a folder
 mkdir actions-runner && cd actions-runner
 
@@ -226,7 +226,7 @@ tar xzf ./actions-runner.tar.gz
                         Text("Configure the runner:")
                         
                         let configCommand = buildConfigCommand(token: token.token, app: app)
-                        CodeBlock(configCommand)
+                        CodeBlock(code: configCommand)
                     }
                 }
                 
@@ -234,7 +234,7 @@ tar xzf ./actions-runner.tar.gz
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Start the runner:")
                         
-                        CodeBlock("""
+                        CodeBlock(code: """
 # Start the runner
 ./run.sh
 
