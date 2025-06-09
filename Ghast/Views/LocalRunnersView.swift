@@ -137,7 +137,7 @@ struct LocalRunnerRowView: View {
                         .clipShape(Capsule())
                     
                     if !runner.labels.isEmpty {
-                        ForEach(runner.labels.prefix(2)) { label in
+                        ForEach(runner.labels.prefix(2), id: \.self) { label in
                             Text(label)
                                 .font(.caption2)
                                 .padding(.horizontal, 4)

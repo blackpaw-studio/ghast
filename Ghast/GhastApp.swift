@@ -7,6 +7,15 @@ struct GhastApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onOpenURL { url in
+                    print("🔗 SwiftUI onOpenURL: \(url.absoluteString)")
+                    
+                    // Bring app to front
+                    NSApp.activate(ignoringOtherApps: true)
+                    
+                    // Post notification for OAuth callback
+                    NotificationCenter.default.post(name: .oauthCallback, object: url)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
@@ -19,6 +28,16 @@ struct GhastApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ensure single instance behavior
+        let runningApps = NSWorkspace.shared.runningApplications
+        let ghastApps = runningApps.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+        
+        if ghastApps.count > 1 {
+            // Another instance is running, terminate this one
+            NSApp.terminate(nil)
+            return
+        }
+        
         // Configure app to handle URL events
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -26,6 +45,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        
+        // Set activation policy to ensure we can become active
+        NSApp.setActivationPolicy(.regular)
     }
     
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
@@ -34,13 +56,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
-        print("🔗 Received URL callback: \(url.absoluteString)")
+        print("🔗 App Delegate Received URL callback: \(url.absoluteString)")
         
-        // Bring app to front
+        // Bring app to front and focus window
         NSApp.activate(ignoringOtherApps: true)
         
+        // Make sure the main window is visible and focused
+        if let window = NSApp.mainWindow ?? NSApp.windows.first {
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
+        
         // Post notification for OAuth callback
-        NotificationCenter.default.post(name: .oauthCallback, object: url)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .oauthCallback, object: url)
+        }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -56,6 +86,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+    
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        return false
+    }
+    
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        // Do nothing
     }
 }
 

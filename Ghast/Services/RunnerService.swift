@@ -145,7 +145,7 @@ class RunnerService: ObservableObject {
 
 // MARK: - Data Models
 
-struct LocalRunner: Codable, Identifiable {
+struct LocalRunner: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let repository: String
