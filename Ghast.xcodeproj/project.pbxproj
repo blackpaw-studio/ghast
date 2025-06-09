@@ -15,13 +15,16 @@
 		629EC9EB6F9C5FE4C5D1651C /* RepositoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C619E19E881A963CEE07613F /* RepositoryDetailView.swift */; };
 		6519582100422C8166258CBC /* GitHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA31185E9B1E63D9080C9ADD /* GitHubModels.swift */; };
 		68DFAC85C7ECAF4DD29935E4 /* LocalRunnersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E05D47C1EB8B5F3F89124033 /* LocalRunnersView.swift */; };
+		6C08239C0EA1838CC8D15AC9 /* MockOAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D212211E5AF674B6C10C29 /* MockOAuthTests.swift */; };
 		70F4478AFA2AA7B37D3958D3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3608F0F196C224B9B9131F20 /* Assets.xcassets */; };
 		7B3EB52747FB8C7F5273E8F9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27756DD5062B4B683BDE1AEE /* SettingsView.swift */; };
+		AD8F0F34F1D121EF9EF21408 /* AppDelegateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 589564A7D873A8A142AEB375 /* AppDelegateTests.swift */; };
 		B7119B7F5B54EF5504B5B02E /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60F78FD15C38E554C2126B0 /* SidebarView.swift */; };
 		B9B89423297856F13D7BEC05 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACDEE5E4C50B790AE4E1462 /* ContentView.swift */; };
 		CBC8092EFA0CA223143D28FB /* GitHubAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DE10F2726E824E51451219 /* GitHubAPIService.swift */; };
 		D7470E4AD3FA1794384A5FA1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0B5F5CD18DA01D3971E15458 /* Preview Assets.xcassets */; };
 		D98DDB1CB65BCDA08CCAA9AF /* RunnerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7817D0558413310F30BE106 /* RunnerService.swift */; };
+		DC59E01A29782B3E7EFC364E /* OAuthFlowDebugTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EA78347C5D8E4C556204B94 /* OAuthFlowDebugTest.swift */; };
 		DE92763CC691010EE3F784D9 /* RunnerLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C571C7DA5C94943378B7D6C /* RunnerLogsView.swift */; };
 		E0833D789CBE625A7288EDF6 /* GhastApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F46B14EA931C628435929319 /* GhastApp.swift */; };
 		ECDC62250A143EB576ECFFF6 /* GitHubAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */; };
@@ -41,6 +44,7 @@
 
 /* Begin PBXFileReference section */
 		0B5F5CD18DA01D3971E15458 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		0EA78347C5D8E4C556204B94 /* OAuthFlowDebugTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthFlowDebugTest.swift; sourceTree = "<group>"; };
 		135B88A2EC50F1F27AC15925 /* Ghast.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghast.entitlements; sourceTree = "<group>"; };
 		27756DD5062B4B683BDE1AEE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		33162F950B312A0408BB9672 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -48,7 +52,9 @@
 		40DE10F2726E824E51451219 /* GitHubAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAPIService.swift; sourceTree = "<group>"; };
 		4905187598F558F30394061E /* GhastTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GhastTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRunnerView.swift; sourceTree = "<group>"; };
+		589564A7D873A8A142AEB375 /* AppDelegateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateTests.swift; sourceTree = "<group>"; };
 		6A1D6A14E100A996F1CD6BDD /* Ghast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghast.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		88D212211E5AF674B6C10C29 /* MockOAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockOAuthTests.swift; sourceTree = "<group>"; };
 		9C571C7DA5C94943378B7D6C /* RunnerLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerLogsView.swift; sourceTree = "<group>"; };
 		AB1F2083083927B9DDDF2021 /* EnvironmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentService.swift; sourceTree = "<group>"; };
 		AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAuthService.swift; sourceTree = "<group>"; };
@@ -139,6 +145,9 @@
 		E487CA7B333F5445DBEB708A /* GhastTests */ = {
 			isa = PBXGroup;
 			children = (
+				589564A7D873A8A142AEB375 /* AppDelegateTests.swift */,
+				88D212211E5AF674B6C10C29 /* MockOAuthTests.swift */,
+				0EA78347C5D8E4C556204B94 /* OAuthFlowDebugTest.swift */,
 				B430CBEF388B8118C9758D86 /* OAuthTests.swift */,
 			);
 			path = GhastTests;
@@ -256,6 +265,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD8F0F34F1D121EF9EF21408 /* AppDelegateTests.swift in Sources */,
+				6C08239C0EA1838CC8D15AC9 /* MockOAuthTests.swift in Sources */,
+				DC59E01A29782B3E7EFC364E /* OAuthFlowDebugTest.swift in Sources */,
 				2E8188F3E0A6EBA92C5B41B9 /* OAuthTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
