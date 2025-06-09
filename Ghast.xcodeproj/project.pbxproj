@@ -24,6 +24,7 @@
 		DE92763CC691010EE3F784D9 /* RunnerLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C571C7DA5C94943378B7D6C /* RunnerLogsView.swift */; };
 		E0833D789CBE625A7288EDF6 /* GhastApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F46B14EA931C628435929319 /* GhastApp.swift */; };
 		ECDC62250A143EB576ECFFF6 /* GitHubAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */; };
+		F5D8EDA44E6DA4D3F36566C3 /* EnvironmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1F2083083927B9DDDF2021 /* EnvironmentService.swift */; };
 		FD56CA74D61D1F480BBA7735 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = F8DA33CDB078D0387D3A6EB6 /* Alamofire */; };
 /* End PBXBuildFile section */
 
@@ -37,6 +38,7 @@
 		559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRunnerView.swift; sourceTree = "<group>"; };
 		6A1D6A14E100A996F1CD6BDD /* Ghast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghast.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9C571C7DA5C94943378B7D6C /* RunnerLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerLogsView.swift; sourceTree = "<group>"; };
+		AB1F2083083927B9DDDF2021 /* EnvironmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentService.swift; sourceTree = "<group>"; };
 		AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAuthService.swift; sourceTree = "<group>"; };
 		B9C91331F3D9BADDDB924033 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		C60F78FD15C38E554C2126B0 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
@@ -130,6 +132,7 @@
 		F681A481335EF0F05CA504A3 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				AB1F2083083927B9DDDF2021 /* EnvironmentService.swift */,
 				40DE10F2726E824E51451219 /* GitHubAPIService.swift */,
 				AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */,
 				F7817D0558413310F30BE106 /* RunnerService.swift */,
@@ -216,6 +219,7 @@
 				4F22BE38592B04892DCC5E88 /* AddRunnerView.swift in Sources */,
 				B9B89423297856F13D7BEC05 /* ContentView.swift in Sources */,
 				2ACEF3C91FADC61E77BF4BF5 /* DashboardView.swift in Sources */,
+				F5D8EDA44E6DA4D3F36566C3 /* EnvironmentService.swift in Sources */,
 				E0833D789CBE625A7288EDF6 /* GhastApp.swift in Sources */,
 				CBC8092EFA0CA223143D28FB /* GitHubAPIService.swift in Sources */,
 				ECDC62250A143EB576ECFFF6 /* GitHubAuthService.swift in Sources */,

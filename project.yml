@@ -27,6 +27,7 @@ targets:
       path: Ghast/Info.plist
       properties:
         CFBundleDisplayName: Ghast
+        LSMultipleInstancesProhibited: true
         CFBundleURLTypes:
           - CFBundleURLName: net.evancoleman.ghast.oauth
             CFBundleURLSchemes: [ghast]
