@@ -10,8 +10,11 @@
 		07CABF8F13A6391999487756 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DED7F4DBFFAFA1B98FD5343A /* WelcomeView.swift */; };
 		191A76186CCE9F0333A48CAE /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 62E0E5C15653F1D8B60B3A1A /* KeychainAccess */; };
 		2ACEF3C91FADC61E77BF4BF5 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C91331F3D9BADDDB924033 /* DashboardView.swift */; };
+		4F22BE38592B04892DCC5E88 /* AddRunnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */; };
+		629EC9EB6F9C5FE4C5D1651C /* RepositoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C619E19E881A963CEE07613F /* RepositoryDetailView.swift */; };
 		6519582100422C8166258CBC /* GitHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA31185E9B1E63D9080C9ADD /* GitHubModels.swift */; };
 		70F4478AFA2AA7B37D3958D3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3608F0F196C224B9B9131F20 /* Assets.xcassets */; };
+		7B3EB52747FB8C7F5273E8F9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27756DD5062B4B683BDE1AEE /* SettingsView.swift */; };
 		B7119B7F5B54EF5504B5B02E /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60F78FD15C38E554C2126B0 /* SidebarView.swift */; };
 		B9B89423297856F13D7BEC05 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACDEE5E4C50B790AE4E1462 /* ContentView.swift */; };
 		CBC8092EFA0CA223143D28FB /* GitHubAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DE10F2726E824E51451219 /* GitHubAPIService.swift */; };
@@ -25,13 +28,16 @@
 /* Begin PBXFileReference section */
 		0B5F5CD18DA01D3971E15458 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		135B88A2EC50F1F27AC15925 /* Ghast.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghast.entitlements; sourceTree = "<group>"; };
+		27756DD5062B4B683BDE1AEE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		33162F950B312A0408BB9672 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3608F0F196C224B9B9131F20 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		40DE10F2726E824E51451219 /* GitHubAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAPIService.swift; sourceTree = "<group>"; };
+		559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRunnerView.swift; sourceTree = "<group>"; };
 		6A1D6A14E100A996F1CD6BDD /* Ghast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghast.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AFB23E25684EAE800545F0C0 /* GitHubAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAuthService.swift; sourceTree = "<group>"; };
 		B9C91331F3D9BADDDB924033 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		C60F78FD15C38E554C2126B0 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		C619E19E881A963CEE07613F /* RepositoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryDetailView.swift; sourceTree = "<group>"; };
 		CACDEE5E4C50B790AE4E1462 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		DED7F4DBFFAFA1B98FD5343A /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		EA31185E9B1E63D9080C9ADD /* GitHubModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubModels.swift; sourceTree = "<group>"; };
@@ -55,7 +61,10 @@
 		06BCEAAB81B706E7B26A6AD9 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				559BA35C14B7CAB8D5EA10B9 /* AddRunnerView.swift */,
 				B9C91331F3D9BADDDB924033 /* DashboardView.swift */,
+				C619E19E881A963CEE07613F /* RepositoryDetailView.swift */,
+				27756DD5062B4B683BDE1AEE /* SettingsView.swift */,
 				C60F78FD15C38E554C2126B0 /* SidebarView.swift */,
 				DED7F4DBFFAFA1B98FD5343A /* WelcomeView.swift */,
 			);
@@ -198,13 +207,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4F22BE38592B04892DCC5E88 /* AddRunnerView.swift in Sources */,
 				B9B89423297856F13D7BEC05 /* ContentView.swift in Sources */,
 				2ACEF3C91FADC61E77BF4BF5 /* DashboardView.swift in Sources */,
 				E0833D789CBE625A7288EDF6 /* GhastApp.swift in Sources */,
 				CBC8092EFA0CA223143D28FB /* GitHubAPIService.swift in Sources */,
 				ECDC62250A143EB576ECFFF6 /* GitHubAuthService.swift in Sources */,
 				6519582100422C8166258CBC /* GitHubModels.swift in Sources */,
+				629EC9EB6F9C5FE4C5D1651C /* RepositoryDetailView.swift in Sources */,
 				D98DDB1CB65BCDA08CCAA9AF /* RunnerService.swift in Sources */,
+				7B3EB52747FB8C7F5273E8F9 /* SettingsView.swift in Sources */,
 				B7119B7F5B54EF5504B5B02E /* SidebarView.swift in Sources */,
 				07CABF8F13A6391999487756 /* WelcomeView.swift in Sources */,
 			);

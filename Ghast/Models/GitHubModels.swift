@@ -1,6 +1,6 @@
 import Foundation
 
-struct GitHubUser: Codable, Identifiable {
+struct GitHubUser: Codable, Identifiable, Equatable {
     let id: Int
     let login: String
     let avatarURL: String
@@ -13,7 +13,7 @@ struct GitHubUser: Codable, Identifiable {
     }
 }
 
-struct GitHubRepository: Codable, Identifiable {
+struct GitHubRepository: Codable, Identifiable, Equatable {
     let id: Int
     let name: String
     let fullName: String

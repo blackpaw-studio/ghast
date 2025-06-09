@@ -2,19 +2,87 @@ import SwiftUI
 
 struct SidebarView: View {
     @EnvironmentObject var authService: GitHubAuthService
-    @State private var selectedView: SidebarItem = .dashboard
+    @EnvironmentObject var appState: AppState
+    @State private var searchText = ""
+    
+    var filteredRepositories: [GitHubRepository] {
+        if searchText.isEmpty {
+            return appState.repositories
+        } else {
+            return appState.repositories.filter { repo in
+                repo.name.localizedCaseInsensitiveContains(searchText) ||
+                repo.fullName.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
     
     var body: some View {
-        List(selection: $selectedView) {
-            Section("Management") {
-                SidebarRow(item: .dashboard)
-                SidebarRow(item: .runners)
-                SidebarRow(item: .environments)
+        List {
+            Button(action: {
+                appState.selectedView = .dashboard
+            }) {
+                Label("Dashboard", systemImage: "chart.bar.fill")
             }
+            .buttonStyle(PlainButtonStyle())
+            .foregroundColor(appState.selectedView == .dashboard ? .accentColor : .primary)
             
-            Section("Account") {
-                SidebarRow(item: .settings)
+            Section {
+                if appState.isLoadingRepositories {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading repositories...")
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                } else if appState.repositories.isEmpty {
+                    Text("No repositories found")
+                        .foregroundColor(.secondary)
+                        .italic()
+                } else {
+                    ForEach(filteredRepositories) { repository in
+                        Button(action: {
+                            appState.selectedView = .repository(repository)
+                            appState.selectedRepository = repository
+                        }) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                                        .font(.caption)
+                                        .foregroundColor(repository.isPrivate ? .orange : .green)
+                                    Text(repository.name)
+                                        .font(.headline)
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                if let description = repository.description, !description.isEmpty {
+                                    Text(description)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .foregroundColor(
+                            appState.selectedView == .repository(repository) ? .accentColor : .primary
+                        )
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Repositories")
+                    Spacer()
+                    Button(action: {
+                        Task { await loadRepositories() }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(appState.isLoadingRepositories)
+                }
             }
+            .searchable(text: $searchText, placement: .sidebar, prompt: "Search repositories")
         }
         .navigationTitle("Ghast")
         .toolbar {
@@ -45,40 +113,26 @@ struct SidebarView: View {
                 }
             }
         }
-    }
-}
-
-struct SidebarRow: View {
-    let item: SidebarItem
-    
-    var body: some View {
-        NavigationLink(value: item) {
-            Label(item.title, systemImage: item.systemImage)
-        }
-    }
-}
-
-enum SidebarItem: String, CaseIterable, Hashable {
-    case dashboard
-    case runners
-    case environments
-    case settings
-    
-    var title: String {
-        switch self {
-        case .dashboard: return "Dashboard"
-        case .runners: return "Runners"
-        case .environments: return "Environments"
-        case .settings: return "Settings"
+        .task {
+            if appState.repositories.isEmpty {
+                await loadRepositories()
+            }
         }
     }
     
-    var systemImage: String {
-        switch self {
-        case .dashboard: return "gauge"
-        case .runners: return "play.circle"
-        case .environments: return "globe"
-        case .settings: return "gear"
+    private func loadRepositories() async {
+        appState.isLoadingRepositories = true
+        do {
+            let repositories = try await GitHubAPIService.shared.fetchRepositories()
+            await MainActor.run {
+                appState.repositories = repositories
+                appState.isLoadingRepositories = false
+            }
+        } catch {
+            await MainActor.run {
+                appState.isLoadingRepositories = false
+            }
+            print("Failed to load repositories: \(error)")
         }
     }
 }
@@ -87,6 +141,7 @@ enum SidebarItem: String, CaseIterable, Hashable {
     NavigationSplitView {
         SidebarView()
             .environmentObject(GitHubAuthService())
+            .environmentObject(AppState())
     } detail: {
         Text("Detail View")
     }
