@@ -14,6 +14,7 @@ class GitHubAuthService: NSObject, ObservableObject {
     @Published var currentUser: GitHubUser?
     @Published var isLoading = false
     @Published var isAuthenticating = false
+    @Published var isCheckingStoredAuth = true // Start with true to prevent login screen flash
     
     private var keychain: Keychain {
         Keychain(service: "net.evancoleman.ghast")
@@ -27,22 +28,12 @@ class GitHubAuthService: NSObject, ObservableObject {
     override init() {
         super.init()
         
-        // Clean up any existing keychain entries that might have wrong accessibility
-        Task {
-            await cleanupKeychain()
-        }
-    }
-    
-    private func cleanupKeychain() async {
-        do {
-            // Try to remove any existing tokens that might have incompatible settings
-            let legacyKeychain = Keychain(service: "net.evancoleman.ghast")
-            try? legacyKeychain.remove("github_token")
-            print("🔐 OAuth: Cleaned up existing keychain entries")
-        }
+        // isCheckingStoredAuth is already true from the property declaration
+        // This prevents the login screen flash without triggering keychain access
     }
     
     func checkStoredAuthentication() async {
+        defer { isCheckingStoredAuth = false }
         await checkExistingAuth()
     }
     

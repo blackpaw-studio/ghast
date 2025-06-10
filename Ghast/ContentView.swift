@@ -7,7 +7,18 @@ struct ContentView: View {
     
     var body: some View {
         Group {
-            if authService.isAuthenticated {
+            if authService.isCheckingStoredAuth {
+                // Show loading state while checking for stored authentication
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Loading...")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(NSColor.windowBackgroundColor))
+            } else if authService.isAuthenticated {
                 MainAppView()
                     .environmentObject(authService)
                     .environmentObject(appState)
@@ -19,14 +30,16 @@ struct ContentView: View {
                     .environmentObject(authService)
                     .onAppear {
                         print("🔐 UI: WelcomeView appeared")
-                        // Check for stored authentication when welcome view appears
-                        Task {
-                            await authService.checkStoredAuthentication()
-                        }
                     }
             }
         }
         .frame(minWidth: 750, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
+        .onAppear {
+            // Check for stored authentication when app starts
+            Task {
+                await authService.checkStoredAuthentication()
+            }
+        }
         .onChange(of: authService.isAuthenticated) { newValue in
             print("🔐 UI: isAuthenticated changed to \(newValue)")
         }
