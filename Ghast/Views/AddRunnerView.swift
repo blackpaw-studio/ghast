@@ -113,7 +113,7 @@ struct AddRunnerView: View {
                 .padding()
             }
         }
-        .frame(width: 600, height: 700)
+        .frame(minWidth: 600, idealWidth: 700, maxWidth: 900, minHeight: 600, idealHeight: 700, maxHeight: 800)
         .task {
             await loadRunnerApplications()
         }
@@ -341,13 +341,14 @@ tar xzf ./actions-runner.tar.gz
     
     private func loadRunnerApplications() async {
         do {
-            let applications = try await GitHubAPIService.shared.fetchRunnerApplications()
+            let applications = try await GitHubAPIService.shared.fetchRunnerApplications(for: repository)
             await MainActor.run {
                 self.runnerApplications = applications
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = "Failed to load runner applications for \(repository.fullName): \(error.localizedDescription)"
+                print("🏃 Runner Applications Error: \(error)")
             }
         }
     }
