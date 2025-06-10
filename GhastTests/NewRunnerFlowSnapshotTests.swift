@@ -45,14 +45,14 @@ final class NewRunnerFlowSnapshotTests: XCTestCase {
         let view = NewRunnerFlowView(repositories: repositories)
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testNewRunnerFlowEmpty() async {
         let view = NewRunnerFlowView(repositories: [])
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testNewRunnerFlowSmallWindow() async {
@@ -61,6 +61,6 @@ final class NewRunnerFlowSnapshotTests: XCTestCase {
         let view = NewRunnerFlowView(repositories: repositories)
             .frame(width: 1000, height: 700)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
 }

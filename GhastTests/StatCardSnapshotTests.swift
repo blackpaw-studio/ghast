@@ -15,7 +15,7 @@ final class StatCardSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardWithLongTitle() async {
@@ -27,7 +27,7 @@ final class StatCardSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardWithLargeValue() async {
@@ -39,7 +39,7 @@ final class StatCardSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardZero() async {
@@ -51,7 +51,7 @@ final class StatCardSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardLoading() async {
@@ -64,7 +64,7 @@ final class StatCardSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardClickable() async {
@@ -79,7 +79,7 @@ final class StatCardSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardDarkMode() async {
@@ -92,7 +92,7 @@ final class StatCardSnapshotTests: XCTestCase {
         .frame(width: 200, height: 120)
         .preferredColorScheme(.dark)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testStatCardsGrid() async {
@@ -104,6 +104,6 @@ final class StatCardSnapshotTests: XCTestCase {
         }
         .frame(width: 900, height: 120)
         
-        assertSnapshot(of: cards, as: .image)
+        assertSnapshot(of: cards, as: Snapshotting.image)
     }
 }

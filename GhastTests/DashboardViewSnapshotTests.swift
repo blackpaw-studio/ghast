@@ -52,7 +52,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testDashboardEmpty() async {
@@ -67,7 +67,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testDashboardLoading() async {
@@ -82,7 +82,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testDashboardSmallWindow() async {
@@ -97,7 +97,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testDashboardLargeWindow() async {
@@ -112,6 +112,6 @@ final class DashboardViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .frame(width: 1600, height: 1000)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
 }

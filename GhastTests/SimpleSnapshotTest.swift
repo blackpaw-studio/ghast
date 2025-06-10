@@ -20,6 +20,6 @@ final class SimpleSnapshotTest: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
 }

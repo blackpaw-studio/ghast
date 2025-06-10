@@ -13,7 +13,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testWelcomeViewDarkMode() async {
@@ -24,7 +24,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
             .frame(width: 800, height: 600)
             .preferredColorScheme(.dark)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testWelcomeViewSmallWindow() async {
@@ -34,7 +34,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 600, height: 450)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testWelcomeViewLargeWindow() async {
@@ -44,6 +44,6 @@ final class WelcomeViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 1000, height: 750)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
 }

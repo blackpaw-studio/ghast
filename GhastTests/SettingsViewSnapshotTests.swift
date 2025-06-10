@@ -20,7 +20,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 600, height: 500)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testSettingsViewNotAuthenticated() async {
@@ -31,7 +31,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 600, height: 500)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testSettingsViewLongUserName() async {
@@ -48,7 +48,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 600, height: 500)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testSettingsViewDarkMode() async {
@@ -66,6 +66,6 @@ final class SettingsViewSnapshotTests: XCTestCase {
             .frame(width: 600, height: 500)
             .preferredColorScheme(.dark)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
 }

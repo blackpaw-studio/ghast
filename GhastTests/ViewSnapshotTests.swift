@@ -48,7 +48,7 @@ final class ViewSnapshotTests: XCTestCase {
                 .environmentObject(appState)
                 .frame(width: 1000, height: 800)
             
-            assertSnapshot(of: view, as: .image)
+            assertSnapshot(of: view, as: Snapshotting.image)
         }
     }
     
@@ -61,7 +61,7 @@ final class ViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     // MARK: - Local Runners View Tests
@@ -70,7 +70,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .frame(width: 1000, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testLocalRunnersViewWithRunners() async {
@@ -80,7 +80,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .frame(width: 1000, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     // MARK: - New Runner Flow Tests
@@ -110,7 +110,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = NewRunnerFlowView(repositories: repositories)
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     // MARK: - Settings View Tests
@@ -129,7 +129,7 @@ final class ViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     // MARK: - Repository Detail View Tests
@@ -148,7 +148,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = RepositoryDetailView(repository: repository)
             .frame(width: 1000, height: 800)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     // MARK: - Component Tests
@@ -162,7 +162,7 @@ final class ViewSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testDashboardRepositoryCard() async {
@@ -181,7 +181,7 @@ final class ViewSnapshotTests: XCTestCase {
         }
         .frame(width: 300, height: 120)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
     
     func testNewRunnerRepositoryCard() async {
@@ -203,7 +203,7 @@ final class ViewSnapshotTests: XCTestCase {
         }
         .frame(width: 400, height: 100)
         
-        assertSnapshot(of: view, as: .image)
+        assertSnapshot(of: view, as: Snapshotting.image)
     }
 }
 
