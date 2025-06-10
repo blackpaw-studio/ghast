@@ -16,6 +16,24 @@ struct AddRunnerView: View {
     @State private var errorMessage: String?
     @StateObject private var runnerService = RunnerService.shared
     
+    // Filtered applications for macOS only
+    private var macOSApplications: [GitHubRunnerApplication] {
+        runnerApplications.filter { app in
+            app.os.lowercased() == "osx" || app.os.lowercased() == "macos"
+        }
+    }
+    
+    // Current machine architecture
+    private var currentArchitecture: String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x64"
+        #else
+        return "unknown"
+        #endif
+    }
+    
     enum Step: CaseIterable {
         case selectPlatform
         case configure
@@ -23,7 +41,7 @@ struct AddRunnerView: View {
         
         var title: String {
             switch self {
-            case .selectPlatform: return "Select Platform"
+            case .selectPlatform: return "Select Architecture"
             case .configure: return "Configure Runner"
             case .instructions: return "Setup Instructions"
             }
@@ -130,7 +148,7 @@ struct AddRunnerView: View {
     
     private var platformSelectionView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Choose the platform where you want to run the GitHub Actions runner:")
+            Text("Choose the macOS architecture for your local runner:")
                 .foregroundColor(.secondary)
             
             if runnerApplications.isEmpty {
@@ -141,17 +159,41 @@ struct AddRunnerView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
+            } else if macOSApplications.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 32))
+                        .foregroundColor(.orange)
+                    Text("No macOS runners available")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("This repository doesn't have macOS runner applications available.")
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
             } else {
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    ForEach(runnerApplications, id: \.downloadURL) { application in
-                        PlatformCard(
-                            application: application,
-                            isSelected: selectedApplication?.downloadURL == application.downloadURL
-                        ) {
-                            selectedApplication = application
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.blue)
+                        Text("Detected architecture: \(currentArchitecture)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 12) {
+                        ForEach(macOSApplications, id: \.downloadURL) { application in
+                            PlatformCard(
+                                application: application,
+                                isSelected: selectedApplication?.downloadURL == application.downloadURL
+                            ) {
+                                selectedApplication = application
+                            }
                         }
                     }
                 }
@@ -344,6 +386,19 @@ tar xzf ./actions-runner.tar.gz
             let applications = try await GitHubAPIService.shared.fetchRunnerApplications(for: repository)
             await MainActor.run {
                 self.runnerApplications = applications
+                
+                // Auto-select the current architecture if available
+                let macOSApps = applications.filter { app in
+                    app.os.lowercased() == "osx" || app.os.lowercased() == "macos"
+                }
+                
+                // Try to find exact architecture match first
+                if let matchingApp = macOSApps.first(where: { $0.architecture == currentArchitecture }) {
+                    self.selectedApplication = matchingApp
+                } else if let firstMacApp = macOSApps.first {
+                    // Fallback to first available macOS app
+                    self.selectedApplication = firstMacApp
+                }
             }
         } catch {
             await MainActor.run {
