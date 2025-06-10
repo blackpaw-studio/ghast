@@ -47,7 +47,10 @@ struct DashboardView: View {
                         value: isLoadingStats ? "–" : "\(totalRunners)",
                         icon: "play.circle.fill",
                         color: .blue,
-                        isLoading: isLoadingStats
+                        isLoading: isLoadingStats,
+                        onTap: {
+                            appState.selectedView = .localRunners
+                        }
                     )
                     
                     StatCard(
@@ -55,7 +58,10 @@ struct DashboardView: View {
                         value: isLoadingStats ? "–" : "\(activeRunners)",
                         icon: "checkmark.circle.fill",
                         color: .green,
-                        isLoading: isLoadingStats
+                        isLoading: isLoadingStats,
+                        onTap: {
+                            appState.selectedView = .localRunners
+                        }
                     )
                     
                     StatCard(
@@ -63,7 +69,10 @@ struct DashboardView: View {
                         value: isLoadingStats ? "–" : "\(busyRunners)",
                         icon: "exclamationmark.circle.fill",
                         color: .orange,
-                        isLoading: isLoadingStats
+                        isLoading: isLoadingStats,
+                        onTap: {
+                            appState.selectedView = .localRunners
+                        }
                     )
                     
                     StatCard(
@@ -71,7 +80,14 @@ struct DashboardView: View {
                         value: appState.isLoadingRepositories ? "–" : "\(appState.repositories.count)",
                         icon: "folder.fill",
                         color: .purple,
-                        isLoading: appState.isLoadingRepositories
+                        isLoading: appState.isLoadingRepositories,
+                        onTap: {
+                            // Navigate to first repository if available
+                            if let firstRepo = appState.repositories.first {
+                                appState.selectedView = .repository(firstRepo)
+                                appState.selectedRepository = firstRepo
+                            }
+                        }
                     )
                 }
                 .padding(.horizontal)
@@ -186,16 +202,34 @@ struct StatCard: View {
     let icon: String
     let color: Color
     let isLoading: Bool
+    let onTap: (() -> Void)?
     
-    init(title: String, value: String, icon: String, color: Color, isLoading: Bool = false) {
+    init(title: String, value: String, icon: String, color: Color, isLoading: Bool = false, onTap: (() -> Void)? = nil) {
         self.title = title
         self.value = value
         self.icon = icon
         self.color = color
         self.isLoading = isLoading
+        self.onTap = onTap
     }
     
     var body: some View {
+        Group {
+            if let onTap = onTap {
+                Button(action: onTap) {
+                    cardContent
+                }
+                .buttonStyle(PlainButtonStyle())
+                .onHover { isHovered in
+                    // Add visual feedback for hover state
+                }
+            } else {
+                cardContent
+            }
+        }
+    }
+    
+    private var cardContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: icon)
@@ -204,6 +238,10 @@ struct StatCard: View {
                 if isLoading {
                     ProgressView()
                         .scaleEffect(0.8)
+                } else if onTap != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             
@@ -219,6 +257,10 @@ struct StatCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(NSColor.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(onTap != nil ? Color.accentColor.opacity(0.2) : Color.clear, lineWidth: 1)
+        )
     }
 }
 
