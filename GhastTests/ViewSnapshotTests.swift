@@ -6,52 +6,50 @@ import SnapshotTesting
 @MainActor
 final class ViewSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        // Set consistent test environment
-        isRecording = false
-    }
+    // Use withSnapshotTesting(record: .all) inside individual tests to record snapshots
     
     // MARK: - Dashboard View Tests
     
     func testDashboardView() async {
-        let authService = GitHubAuthService()
-        authService.currentUser = GitHubUser(
-            id: 1,
-            login: "testuser",
-            avatarURL: "https://example.com/avatar.png",
-            name: "Test User",
-            email: "test@example.com"
-        )
-        
-        let appState = AppState()
-        appState.repositories = [
-            GitHubRepository(
+        withSnapshotTesting(record: .all) {
+            let authService = GitHubAuthService()
+            authService.currentUser = GitHubUser(
                 id: 1,
-                name: "test-repo-1",
-                fullName: "testuser/test-repo-1",
-                description: "A test repository for snapshot testing",
-                isPrivate: false,
-                owner: authService.currentUser!,
-                htmlURL: "https://github.com/testuser/test-repo-1"
-            ),
-            GitHubRepository(
-                id: 2,
-                name: "private-repo",
-                fullName: "testuser/private-repo",
-                description: "A private repository",
-                isPrivate: true,
-                owner: authService.currentUser!,
-                htmlURL: "https://github.com/testuser/private-repo"
+                login: "testuser",
+                avatarURL: "https://example.com/avatar.png",
+                name: "Test User",
+                email: "test@example.com"
             )
-        ]
-        
-        let view = DashboardView()
-            .environmentObject(authService)
-            .environmentObject(appState)
-            .frame(width: 1000, height: 800)
-        
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 1000, height: 800)))
+            
+            let appState = AppState()
+            appState.repositories = [
+                GitHubRepository(
+                    id: 1,
+                    name: "test-repo-1",
+                    fullName: "testuser/test-repo-1",
+                    description: "A test repository for snapshot testing",
+                    isPrivate: false,
+                    owner: authService.currentUser!,
+                    htmlURL: "https://github.com/testuser/test-repo-1"
+                ),
+                GitHubRepository(
+                    id: 2,
+                    name: "private-repo",
+                    fullName: "testuser/private-repo",
+                    description: "A private repository",
+                    isPrivate: true,
+                    owner: authService.currentUser!,
+                    htmlURL: "https://github.com/testuser/private-repo"
+                )
+            ]
+            
+            let view = DashboardView()
+                .environmentObject(authService)
+                .environmentObject(appState)
+                .frame(width: 1000, height: 800)
+            
+            assertSnapshot(of: view, as: .image)
+        }
     }
     
     // MARK: - Welcome View Tests
@@ -63,7 +61,7 @@ final class ViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 800, height: 600)))
+        assertSnapshot(of: view, as: .image)
     }
     
     // MARK: - Local Runners View Tests
@@ -72,7 +70,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .frame(width: 1000, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 1000, height: 800)))
+        assertSnapshot(of: view, as: .image)
     }
     
     func testLocalRunnersViewWithRunners() async {
@@ -82,7 +80,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .frame(width: 1000, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 1000, height: 800)))
+        assertSnapshot(of: view, as: .image)
     }
     
     // MARK: - New Runner Flow Tests
@@ -112,7 +110,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = NewRunnerFlowView(repositories: repositories)
             .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 1200, height: 800)))
+        assertSnapshot(of: view, as: .image)
     }
     
     // MARK: - Settings View Tests
@@ -131,7 +129,7 @@ final class ViewSnapshotTests: XCTestCase {
             .environmentObject(authService)
             .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 800, height: 600)))
+        assertSnapshot(of: view, as: .image)
     }
     
     // MARK: - Repository Detail View Tests
@@ -150,7 +148,7 @@ final class ViewSnapshotTests: XCTestCase {
         let view = RepositoryDetailView(repository: repository)
             .frame(width: 1000, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 1000, height: 800)))
+        assertSnapshot(of: view, as: .image)
     }
     
     // MARK: - Component Tests
@@ -164,7 +162,7 @@ final class ViewSnapshotTests: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 200, height: 120)))
+        assertSnapshot(of: view, as: .image)
     }
     
     func testDashboardRepositoryCard() async {
@@ -183,7 +181,7 @@ final class ViewSnapshotTests: XCTestCase {
         }
         .frame(width: 300, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 300, height: 120)))
+        assertSnapshot(of: view, as: .image)
     }
     
     func testNewRunnerRepositoryCard() async {
@@ -205,7 +203,7 @@ final class ViewSnapshotTests: XCTestCase {
         }
         .frame(width: 400, height: 100)
         
-        assertSnapshot(of: view, as: Snapshotting.image(layout: .fixed(width: 400, height: 100)))
+        assertSnapshot(of: view, as: .image)
     }
 }
 

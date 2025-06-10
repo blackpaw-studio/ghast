@@ -16,7 +16,7 @@ xcodebuild -project Ghast.xcodeproj -scheme Ghast build
 # Run tests
 xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 
-# Or use the MCP XcodeBuildMCP tools for better integration
+# Or use the MCP XcodeBuildMCP tools for better integration and output parsing
 ```
 
 **Important**: The `Ghast.xcodeproj` is generated and git-ignored. All project configuration is in `project.yml`. Run `xcodegen` to regenerate the project after pulling changes.
@@ -69,8 +69,8 @@ UI components are tested with visual snapshots to prevent layout regressions:
 - **Layout states**: Empty states, populated lists, different window sizes
 
 **Recording new snapshots**:
-1. Set `isRecordingSnapshots = true` in `SnapshotTestHelpers.swift`
-2. Run tests: `xcodebuild test -project Ghast.xcodeproj -scheme Ghast`
+1. Set `isRecording = true` in individual test files (e.g., `SimpleSnapshotTest.swift`)
+2. Run tests: `xcodebuild test -project Ghast.xcodeproj -scheme Ghast` or use MCP XcodeBuildMCP `test_macos_proj`
 3. Reset flag to `false` and commit snapshots in `GhastTests/__Snapshots__/`
 
 **Running snapshot tests**: Always run after UI changes to verify layouts
@@ -84,6 +84,23 @@ Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authenticatio
 3. User registers runner path with Ghast via `AddRunnerView`
 4. Ghast manages runner lifecycle via `Process` and streams logs via Combine
 5. Real-time log viewing in `RunnerLogsView` with automatic scroll-to-bottom
+
+## XcodeBuildMCP Tools
+
+Claude Code has access to advanced Xcode build tools via MCP XcodeBuildMCP that provide better output parsing and integration:
+
+### Available Tools:
+- `test_macos_proj` - Run tests for macOS project with structured output
+- `build_mac_proj` - Build macOS project with detailed error reporting  
+- `clean_proj` - Clean build artifacts for project
+- `list_schems_proj` - List available schemes in project
+
+### Usage:
+```
+mcp__XcodeBuildMCP__test_macos_proj(projectPath: "/path/to/Ghast.xcodeproj", scheme: "Ghast")
+```
+
+**Benefits**: Better error parsing, structured output, integration with Claude Code workflow
 
 ## Development Notes
 

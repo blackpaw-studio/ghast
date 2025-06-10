@@ -8,7 +8,6 @@ final class SimpleSnapshotTest: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        // Set recording mode to generate reference snapshots
         isRecording = false
     }
     
@@ -21,6 +20,6 @@ final class SimpleSnapshotTest: XCTestCase {
         )
         .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 200, height: 120)))
+        assertSnapshot(of: view, as: .image)
     }
 }
