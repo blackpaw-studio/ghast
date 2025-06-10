@@ -348,14 +348,13 @@ tar xzf ./actions-runner.tar.gz
     }
     
     private func nextStep() async {
-        isLoading = true
-        
         switch currentStep {
         case .selectPlatform:
             withAnimation {
                 currentStep = .configure
             }
         case .configure:
+            isLoading = true
             // Generate registration token
             do {
                 let token = try await GitHubAPIService.shared.createRegistrationToken(for: repository)
@@ -374,10 +373,6 @@ tar xzf ./actions-runner.tar.gz
             }
         case .instructions:
             break
-        }
-        
-        if currentStep != .configure {
-            isLoading = false
         }
     }
     
