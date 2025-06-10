@@ -17,7 +17,8 @@ class GitHubAuthService: NSObject, ObservableObject {
     @Published var isCheckingStoredAuth = true // Start with true to prevent login screen flash
     
     private var keychain: Keychain {
-        Keychain(service: "net.evancoleman.ghast")
+        let accessGroup = "net.evancoleman.ghast"
+        return Keychain(service: "net.evancoleman.ghast", accessGroup: accessGroup)
             .accessibility(.afterFirstUnlock)
     }
     private let clientId = "Ov23liLVIllxzZoRYwAN"
