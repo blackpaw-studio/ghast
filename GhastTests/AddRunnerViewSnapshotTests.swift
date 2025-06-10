@@ -25,7 +25,7 @@ final class AddRunnerViewSnapshotTests: XCTestCase {
             // Completion handler
         }
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
+        SnapshotTestHelpers.assertSnapshotNaturalSize(of: view, containerWidth: 1000, containerHeight: 800)
     }
     
     // MARK: - Platform Card Tests

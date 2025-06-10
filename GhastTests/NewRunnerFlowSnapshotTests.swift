@@ -44,13 +44,13 @@ final class NewRunnerFlowSnapshotTests: XCTestCase {
         
         let view = NewRunnerFlowView(repositories: repositories)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
+        SnapshotTestHelpers.assertSnapshotNaturalSize(of: view, containerWidth: 1200, containerHeight: 900)
     }
     
     func testNewRunnerFlowEmpty() async {
         let view = NewRunnerFlowView(repositories: [])
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
+        SnapshotTestHelpers.assertSnapshotNaturalSize(of: view, containerWidth: 1200, containerHeight: 900)
     }
     
     func testNewRunnerFlowSmallWindow() async {
