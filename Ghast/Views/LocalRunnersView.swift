@@ -2,10 +2,12 @@ import SwiftUI
 
 struct LocalRunnersView: View {
     @StateObject private var runnerService = RunnerService.shared
+    @EnvironmentObject var appState: AppState
     @State private var selectedRunner: LocalRunner?
+    @State private var showingNewRunnerFlow = false
     
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             // Sidebar with runner list
             VStack(spacing: 0) {
                 // Header
@@ -15,6 +17,13 @@ struct LocalRunnersView: View {
                     Spacer()
                     Text("\(runnerService.localRunners.count)")
                         .foregroundColor(.secondary)
+                    
+                    Button("New") {
+                        showingNewRunnerFlow = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(appState.repositories.isEmpty)
                 }
                 .padding()
                 .background(Color(NSColor.controlBackgroundColor))
@@ -45,28 +54,37 @@ struct LocalRunnersView: View {
                     }
                 }
             }
-        } detail: {
+            .frame(minWidth: 250, idealWidth: 300, maxWidth: 400)
+            
+            Divider()
+            
             // Detail view
-            if let runner = selectedRunner {
-                RunnerLogsView(runner: runner)
-            } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    
-                    Text("Select a Runner")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Choose a local runner from the sidebar to view its logs and manage it.")
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+            Group {
+                if let runner = selectedRunner {
+                    RunnerLogsView(runner: runner)
+                } else {
+                    VStack(spacing: 16) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Select a Runner")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Choose a local runner from the sidebar to view its logs and manage it.")
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle("Local Runners")
+        .sheet(isPresented: $showingNewRunnerFlow) {
+            NewRunnerFlowView(repositories: appState.repositories)
+        }
     }
 }
 

@@ -7,21 +7,35 @@ struct DashboardView: View {
     @State private var activeRunners = 0
     @State private var busyRunners = 0
     @State private var isLoadingStats = false
+    @State private var showingNewRunnerFlow = false
     
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 20) {
                 // Welcome Section
                 VStack(alignment: .leading, spacing: 8) {
-                    if let user = authService.currentUser {
-                        Text("Welcome back, \(user.name ?? user.login)!")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let user = authService.currentUser {
+                                Text("Welcome back, \(user.name ?? user.login)!")
+                                    .font(.largeTitle)
+                                    .fontWeight(.bold)
+                            }
+                            
+                            Text("Manage your GitHub Actions self-hosted runners")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button("New Runner") {
+                            showingNewRunnerFlow = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(appState.repositories.isEmpty)
                     }
-                    
-                    Text("Manage your GitHub Actions self-hosted runners")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
@@ -130,6 +144,9 @@ struct DashboardView: View {
             Task {
                 await loadRunnerStats()
             }
+        }
+        .sheet(isPresented: $showingNewRunnerFlow) {
+            NewRunnerFlowView(repositories: appState.repositories)
         }
     }
     
