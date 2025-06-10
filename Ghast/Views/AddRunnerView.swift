@@ -12,7 +12,6 @@ struct AddRunnerView: View {
     @State private var currentStep: Step = .selectPlatform
     @State private var runnerName = ""
     @State private var runnerLabels = ""
-    @State private var runnerPath = ""
     @State private var errorMessage: String?
     @StateObject private var runnerService = RunnerService.shared
     
@@ -37,13 +36,13 @@ struct AddRunnerView: View {
     enum Step: CaseIterable {
         case selectPlatform
         case configure
-        case instructions
+        case creating
         
         var title: String {
             switch self {
             case .selectPlatform: return "Select Architecture"
             case .configure: return "Configure Runner"
-            case .instructions: return "Setup Instructions"
+            case .creating: return "Creating Runner"
             }
         }
     }
@@ -90,8 +89,8 @@ struct AddRunnerView: View {
                             platformSelectionView
                         case .configure:
                             configurationView
-                        case .instructions:
-                            instructionsView
+                        case .creating:
+                            creatingView
                         }
                     }
                     .padding()
@@ -115,8 +114,8 @@ struct AddRunnerView: View {
                         }
                     }
                     
-                    Button(currentStep == .instructions ? "Done" : "Next") {
-                        if currentStep == .instructions {
+                    Button(buttonTitle) {
+                        if currentStep == .creating {
                             onRunnerAdded()
                             dismiss()
                         } else {
@@ -131,7 +130,7 @@ struct AddRunnerView: View {
                 .padding()
             }
         }
-        .frame(minWidth: 750, idealWidth: 850, maxWidth: 1100, minHeight: 650, idealHeight: 750, maxHeight: 900)
+        .frame(minWidth: 900, idealWidth: 1000, maxWidth: 1200, minHeight: 650, idealHeight: 750, maxHeight: 900)
         .task {
             await loadRunnerApplications()
         }
@@ -242,80 +241,58 @@ struct AddRunnerView: View {
         }
     }
     
-    private var instructionsView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let token = registrationToken, let app = selectedApplication {
-                Text("Follow these steps to set up your runner:")
-                    .foregroundColor(.secondary)
-                
-                GroupBox("Step 1: Download") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Download the runner for your platform:")
-                        
-                        CodeBlock(code: """
-# Create a folder
-mkdir actions-runner && cd actions-runner
-
-# Download the latest runner package
-curl -o actions-runner.tar.gz -L \(app.downloadURL)
-
-# Extract the installer
-tar xzf ./actions-runner.tar.gz
-""")
-                    }
-                }
-                
-                GroupBox("Step 2: Configure") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Configure the runner:")
-                        
-                        let configCommand = buildConfigCommand(token: token.token, app: app)
-                        CodeBlock(code: configCommand)
-                    }
-                }
-                
-                GroupBox("Step 3: Configure Local Runner") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("After running the configuration command above, you can register this runner with Ghast for easy management:")
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Runner Directory Path:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
-                            HStack {
-                                TextField("Path to actions-runner directory", text: $runnerPath)
-                                    .textFieldStyle(.roundedBorder)
-                                
-                                Button("Browse") {
-                                    selectRunnerPath()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                        }
-                        
-                        Button("Register with Ghast") {
-                            registerWithGhast()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(runnerPath.isEmpty || runnerName.isEmpty)
-                    }
-                }
-                
-                Text("After registration, you can start/stop the runner and view logs directly from Ghast.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top)
-            } else {
-                VStack {
+    private var creatingView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if isLoading {
+                VStack(spacing: 16) {
                     ProgressView()
-                    Text("Generating registration token...")
+                        .scaleEffect(1.2)
+                    
+                    Text("Creating your runner...")
+                        .font(.headline)
+                    
+                    Text("This may take a few moments while we download, extract, and configure your GitHub Actions runner.")
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundColor(.green)
+                    
+                    Text("Runner Created Successfully!")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Your GitHub Actions runner '\(runnerName)' has been automatically downloaded, configured, and is ready to use.")
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    GroupBox("What happens next?") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• Your runner is now available in the Local Runners view")
+                            Text("• You can start/stop the runner with a single click")
+                            Text("• View real-time logs directly in Ghast")
+                            Text("• The runner is automatically managed by Ghast")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+    }
+    
+    private var buttonTitle: String {
+        switch currentStep {
+        case .selectPlatform, .configure:
+            return "Next"
+        case .creating:
+            return "Done"
         }
     }
     
@@ -325,8 +302,8 @@ tar xzf ./actions-runner.tar.gz
             return selectedApplication == nil || isLoading
         case .configure:
             return runnerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading
-        case .instructions:
-            return false
+        case .creating:
+            return isLoading
         }
     }
     
@@ -354,25 +331,51 @@ tar xzf ./actions-runner.tar.gz
                 currentStep = .configure
             }
         case .configure:
-            isLoading = true
+            await createRunner()
+        case .creating:
+            break
+        }
+    }
+    
+    private func createRunner() async {
+        guard let selectedApp = selectedApplication else { return }
+        
+        isLoading = true
+        
+        do {
+            withAnimation {
+                currentStep = .creating
+            }
+            
             // Generate registration token
-            do {
-                let token = try await GitHubAPIService.shared.createRegistrationToken(for: repository)
-                await MainActor.run {
-                    self.registrationToken = token
-                    withAnimation {
-                        self.currentStep = .instructions
-                    }
-                    self.isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.isLoading = false
+            let token = try await GitHubAPIService.shared.createRegistrationToken(for: repository)
+            
+            // Extract labels
+            let labels = runnerLabels.components(separatedBy: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            
+            // Create the managed runner
+            _ = try await runnerService.createManagedRunner(
+                name: runnerName.trimmingCharacters(in: .whitespacesAndNewlines),
+                repository: repository,
+                application: selectedApp,
+                registrationToken: token.token,
+                labels: labels
+            )
+            
+            await MainActor.run {
+                self.isLoading = false
+            }
+            
+        } catch {
+            await MainActor.run {
+                self.errorMessage = error.localizedDescription
+                self.isLoading = false
+                withAnimation {
+                    self.currentStep = .configure
                 }
             }
-        case .instructions:
-            break
         }
     }
     
@@ -403,51 +406,6 @@ tar xzf ./actions-runner.tar.gz
         }
     }
     
-    private func buildConfigCommand(token: String, app: GitHubRunnerApplication) -> String {
-        let repoUrl = repository.htmlURL
-        let name = runnerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let labels = runnerLabels.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        var command = "./config.sh --url \(repoUrl) --token \(token)"
-        
-        if !name.isEmpty {
-            command += " --name \"\(name)\""
-        }
-        
-        if !labels.isEmpty {
-            command += " --labels \"\(labels)\""
-        }
-        
-        return command
-    }
-    
-    private func selectRunnerPath() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.title = "Select Runner Directory"
-        panel.message = "Choose the directory containing the GitHub Actions runner"
-        
-        if panel.runModal() == .OK {
-            if let url = panel.url {
-                runnerPath = url.path
-            }
-        }
-    }
-    
-    private func registerWithGhast() {
-        let labels = runnerLabels.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        
-        let localRunner = LocalRunner(
-            name: runnerName,
-            repository: repository.fullName,
-            path: runnerPath,
-            labels: labels
-        )
-        
-        runnerService.addLocalRunner(localRunner)
-    }
 }
 
 struct PlatformCard: View {
@@ -515,7 +473,7 @@ extension AddRunnerView.Step: RawRepresentable {
         switch self {
         case .selectPlatform: return 0
         case .configure: return 1
-        case .instructions: return 2
+        case .creating: return 2
         }
     }
     
@@ -523,7 +481,7 @@ extension AddRunnerView.Step: RawRepresentable {
         switch rawValue {
         case 0: self = .selectPlatform
         case 1: self = .configure
-        case 2: self = .instructions
+        case 2: self = .creating
         default: return nil
         }
     }
