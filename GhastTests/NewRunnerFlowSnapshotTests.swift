@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class NewRunnerFlowSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     private func createMockRepositories() -> [GitHubRepository] {
         let user = GitHubUser(id: 1, login: "testuser", avatarURL: "", name: "Test User", email: nil)
         return [

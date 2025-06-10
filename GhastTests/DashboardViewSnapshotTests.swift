@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class DashboardViewSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     private func createMockUser() -> GitHubUser {
         GitHubUser(
             id: 1,

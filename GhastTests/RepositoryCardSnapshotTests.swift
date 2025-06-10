@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class RepositoryCardSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     private func createTestRepository(
         name: String,
         description: String?,

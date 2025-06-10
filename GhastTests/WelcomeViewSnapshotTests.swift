@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class WelcomeViewSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     func testWelcomeViewDefault() async {
         let authService = GitHubAuthService()
         

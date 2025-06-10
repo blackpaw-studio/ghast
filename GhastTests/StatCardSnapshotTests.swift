@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class StatCardSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     func testStatCardDefault() async {
         let view = StatCard(
             title: "Total Runners",

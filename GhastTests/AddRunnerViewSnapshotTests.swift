@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class AddRunnerViewSnapshotTests: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     private func createTestRepository() -> GitHubRepository {
         GitHubRepository(
             id: 1,
