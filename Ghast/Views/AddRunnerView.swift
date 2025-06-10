@@ -48,8 +48,7 @@ struct AddRunnerView: View {
     }
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 // Progress indicator
                 HStack {
                     ForEach(Array(Step.allCases.enumerated()), id: \.offset) { index, step in
@@ -129,7 +128,6 @@ struct AddRunnerView: View {
                 }
                 .padding()
             }
-        }
         .frame(minWidth: 900, idealWidth: 1000, maxWidth: 1200, minHeight: 650, idealHeight: 750, maxHeight: 900)
         .task {
             await loadRunnerApplications()
