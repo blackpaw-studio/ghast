@@ -6,15 +6,12 @@ DerivedData/
 *.mode1v3
 *.mode2v3
 *.perspectivev3
-*.xcuserstate
-project.xcworkspace/
-xcuserdata/
+*/**/xcuserdata
+*.xcodeproj/**/*
+!*.xcodeproj/**/swiftpm/Package.resolved
 *.moved-aside
 *.xccheckout
 *.xcscmblueprint
-
-# XcodeGen - Ignore generated project files
-*.xcodeproj/
 
 # SPM
 .swiftpm/
