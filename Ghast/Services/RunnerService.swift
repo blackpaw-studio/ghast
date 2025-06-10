@@ -310,15 +310,27 @@ class RunnerService: ObservableObject {
         let wrapperScript = """
         #!/bin/bash
         
+        # Create a new process group for this runner and all its children
+        set -m  # Enable job control
+        
+        # Function to cleanup all processes in this group
+        cleanup() {
+            echo "Cleaning up runner process group..."
+            # Kill all processes in our process group
+            kill -TERM -$$ 2>/dev/null || true
+            sleep 1
+            kill -KILL -$$ 2>/dev/null || true
+            exit 0
+        }
+        
+        # Set up signal handlers for cleanup
+        trap cleanup TERM INT QUIT
+        
         # Function to check if parent process is still running
         check_parent() {
             if ! kill -0 \(parentPID) 2>/dev/null; then
                 echo "Parent process \(parentPID) no longer exists, terminating runner..."
-                # Kill the entire process group
-                kill -TERM -$$
-                sleep 2
-                kill -KILL -$$
-                exit 1
+                cleanup
             fi
         }
         
@@ -330,8 +342,12 @@ class RunnerService: ObservableObject {
             done
         ) &
         
-        # Start the actual runner
-        exec ./run.sh
+        # Start the actual runner in the background so we can handle signals
+        ./run.sh &
+        RUNNER_PID=$!
+        
+        # Wait for the runner to finish, but also handle signals
+        wait $RUNNER_PID
         """
         
         process.arguments = ["-c", wrapperScript]
@@ -415,7 +431,19 @@ class RunnerService: ObservableObject {
             print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
         }
         
-        process.terminate()
+        let pid = process.processIdentifier
+        
+        // First try graceful termination of the process group
+        kill(-pid, SIGTERM)
+        
+        // Give it a moment to terminate gracefully
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+            if process.isRunning {
+                print("🏃 Force killing runner process group (PGID: \(pid))")
+                kill(-pid, SIGKILL)
+                kill(pid, SIGKILL)
+            }
+        }
         
         if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
             localRunners[runnerIndex].status = .stopped
@@ -432,19 +460,25 @@ class RunnerService: ObservableObject {
                 logStreams[id]?.send("🏃 App terminating - stopping runner '\(runner.name)'...\n")
             }
             
-            // First try graceful termination
-            process.terminate()
+            let pid = process.processIdentifier
+            
+            // First try graceful termination of the process group
+            // Use negative PID to signal the entire process group
+            kill(-pid, SIGTERM)
             
             // Give it a moment to terminate gracefully
-            let deadline = Date().addingTimeInterval(2.0)
+            let deadline = Date().addingTimeInterval(3.0)
             while process.isRunning && Date() < deadline {
                 Thread.sleep(forTimeInterval: 0.1)
             }
             
-            // If still running, force kill
+            // If still running, force kill the entire process group
             if process.isRunning {
-                print("🏃 Force killing runner process (PID: \(process.processIdentifier))")
-                kill(process.processIdentifier, SIGKILL)
+                print("🏃 Force killing runner process group (PGID: \(pid))")
+                kill(-pid, SIGKILL)
+                
+                // Also kill the main process directly as backup
+                kill(pid, SIGKILL)
             }
             
             if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
