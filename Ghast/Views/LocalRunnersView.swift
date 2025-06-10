@@ -54,7 +54,7 @@ struct LocalRunnersView: View {
                     }
                 }
             }
-            .frame(minWidth: 250, idealWidth: 300, maxWidth: 400)
+            .frame(minWidth: 300, idealWidth: 350, maxWidth: 450)
             
             Divider()
             
