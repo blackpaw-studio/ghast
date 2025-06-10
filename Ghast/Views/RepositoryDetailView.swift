@@ -13,6 +13,12 @@ struct RepositoryDetailView: View {
         runnerService.localRunners.filter { $0.repository == repository.fullName }
     }
     
+    // Remote runners excluding those that have local counterparts
+    private var filteredRemoteRunners: [GitHubRunner] {
+        let localRunnerNames = Set(localRunners.map { $0.name })
+        return runners.filter { !localRunnerNames.contains($0.name) }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -52,7 +58,7 @@ struct RepositoryDetailView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if runners.isEmpty && localRunners.isEmpty {
+            } else if filteredRemoteRunners.isEmpty && localRunners.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "play.circle")
                         .font(.system(size: 48))
@@ -93,9 +99,9 @@ struct RepositoryDetailView: View {
                     }
                     
                     // Remote Runners Section
-                    if !runners.isEmpty {
+                    if !filteredRemoteRunners.isEmpty {
                         Section {
-                            ForEach(runners) { runner in
+                            ForEach(filteredRemoteRunners) { runner in
                                 RunnerRowView(runner: runner, repository: repository) {
                                     Task {
                                         await loadRunners()
@@ -107,7 +113,7 @@ struct RepositoryDetailView: View {
                                 Image(systemName: "cloud")
                                 Text("Remote Runners")
                                 Spacer()
-                                Text("\(runners.count)")
+                                Text("\(filteredRemoteRunners.count)")
                                     .foregroundColor(.secondary)
                             }
                         }
