@@ -47,6 +47,15 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .disabled(isSigningIn)
                 
+                // Debug button - remove in production
+                Button("DEBUG: Test OAuth Callback") {
+                    Task {
+                        await authService.debugTestOAuthCallback()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                
                 Text("Admin access to repositories required")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -59,10 +68,23 @@ struct WelcomeView: View {
     }
     
     private func signInWithGitHub() {
+        print("🔐 UI: signInWithGitHub() called - setting isSigningIn = true")
         isSigningIn = true
         Task {
-            await authService.signIn()
-            isSigningIn = false
+            defer { 
+                print("🔐 UI: signInWithGitHub() defer block - setting isSigningIn = false")
+                isSigningIn = false 
+            }
+            
+            do {
+                print("🔐 UI: About to call authService.signIn()")
+                await authService.signIn()
+                print("🔐 UI: authService.signIn() completed")
+                print("🔐 UI: Auth state - isAuthenticated: \(authService.isAuthenticated), isLoading: \(authService.isLoading)")
+            } catch {
+                print("🔐 UI: Sign in failed: \(error)")
+                // The defer block will still execute to reset isSigningIn
+            }
         }
     }
 }
