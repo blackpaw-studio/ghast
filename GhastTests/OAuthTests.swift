@@ -150,7 +150,3 @@ final class OAuthTests: XCTestCase {
         NotificationCenter.default.removeObserver(observer)
     }
 }
-
-extension Notification.Name {
-    static let oauthCallback = Notification.Name("oauthCallback")
-}

@@ -161,7 +161,3 @@ final class MockOAuthTests: XCTestCase {
         print("✅ Manual OAuth flow simulation completed successfully")
     }
 }
-
-extension Notification.Name {
-    static let oauthCallback = Notification.Name("oauthCallback")
-}
