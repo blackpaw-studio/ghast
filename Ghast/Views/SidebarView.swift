@@ -105,13 +105,14 @@ struct SidebarView: View {
                             AsyncImage(url: URL(string: user.avatarURL)) { image in
                                 image
                                     .resizable()
-                                    .aspectRatio(contentMode: .fill)
+                                    .scaledToFill()
                             } placeholder: {
                                 Circle()
                                     .fill(Color.secondary)
                             }
                             .frame(width: 24, height: 24)
                             .clipShape(Circle())
+                            .clipped()
                             
                             Text(user.login)
                                 .font(.caption)

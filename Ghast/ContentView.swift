@@ -19,6 +19,10 @@ struct ContentView: View {
                     .environmentObject(authService)
                     .onAppear {
                         print("🔐 UI: WelcomeView appeared")
+                        // Check for stored authentication when welcome view appears
+                        Task {
+                            await authService.checkStoredAuthentication()
+                        }
                     }
             }
         }

@@ -31,13 +31,14 @@ struct SettingsView: View {
                             AsyncImage(url: URL(string: user.avatarURL)) { image in
                                 image
                                     .resizable()
-                                    .aspectRatio(contentMode: .fill)
+                                    .scaledToFill()
                             } placeholder: {
                                 Circle()
                                     .fill(Color.secondary.opacity(0.3))
                             }
                             .frame(width: 48, height: 48)
                             .clipShape(Circle())
+                            .clipped()
                             
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(user.name ?? user.login)

@@ -15,7 +15,10 @@ class GitHubAuthService: NSObject, ObservableObject {
     @Published var isLoading = false
     @Published var isAuthenticating = false
     
-    private let keychain = Keychain(service: "net.evancoleman.ghast")
+    private var keychain: Keychain {
+        Keychain(service: "net.evancoleman.ghast")
+            .accessibility(.afterFirstUnlock)
+    }
     private let clientId = "Ov23liLVIllxzZoRYwAN"
     private let redirectURI = "ghast://auth/callback"
     
@@ -23,7 +26,24 @@ class GitHubAuthService: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        checkExistingAuth()
+        
+        // Clean up any existing keychain entries that might have wrong accessibility
+        Task {
+            await cleanupKeychain()
+        }
+    }
+    
+    private func cleanupKeychain() async {
+        do {
+            // Try to remove any existing tokens that might have incompatible settings
+            let legacyKeychain = Keychain(service: "net.evancoleman.ghast")
+            try? legacyKeychain.remove("github_token")
+            print("🔐 OAuth: Cleaned up existing keychain entries")
+        }
+    }
+    
+    func checkStoredAuthentication() async {
+        await checkExistingAuth()
     }
     
     func signIn() async {
@@ -55,7 +75,11 @@ class GitHubAuthService: NSObject, ObservableObject {
     func signOut() {
         isAuthenticated = false
         currentUser = nil
-        try? keychain.remove("github_token")
+        do {
+            try keychain.remove("github_token")
+        } catch {
+            print("🔐 Warning: Failed to remove token from keychain: \(error)")
+        }
     }
     
     // Test helper method - DO NOT USE IN PRODUCTION
@@ -84,21 +108,31 @@ class GitHubAuthService: NSObject, ObservableObject {
         print("🔐 DEBUG: Notification posted, OAuth flow should continue...")
     }
     
-    private func checkExistingAuth() {
-        if let token = try? keychain.get("github_token") {
-            Task {
-                do {
-                    let user = try await GitHubAPIService.shared.fetchCurrentUser(token: token)
-                    await MainActor.run {
-                        self.currentUser = user
-                        self.isAuthenticated = true
-                        GitHubAPIService.shared.setAccessToken(token)
-                    }
-                } catch {
-                    // Token is invalid, remove it
-                    try? keychain.remove("github_token")
-                }
+    private func checkExistingAuth() async {
+        do {
+            // Check if key exists before trying to get it
+            guard try keychain.contains("github_token") else {
+                print("🔐 OAuth: No stored token found")
+                return
             }
+            
+            guard let token = try keychain.get("github_token") else {
+                print("🔐 OAuth: Token exists but couldn't retrieve it")
+                return
+            }
+            
+            print("🔐 OAuth: Found stored token, validating...")
+            let user = try await GitHubAPIService.shared.fetchCurrentUser(token: token)
+            await MainActor.run {
+                self.currentUser = user
+                self.isAuthenticated = true
+                GitHubAPIService.shared.setAccessToken(token)
+            }
+            print("🔐 OAuth: Successfully restored authentication")
+        } catch {
+            print("🔐 OAuth: Error checking stored auth: \(error)")
+            // Token is invalid or keychain access failed, remove it silently
+            try? keychain.remove("github_token")
         }
     }
     
@@ -205,7 +239,12 @@ class GitHubAuthService: NSObject, ObservableObject {
             
             if let tokenResponse = try? JSONDecoder().decode(TokenResponse.self, from: data) {
                 print("🔐 OAuth: Successfully decoded token response")
-                try keychain.set(tokenResponse.accessToken, key: "github_token")
+                do {
+                    try keychain.set(tokenResponse.accessToken, key: "github_token")
+                } catch {
+                    print("🔐 Warning: Failed to save token to keychain: \(error)")
+                    // Continue anyway as we can still function without persistent storage
+                }
                 GitHubAPIService.shared.setAccessToken(tokenResponse.accessToken)
                 
                 do {
