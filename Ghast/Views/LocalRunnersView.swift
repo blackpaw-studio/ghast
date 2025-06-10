@@ -93,6 +93,11 @@ struct LocalRunnerRowView: View {
     @StateObject private var runnerService = RunnerService.shared
     @State private var showingDeleteAlert = false
     
+    // Find the current runner from the service to get live status updates
+    private var currentRunner: LocalRunner? {
+        runnerService.localRunners.first { $0.id == runner.id }
+    }
+    
     var body: some View {
         HStack(spacing: 12) {
             // Status indicator
@@ -107,9 +112,9 @@ struct LocalRunnerRowView: View {
                     
                     Spacer()
                     
-                    // Control buttons
+                    // Control buttons - use current runner for live updates
                     HStack(spacing: 4) {
-                        if runner.status == .running {
+                        if currentRunner?.status == .running {
                             Button("Stop") {
                                 runnerService.stopRunner(id: runner.id)
                             }
@@ -146,7 +151,7 @@ struct LocalRunnerRowView: View {
                     .foregroundColor(.secondary)
                 
                 HStack(spacing: 8) {
-                    Text(runner.status.displayName)
+                    Text(currentRunner?.status.displayName ?? runner.status.displayName)
                         .font(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -155,7 +160,7 @@ struct LocalRunnerRowView: View {
                         .clipShape(Capsule())
                     
                     if !runner.labels.isEmpty {
-                        ForEach(runner.labels.prefix(2), id: \.self) { label in
+                        ForEach(runner.labels.prefixStrings(2), id: \.self) { label in
                             Text(label)
                                 .font(.caption2)
                                 .padding(.horizontal, 4)
@@ -186,7 +191,7 @@ struct LocalRunnerRowView: View {
     }
     
     private var statusColor: Color {
-        switch runner.status {
+        switch currentRunner?.status ?? runner.status {
         case .stopped: return .gray
         case .running: return .green
         case .error: return .red
@@ -195,8 +200,8 @@ struct LocalRunnerRowView: View {
 }
 
 extension Array where Element == String {
-    fileprivate func prefix(_ maxLength: Int) -> [String] {
-        return Array(prefix(maxLength))
+    fileprivate func prefixStrings(_ maxLength: Int) -> [String] {
+        return Array(self.prefix(maxLength))
     }
 }
 

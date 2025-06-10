@@ -315,13 +315,17 @@ class RunnerService: ObservableObject {
         let logSubject = PassthroughSubject<String, Never>()
         logStreams[id] = logSubject
         
+        // Send initial log message
+        logSubject.send("🏃 Starting runner '\(runner.name)' at \(runner.path)\n")
+        
         // Monitor output
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty {
-                let output = String(data: data, encoding: .utf8) ?? ""
-                Task { @MainActor in
-                    logSubject.send(output)
+                if let output = String(data: data, encoding: .utf8), !output.isEmpty {
+                    Task { @MainActor in
+                        logSubject.send(output)
+                    }
                 }
             }
         }
@@ -329,16 +333,21 @@ class RunnerService: ObservableObject {
         errorPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty {
-                let output = String(data: data, encoding: .utf8) ?? ""
-                Task { @MainActor in
-                    logSubject.send("ERROR: \(output)")
+                if let output = String(data: data, encoding: .utf8), !output.isEmpty {
+                    Task { @MainActor in
+                        logSubject.send("[STDERR] \(output)")
+                    }
                 }
             }
         }
         
         // Setup termination handler
-        process.terminationHandler = { [weak self] _ in
+        process.terminationHandler = { [weak self] process in
             Task { @MainActor in
+                let exitCode = process.terminationStatus
+                self?.logStreams[id]?.send("🏃 Runner process terminated (exit code: \(exitCode))\n")
+                print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+                
                 self?.runningProcesses[id] = nil
                 self?.logStreams[id]?.send(completion: .finished)
                 self?.logStreams[id] = nil
@@ -354,10 +363,22 @@ class RunnerService: ObservableObject {
         runningProcesses[id] = process
         localRunners[runnerIndex].status = .running
         saveRunners()
+        
+        // Send process started confirmation
+        logSubject.send("🏃 Runner process started (PID: \(process.processIdentifier))\n")
+        print("🏃 Started runner '\(runner.name)' with PID: \(process.processIdentifier)")
     }
     
     func stopRunner(id: String) {
-        guard let process = runningProcesses[id] else { return }
+        guard let process = runningProcesses[id] else { 
+            print("🏃 No running process found for runner ID: \(id)")
+            return 
+        }
+        
+        if let runner = localRunners.first(where: { $0.id == id }) {
+            logStreams[id]?.send("🏃 Stopping runner '\(runner.name)'...\n")
+            print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
+        }
         
         process.terminate()
         
@@ -373,6 +394,25 @@ class RunnerService: ObservableObject {
     
     func isRunnerRunning(id: String) -> Bool {
         return runningProcesses[id]?.isRunning == true
+    }
+    
+    /// Verify and sync runner status with actual process state
+    func syncRunnerStatus(id: String) {
+        guard let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) else { return }
+        
+        let isActuallyRunning = runningProcesses[id]?.isRunning == true
+        let currentStatus = localRunners[runnerIndex].status
+        
+        // If status is out of sync, update it
+        if currentStatus == .running && !isActuallyRunning {
+            print("🏃 Syncing runner status: \(localRunners[runnerIndex].name) is not actually running")
+            localRunners[runnerIndex].status = .stopped
+            saveRunners()
+        } else if currentStatus == .stopped && isActuallyRunning {
+            print("🏃 Syncing runner status: \(localRunners[runnerIndex].name) is actually running")
+            localRunners[runnerIndex].status = .running
+            saveRunners()
+        }
     }
     
     // MARK: - Persistence
@@ -391,6 +431,16 @@ class RunnerService: ObservableObject {
         
         do {
             localRunners = try JSONDecoder().decode([LocalRunner].self, from: data)
+            
+            // Reset all runners to stopped status on app startup since processes don't persist
+            for index in localRunners.indices {
+                if localRunners[index].status == .running {
+                    localRunners[index].status = .stopped
+                }
+            }
+            saveRunners()
+            
+            print("🏃 Loaded \(localRunners.count) runners")
         } catch {
             print("Failed to load runners: \(error)")
         }
