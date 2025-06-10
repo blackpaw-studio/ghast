@@ -53,14 +53,27 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 - **Bundle ID**: `net.evancoleman.ghast`
 - **URL Scheme**: `ghast://auth/callback` (OAuth redirect)
 - **Single Instance**: `LSMultipleInstancesProhibited: true`
-- **Dependencies**: Alamofire (networking), KeychainAccess (secure storage)
+- **Dependencies**: Alamofire (networking), KeychainAccess (secure storage), SnapshotTesting (UI testing)
 - **Target**: macOS 15.0+, SwiftUI lifecycle
 
 ### Testing Strategy
-- Comprehensive OAuth flow testing without manual intervention
-- Mock GitHub API responses and URL callback simulation
-- Integration tests for NotificationCenter-based OAuth bridge
-- Runner service tests for local process management
+- **Unit Tests**: Comprehensive OAuth flow testing without manual intervention
+- **Integration Tests**: NotificationCenter-based OAuth bridge and runner service management
+- **Snapshot Tests**: UI layout verification using swift-snapshot-testing
+- **Mock Testing**: GitHub API responses and URL callback simulation
+
+#### Snapshot Testing
+UI components are tested with visual snapshots to prevent layout regressions:
+- **Split view widths**: Main sidebar (280-320-400px), Local runners (300-350-450px)
+- **Dialog sizes**: New runner flow (800-900-1200px), Add runner sheet (750-850-1100px)
+- **Layout states**: Empty states, populated lists, different window sizes
+
+**Recording new snapshots**:
+1. Set `isRecordingSnapshots = true` in `SnapshotTestHelpers.swift`
+2. Run tests: `xcodebuild test -project Ghast.xcodeproj -scheme Ghast`
+3. Reset flag to `false` and commit snapshots in `GhastTests/__Snapshots__/`
+
+**Running snapshot tests**: Always run after UI changes to verify layouts
 
 ### OAuth Debug Logging
 Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authentication issues. The flow includes detailed logging at each step: URL generation, callback reception, code extraction, token exchange, and user fetch.
@@ -80,3 +93,4 @@ Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authenticatio
 - **URL scheme testing**: Use `open "ghast://auth/callback?code=test"` to simulate OAuth callbacks
 - **Process debugging**: Runner logs stream to Console.app with detailed error messages
 - **SwiftUI compatibility**: App targets macOS-specific modifiers (avoid iOS-only APIs)
+- **UI testing**: Run snapshot tests after any UI changes to verify layout integrity
