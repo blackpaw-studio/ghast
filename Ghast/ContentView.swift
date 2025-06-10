@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct ContentView: View {
     @StateObject private var authService = GitHubAuthService()
@@ -60,21 +61,113 @@ struct MainAppView: View {
                     }
                 } label: {
                     if let user = authService.currentUser {
-                        AsyncImage(url: URL(string: user.avatarURL)) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                        } placeholder: {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                        }
-                        .frame(width: 24, height: 24)
-                        .clipShape(Circle())
+                        ToolbarProfileImage(
+                            url: URL(string: user.avatarURL),
+                            fallback: user.login.prefix(1).uppercased()
+                        )
                     } else {
-                        Image(systemName: "person.circle")
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 18, height: 18)
+                            .overlay(
+                                Text("?")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.primary)
+                            )
                     }
                 }
             }
+        }
+    }
+}
+
+struct ToolbarProfileImage: View {
+    let url: URL?
+    let fallback: String
+    
+    @State private var image: Image?
+    @State private var isLoading = false
+    
+    private static var imageCache: [String: Image] = [:]
+    
+    var body: some View {
+        Group {
+            if let image = image {
+                image
+            } else {
+                Circle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 22, height: 22)
+                    .overlay(
+                        Text(fallback)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                    )
+            }
+        }
+        .task {
+            await loadImage()
+        }
+    }
+    
+    private func loadImage() async {
+        guard let url = url, !isLoading else { return }
+        
+        let urlString = url.absoluteString
+        
+        // Check cache first
+        if let cachedImage = Self.imageCache[urlString] {
+            await MainActor.run {
+                self.image = cachedImage
+            }
+            return
+        }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            
+            #if os(macOS)
+            if let originalImage = NSImage(data: data) {
+                // Resize to exactly 22x22 pixels
+                let size = NSSize(width: 22, height: 22)
+                let resizedImage = NSImage(size: size)
+                
+                resizedImage.lockFocus()
+                originalImage.draw(in: NSRect(origin: .zero, size: size))
+                resizedImage.unlockFocus()
+                
+                // Create circular clipped version
+                let circularImage = NSImage(size: size)
+                circularImage.lockFocus()
+                
+                let path = NSBezierPath(ovalIn: NSRect(origin: .zero, size: size))
+                path.addClip()
+                resizedImage.draw(in: NSRect(origin: .zero, size: size))
+                
+                circularImage.unlockFocus()
+                
+                let swiftUIImage = Image(nsImage: circularImage)
+                await MainActor.run {
+                    Self.imageCache[urlString] = swiftUIImage
+                    self.image = swiftUIImage
+                }
+            }
+            #else
+            if let uiImage = UIImage(data: data) {
+                let swiftUIImage = Image(uiImage: uiImage)
+                await MainActor.run {
+                    Self.imageCache[urlString] = swiftUIImage
+                    self.image = swiftUIImage
+                }
+            }
+            #endif
+        } catch {
+            // Silently fail, fallback text will show
         }
     }
 }
