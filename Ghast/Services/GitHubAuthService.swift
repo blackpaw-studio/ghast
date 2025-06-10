@@ -2,12 +2,18 @@ import Foundation
 import SwiftUI
 import AuthenticationServices
 import KeychainAccess
+import Alamofire
 
 @MainActor
 class GitHubAuthService: NSObject, ObservableObject {
-    @Published var isAuthenticated = false
+    @Published var isAuthenticated = false {
+        didSet {
+            print("🔐 OAuth: isAuthenticated changed to \(isAuthenticated)")
+        }
+    }
     @Published var currentUser: GitHubUser?
     @Published var isLoading = false
+    @Published var isAuthenticating = false
     
     private let keychain = Keychain(service: "net.evancoleman.ghast")
     private let clientId = "Ov23liLVIllxzZoRYwAN"
@@ -22,15 +28,60 @@ class GitHubAuthService: NSObject, ObservableObject {
     
     func signIn() async {
         isLoading = true
-        defer { isLoading = false }
+        isAuthenticating = true
+        defer { 
+            isLoading = false
+            isAuthenticating = false
+        }
         
-        await performOAuthFlow()
+        // Add timeout to prevent hanging indefinitely
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await self.performOAuthFlow()
+            }
+            
+            group.addTask {
+                // 60 second timeout for OAuth flow
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                print("🔐 OAuth: Timeout reached, cancelling OAuth flow")
+            }
+            
+            // Wait for first task to complete (either OAuth or timeout)
+            await group.next()
+            group.cancelAll()
+        }
     }
     
     func signOut() {
         isAuthenticated = false
         currentUser = nil
         try? keychain.remove("github_token")
+    }
+    
+    // Test helper method - DO NOT USE IN PRODUCTION
+    func simulateSuccessfulAuth(user: GitHubUser) {
+        self.currentUser = user
+        self.isAuthenticated = true
+        self.isLoading = false
+        self.isAuthenticating = false
+    }
+    
+    // Debug method to test OAuth callback without browser
+    func debugTestOAuthCallback() async {
+        print("🔐 DEBUG: Starting debug OAuth test")
+        
+        isLoading = true
+        isAuthenticating = true
+        
+        // Simulate the callback URL that GitHub would send
+        let callbackURL = URL(string: "ghast://auth/callback?code=debug_test_code&state=debug_state")!
+        
+        print("🔐 DEBUG: Posting notification for URL: \(callbackURL.absoluteString)")
+        
+        // Post the notification just like the real callback would
+        NotificationCenter.default.post(name: .oauthCallback, object: callbackURL)
+        
+        print("🔐 DEBUG: Notification posted, OAuth flow should continue...")
     }
     
     private func checkExistingAuth() {
@@ -157,25 +208,47 @@ class GitHubAuthService: NSObject, ObservableObject {
                 try keychain.set(tokenResponse.accessToken, key: "github_token")
                 GitHubAPIService.shared.setAccessToken(tokenResponse.accessToken)
                 
-                print("🔐 OAuth: Fetching user info")
-                // Fetch user info
-                let user = try await GitHubAPIService.shared.fetchCurrentUser()
-                await MainActor.run {
-                    print("🔐 OAuth: Setting user and authentication state")
-                    self.currentUser = user
-                    self.isAuthenticated = true
-                    self.isAuthenticating = false
+                do {
+                    print("🔐 OAuth: Fetching user info")
+                    let user = try await GitHubAPIService.shared.fetchCurrentUser()
+                    
+                    // Atomic state update on MainActor
+                    await MainActor.run {
+                        print("🔐 OAuth: Setting user and authentication state")
+                        self.currentUser = user
+                        self.isAuthenticated = true
+                        self.isAuthenticating = false
+                    }
+                    print("🔐 OAuth: Authentication completed successfully!")
+                } catch {
+                    print("🔐 OAuth: ERROR - User fetch failed: \(error)")
+                    print("🔐 OAuth: ERROR - Error type: \(type(of: error))")
+                    if let afError = error as? AFError {
+                        print("🔐 OAuth: ERROR - AFError details: \(afError.localizedDescription)")
+                        if case .responseValidationFailed(let reason) = afError {
+                            print("🔐 OAuth: ERROR - Validation failed reason: \(reason)")
+                        }
+                    }
+                    
+                    // Clean up on user fetch failure
+                    await MainActor.run {
+                        self.isAuthenticated = false
+                        self.isAuthenticating = false
+                        self.currentUser = nil
+                    }
+                    try? keychain.remove("github_token")
                 }
-                print("🔐 OAuth: Authentication completed successfully!")
             } else {
                 print("🔐 OAuth: ERROR - Failed to decode token response")
                 await MainActor.run {
+                    self.isAuthenticated = false
                     self.isAuthenticating = false
                 }
             }
         } catch {
             print("🔐 OAuth: Token exchange error: \(error)")
             await MainActor.run {
+                self.isAuthenticated = false
                 self.isAuthenticating = false
             }
         }
