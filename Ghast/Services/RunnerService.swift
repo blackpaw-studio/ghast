@@ -13,8 +13,9 @@ class RunnerService: ObservableObject {
     
     /// Base directory for all managed runners
     private var runnersBaseDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("Ghast").appendingPathComponent("Runners")
+        // Use user's home directory instead of sandboxed Application Support
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        return homeDir.appendingPathComponent(".ghast").appendingPathComponent("runners")
     }
     
     private init() {
