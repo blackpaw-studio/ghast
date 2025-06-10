@@ -19,7 +19,7 @@ class GitHubAPIService {
         }
         return [
             "Authorization": "Bearer \(token)",
-            "Accept": "application/vnd.github.v3+json",
+            "Accept": "application/json",
             "X-GitHub-Api-Version": "2022-11-28"
         ]
     }
@@ -32,7 +32,7 @@ class GitHubAPIService {
         if let token = token {
             requestHeaders = [
                 "Authorization": "Bearer \(token)",
-                "Accept": "application/vnd.github.v3+json"
+                "Accept": "application/json"
             ]
         } else {
             requestHeaders = headers
@@ -40,7 +40,8 @@ class GitHubAPIService {
         
         return try await withCheckedThrowingContinuation { continuation in
             AF.request(url, headers: requestHeaders)
-                .validate()
+                .validate(statusCode: 200..<300)
+                .validate(contentType: ["application/json", "application/vnd.github.v3+json"])
                 .responseDecodable(of: GitHubUser.self) { response in
                     switch response.result {
                     case .success(let user):
@@ -162,8 +163,8 @@ class GitHubAPIService {
         }
     }
     
-    func fetchRunnerApplications() async throws -> [GitHubRunnerApplication] {
-        let url = "\(baseURL)/actions/runners/downloads"
+    func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication] {
+        let url = "\(baseURL)/repos/\(repository.fullName)/actions/runners/downloads"
         
         return try await withCheckedThrowingContinuation { continuation in
             AF.request(url, headers: headers)
