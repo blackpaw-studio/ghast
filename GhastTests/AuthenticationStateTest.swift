@@ -22,13 +22,9 @@ final class AuthenticationStateTest: XCTestCase {
         let mockUser = GitHubUser(
             id: 123456,
             login: "testuser",
-            name: "Test User",
-            email: "test@example.com",
             avatarURL: "https://github.com/images/error/octocat_happy.gif",
-            htmlURL: "https://github.com/testuser",
-            publicRepos: 5,
-            followers: 10,
-            following: 15
+            name: "Test User",
+            email: "test@example.com"
         )
         
         // Simulate successful authentication

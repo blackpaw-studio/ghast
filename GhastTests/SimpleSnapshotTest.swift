@@ -6,11 +6,6 @@ import SnapshotTesting
 @MainActor
 final class SimpleSnapshotTest: XCTestCase {
     
-    override func setUp() {
-        super.setUp()
-        isRecording = false
-    }
-    
     func testStatCard() async {
         let view = StatCard(
             title: "Total Runners",
@@ -18,8 +13,7 @@ final class SimpleSnapshotTest: XCTestCase {
             icon: "play.circle.fill",
             color: .blue
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
 }

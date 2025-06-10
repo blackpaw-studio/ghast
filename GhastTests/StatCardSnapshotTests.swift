@@ -13,9 +13,8 @@ final class StatCardSnapshotTests: XCTestCase {
             icon: "play.circle.fill",
             color: .blue
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardWithLongTitle() async {
@@ -25,9 +24,8 @@ final class StatCardSnapshotTests: XCTestCase {
             icon: "text.alignleft",
             color: .purple
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardWithLargeValue() async {
@@ -37,9 +35,8 @@ final class StatCardSnapshotTests: XCTestCase {
             icon: "checkmark.circle.fill",
             color: .green
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardZero() async {
@@ -49,9 +46,8 @@ final class StatCardSnapshotTests: XCTestCase {
             icon: "exclamationmark.circle.fill",
             color: .orange
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardLoading() async {
@@ -62,9 +58,8 @@ final class StatCardSnapshotTests: XCTestCase {
             color: .purple,
             isLoading: true
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardClickable() async {
@@ -77,9 +72,8 @@ final class StatCardSnapshotTests: XCTestCase {
                 // Action handler
             }
         )
-        .frame(width: 200, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardDarkMode() async {
@@ -89,10 +83,9 @@ final class StatCardSnapshotTests: XCTestCase {
             icon: "play.circle.fill",
             color: .blue
         )
-        .frame(width: 200, height: 120)
         .preferredColorScheme(.dark)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 120)
     }
     
     func testStatCardsGrid() async {
@@ -102,8 +95,7 @@ final class StatCardSnapshotTests: XCTestCase {
             StatCard(title: "Busy", value: "3", icon: "exclamationmark.circle.fill", color: .orange)
             StatCard(title: "Repos", value: "25", icon: "folder.fill", color: .purple)
         }
-        .frame(width: 900, height: 120)
         
-        assertSnapshot(of: cards, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: cards, width: 900, height: 120)
     }
 }

@@ -25,7 +25,7 @@ final class AddRunnerViewSnapshotTests: XCTestCase {
             // Completion handler
         }
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
     }
     
     // MARK: - Platform Card Tests
@@ -44,9 +44,8 @@ final class AddRunnerViewSnapshotTests: XCTestCase {
         ) {
             // Action handler
         }
-        .frame(width: 200, height: 150)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 150)
     }
     
     func testPlatformCardMacOSUnselected() async {
@@ -63,9 +62,8 @@ final class AddRunnerViewSnapshotTests: XCTestCase {
         ) {
             // Action handler
         }
-        .frame(width: 200, height: 150)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 200, height: 150)
     }
     
     func testPlatformSelectionGrid() async {
@@ -97,8 +95,7 @@ final class AddRunnerViewSnapshotTests: XCTestCase {
                 }
             }
         }
-        .frame(width: 450, height: 200)
         
-        assertSnapshot(of: grid, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: grid, width: 450, height: 200)
     }
 }

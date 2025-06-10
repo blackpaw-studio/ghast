@@ -50,9 +50,8 @@ final class DashboardViewSnapshotTests: XCTestCase {
         let view = DashboardView()
             .environmentObject(authService)
             .environmentObject(appState)
-            .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testDashboardEmpty() async {
@@ -65,9 +64,8 @@ final class DashboardViewSnapshotTests: XCTestCase {
         let view = DashboardView()
             .environmentObject(authService)
             .environmentObject(appState)
-            .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testDashboardLoading() async {
@@ -80,9 +78,8 @@ final class DashboardViewSnapshotTests: XCTestCase {
         let view = DashboardView()
             .environmentObject(authService)
             .environmentObject(appState)
-            .frame(width: 1200, height: 800)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testDashboardSmallWindow() async {
@@ -95,9 +92,8 @@ final class DashboardViewSnapshotTests: XCTestCase {
         let view = DashboardView()
             .environmentObject(authService)
             .environmentObject(appState)
-            .frame(width: 800, height: 600)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
     }
     
     func testDashboardLargeWindow() async {
@@ -110,8 +106,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         let view = DashboardView()
             .environmentObject(authService)
             .environmentObject(appState)
-            .frame(width: 1600, height: 1000)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
     }
 }

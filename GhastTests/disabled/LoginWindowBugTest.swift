@@ -2,6 +2,7 @@ import XCTest
 @testable import Ghast
 import SwiftUI
 
+@MainActor
 final class LoginWindowBugTest: XCTestCase {
     var authService: GitHubAuthService!
     

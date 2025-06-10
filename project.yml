@@ -57,6 +57,8 @@ targets:
       TEST_HOST: $(BUNDLE_LOADER)
       GENERATE_INFOPLIST_FILE: YES
       PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast.tests
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: 52M9C6892K
     
 packages:
   KeychainAccess:

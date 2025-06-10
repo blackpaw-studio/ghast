@@ -1,6 +1,7 @@
 import XCTest
 @testable import Ghast
 
+@MainActor
 final class IntegrationTests: XCTestCase {
     
     func testCompleteOAuthIntegration() async {

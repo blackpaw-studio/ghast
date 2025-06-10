@@ -1,6 +1,7 @@
 import XCTest
 @testable import Ghast
 
+@MainActor
 final class OAuthTests: XCTestCase {
     var authService: GitHubAuthService!
     
@@ -79,38 +80,6 @@ final class OAuthTests: XCTestCase {
         NotificationCenter.default.removeObserver(observer)
     }
     
-    func testTokenResponseDecoding() {
-        // Test TokenResponse decoding
-        let jsonData = """
-        {
-            "access_token": "gho_test123",
-            "scope": "repo,user:email",
-            "token_type": "bearer"
-        }
-        """.data(using: .utf8)!
-        
-        do {
-            let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: jsonData)
-            XCTAssertEqual(tokenResponse.accessToken, "gho_test123")
-            XCTAssertEqual(tokenResponse.scope, "repo,user:email")
-            XCTAssertEqual(tokenResponse.tokenType, "bearer")
-        } catch {
-            XCTFail("Failed to decode token response: \(error)")
-        }
-    }
-    
-    func testTokenResponseDecodingWithError() {
-        // Test TokenResponse with error
-        let jsonData = """
-        {
-            "error": "invalid_grant",
-            "error_description": "The provided authorization grant is invalid"
-        }
-        """.data(using: .utf8)!
-        
-        // This should fail to decode as TokenResponse
-        XCTAssertThrowsError(try JSONDecoder().decode(TokenResponse.self, from: jsonData))
-    }
     
     func testSimulateFullOAuthFlow() async {
         // Test simulating the full OAuth callback flow

@@ -35,9 +35,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         let view = DashboardRepositoryCard(repository: repository) {
             // Action handler
         }
-        .frame(width: 300, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 300, height: 120)
     }
     
     func testDashboardRepositoryCardPrivate() async {
@@ -50,9 +49,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         let view = DashboardRepositoryCard(repository: repository) {
             // Action handler
         }
-        .frame(width: 300, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 300, height: 120)
     }
     
     func testDashboardRepositoryCardNoDescription() async {
@@ -65,9 +63,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         let view = DashboardRepositoryCard(repository: repository) {
             // Action handler
         }
-        .frame(width: 300, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 300, height: 120)
     }
     
     func testDashboardRepositoryCardLongName() async {
@@ -80,9 +77,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         let view = DashboardRepositoryCard(repository: repository) {
             // Action handler
         }
-        .frame(width: 300, height: 120)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 300, height: 120)
     }
     
     func testDashboardRepositoryCardDarkMode() async {
@@ -95,10 +91,9 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         let view = DashboardRepositoryCard(repository: repository) {
             // Action handler
         }
-        .frame(width: 300, height: 120)
         .preferredColorScheme(.dark)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 300, height: 120)
     }
     
     // MARK: - New Runner Repository Card Tests
@@ -116,9 +111,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         ) {
             // Action handler
         }
-        .frame(width: 400, height: 100)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 400, height: 100)
     }
     
     func testNewRunnerRepositoryCardUnselected() async {
@@ -134,9 +128,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         ) {
             // Action handler
         }
-        .frame(width: 400, height: 100)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 400, height: 100)
     }
     
     func testNewRunnerRepositoryCardLongDescription() async {
@@ -152,9 +145,8 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         ) {
             // Action handler
         }
-        .frame(width: 400, height: 100)
         
-        assertSnapshot(of: view, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 400, height: 100)
     }
     
     // MARK: - Grid Layout Tests
@@ -176,8 +168,7 @@ final class RepositoryCardSnapshotTests: XCTestCase {
                 }
             }
         }
-        .frame(width: 650, height: 250)
         
-        assertSnapshot(of: grid, as: Snapshotting.image)
+        SnapshotTestHelpers.assertSnapshot(of: grid, width: 650, height: 250)
     }
 }
