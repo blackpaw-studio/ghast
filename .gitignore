@@ -13,6 +13,9 @@ xcuserdata/
 *.xccheckout
 *.xcscmblueprint
 
+# XcodeGen - Ignore generated project files
+*.xcodeproj/
+
 # SPM
 .swiftpm/
 Packages/
