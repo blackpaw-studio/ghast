@@ -19,7 +19,7 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 # Or use the MCP XcodeBuildMCP tools for better integration
 ```
 
-**Important**: Never edit `Ghast.xcodeproj` directly. All project configuration is in `project.yml`.
+**Important**: The `Ghast.xcodeproj` is generated and git-ignored. All project configuration is in `project.yml`. Run `xcodegen` to regenerate the project after pulling changes.
 
 ## Architecture Overview
 
