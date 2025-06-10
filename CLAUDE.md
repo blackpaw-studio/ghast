@@ -75,6 +75,8 @@ Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authenticatio
 ## Development Notes
 
 - **Git commits**: Always include emoji prefixes and Claude Code attribution in commit messages
+- **Commit frequency**: Make logical, atomic commits frequently during development sessions - don't wait until the end to commit all changes at once
+- **Commit organization**: Group related changes together (e.g., API fixes, UI improvements, new features) rather than mixing unrelated changes
 - **URL scheme testing**: Use `open "ghast://auth/callback?code=test"` to simulate OAuth callbacks
 - **Process debugging**: Runner logs stream to Console.app with detailed error messages
 - **SwiftUI compatibility**: App targets macOS-specific modifiers (avoid iOS-only APIs)
