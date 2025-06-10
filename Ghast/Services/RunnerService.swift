@@ -303,7 +303,38 @@ class RunnerService: ObservableObject {
         let process = Process()
         process.currentDirectoryPath = runner.path
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["./run.sh"]
+        
+        // Create a wrapper script that monitors the parent process and kills itself if parent dies
+        // This ensures the runner process doesn't outlive Ghast
+        let parentPID = ProcessInfo.processInfo.processIdentifier
+        let wrapperScript = """
+        #!/bin/bash
+        
+        # Function to check if parent process is still running
+        check_parent() {
+            if ! kill -0 \(parentPID) 2>/dev/null; then
+                echo "Parent process \(parentPID) no longer exists, terminating runner..."
+                # Kill the entire process group
+                kill -TERM -$$
+                sleep 2
+                kill -KILL -$$
+                exit 1
+            fi
+        }
+        
+        # Start background monitoring of parent process
+        (
+            while true; do
+                sleep 5
+                check_parent
+            done
+        ) &
+        
+        # Start the actual runner
+        exec ./run.sh
+        """
+        
+        process.arguments = ["-c", wrapperScript]
         
         // Setup output pipes
         let outputPipe = Pipe()
@@ -342,11 +373,15 @@ class RunnerService: ObservableObject {
         }
         
         // Setup termination handler
-        process.terminationHandler = { [weak self] process in
+        process.terminationHandler = { [weak self] terminatedProcess in
             Task { @MainActor in
-                let exitCode = process.terminationStatus
+                let exitCode = terminatedProcess.terminationStatus
                 self?.logStreams[id]?.send("🏃 Runner process terminated (exit code: \(exitCode))\n")
                 print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+                
+                // Clean up file handles to prevent leaks
+                terminatedProcess.standardOutput = nil
+                terminatedProcess.standardError = nil
                 
                 self?.runningProcesses[id] = nil
                 self?.logStreams[id]?.send(completion: .finished)
@@ -386,6 +421,50 @@ class RunnerService: ObservableObject {
             localRunners[runnerIndex].status = .stopped
             saveRunners()
         }
+    }
+    
+    func stopAllRunners() {
+        print("🏃 Stopping all running runners due to app termination...")
+        
+        for (id, process) in runningProcesses {
+            if let runner = localRunners.first(where: { $0.id == id }) {
+                print("🏃 Terminating runner '\(runner.name)' (PID: \(process.processIdentifier))")
+                logStreams[id]?.send("🏃 App terminating - stopping runner '\(runner.name)'...\n")
+            }
+            
+            // First try graceful termination
+            process.terminate()
+            
+            // Give it a moment to terminate gracefully
+            let deadline = Date().addingTimeInterval(2.0)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            
+            // If still running, force kill
+            if process.isRunning {
+                print("🏃 Force killing runner process (PID: \(process.processIdentifier))")
+                kill(process.processIdentifier, SIGKILL)
+            }
+            
+            if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
+                localRunners[runnerIndex].status = .stopped
+            }
+        }
+        
+        // Clear all running processes
+        runningProcesses.removeAll()
+        
+        // Close all log streams
+        for (_, stream) in logStreams {
+            stream.send(completion: .finished)
+        }
+        logStreams.removeAll()
+        
+        // Save updated runner states
+        saveRunners()
+        
+        print("🏃 All runners stopped")
     }
     
     func getLogStream(for runnerId: String) -> AnyPublisher<String, Never>? {

@@ -89,6 +89,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
     
+    func applicationWillTerminate(_ notification: Notification) {
+        // Stop all running runners when app terminates
+        Task { @MainActor in
+            RunnerService.shared.stopAllRunners()
+        }
+    }
+    
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         return false
     }
