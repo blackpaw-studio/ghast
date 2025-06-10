@@ -17,8 +17,9 @@ struct GhastApp: App {
                     NotificationCenter.default.post(name: .oauthCallback, object: url)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
+        .windowStyle(.titleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 1000, height: 700)
         .handlesExternalEvents(matching: Set(arrayLiteral: "ghast"))
         .commands {
             CommandGroup(replacing: .newItem) { }

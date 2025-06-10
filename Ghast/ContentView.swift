@@ -10,12 +10,21 @@ struct ContentView: View {
                 MainAppView()
                     .environmentObject(authService)
                     .environmentObject(appState)
+                    .onAppear {
+                        print("🔐 UI: MainAppView appeared")
+                    }
             } else {
                 WelcomeView()
                     .environmentObject(authService)
+                    .onAppear {
+                        print("🔐 UI: WelcomeView appeared")
+                    }
             }
         }
-        .frame(minWidth: 800, minHeight: 600)
+        .frame(minWidth: 750, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
+        .onChange(of: authService.isAuthenticated) { newValue in
+            print("🔐 UI: isAuthenticated changed to \(newValue)")
+        }
     }
 }
 
@@ -38,6 +47,7 @@ struct MainAppView: View {
                 SettingsView()
             }
         }
+        .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 350)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
