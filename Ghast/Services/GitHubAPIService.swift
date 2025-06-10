@@ -1,7 +1,7 @@
 import Foundation
 import Alamofire
 
-class GitHubAPIService {
+class GitHubAPIService: GitHubAPIServiceProtocol {
     static let shared = GitHubAPIService()
     
     private var accessToken: String?

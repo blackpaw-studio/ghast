@@ -5,7 +5,7 @@ import KeychainAccess
 import Alamofire
 
 @MainActor
-class GitHubAuthService: NSObject, ObservableObject {
+class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
     @Published var isAuthenticated = false {
         didSet {
             print("🔐 OAuth: isAuthenticated changed to \(isAuthenticated)")

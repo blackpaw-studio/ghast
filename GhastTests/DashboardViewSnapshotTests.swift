@@ -41,71 +41,96 @@ final class DashboardViewSnapshotTests: XCTestCase {
     }
     
     func testDashboardWithRepositories() async {
-        let authService = GitHubAuthService()
-        authService.currentUser = createMockUser()
+        let authService = MockGitHubAuthService()
+        authService.setAuthenticatedState(user: createMockUser())
         
         let appState = AppState()
         appState.repositories = createMockRepositories()
         
+        let mockAPIService = MockGitHubAPIService()
+        // Set empty runners to avoid API calls
+        mockAPIService.mockRunners = []
+        
         let view = DashboardView()
-            .environmentObject(authService)
+            .environmentObject(authService as GitHubAuthService)
             .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testDashboardEmpty() async {
-        let authService = GitHubAuthService()
-        authService.currentUser = createMockUser()
+        let authService = MockGitHubAuthService()
+        authService.setAuthenticatedState(user: createMockUser())
         
         let appState = AppState()
         appState.repositories = []
         
+        let mockAPIService = MockGitHubAPIService()
+        // Set empty runners to avoid API calls
+        mockAPIService.mockRunners = []
+        
         let view = DashboardView()
-            .environmentObject(authService)
+            .environmentObject(authService as GitHubAuthService)
             .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testDashboardLoading() async {
-        let authService = GitHubAuthService()
-        authService.currentUser = createMockUser()
+        let authService = MockGitHubAuthService()
+        authService.setAuthenticatedState(user: createMockUser())
         
         let appState = AppState()
         appState.isLoadingRepositories = true
         
+        let mockAPIService = MockGitHubAPIService()
+        // Set empty runners to avoid API calls
+        mockAPIService.mockRunners = []
+        
         let view = DashboardView()
-            .environmentObject(authService)
+            .environmentObject(authService as GitHubAuthService)
             .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testDashboardSmallWindow() async {
-        let authService = GitHubAuthService()
-        authService.currentUser = createMockUser()
+        let authService = MockGitHubAuthService()
+        authService.setAuthenticatedState(user: createMockUser())
         
         let appState = AppState()
         appState.repositories = createMockRepositories()
         
+        let mockAPIService = MockGitHubAPIService()
+        // Set empty runners to avoid API calls
+        mockAPIService.mockRunners = []
+        
         let view = DashboardView()
-            .environmentObject(authService)
+            .environmentObject(authService as GitHubAuthService)
             .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
     }
     
     func testDashboardLargeWindow() async {
-        let authService = GitHubAuthService()
-        authService.currentUser = createMockUser()
+        let authService = MockGitHubAuthService()
+        authService.setAuthenticatedState(user: createMockUser())
         
         let appState = AppState()
         appState.repositories = createMockRepositories()
         
+        let mockAPIService = MockGitHubAPIService()
+        // Set empty runners to avoid API calls
+        mockAPIService.mockRunners = []
+        
         let view = DashboardView()
-            .environmentObject(authService)
+            .environmentObject(authService as GitHubAuthService)
             .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
     }
