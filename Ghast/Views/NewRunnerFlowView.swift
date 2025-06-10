@@ -109,7 +109,7 @@ struct NewRunnerFlowView: View {
             }
             .padding()
         }
-        .frame(minWidth: 700, idealWidth: 800, maxWidth: 1000, minHeight: 600, idealHeight: 700, maxHeight: 900)
+        .frame(minWidth: 800, idealWidth: 900, maxWidth: 1200, minHeight: 650, idealHeight: 750, maxHeight: 950)
         .sheet(isPresented: $showingAddRunner) {
             if let repository = selectedRepository {
                 AddRunnerView(repository: repository) {

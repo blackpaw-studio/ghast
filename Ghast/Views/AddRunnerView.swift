@@ -113,7 +113,7 @@ struct AddRunnerView: View {
                 .padding()
             }
         }
-        .frame(minWidth: 600, idealWidth: 700, maxWidth: 900, minHeight: 600, idealHeight: 700, maxHeight: 800)
+        .frame(minWidth: 750, idealWidth: 850, maxWidth: 1100, minHeight: 650, idealHeight: 750, maxHeight: 900)
         .task {
             await loadRunnerApplications()
         }
