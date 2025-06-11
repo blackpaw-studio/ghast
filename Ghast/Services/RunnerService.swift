@@ -322,21 +322,11 @@ class RunnerService: ObservableObject {
         let wrapperScript = """
         #!/bin/bash
         
-        # Remove set -e to prevent early exit and add more debugging
-        echo "🏃 WRAPPER START: Wrapper script starting for runner '\(runner.name)'"
-        echo "🏃 TARGET DIR: \(runner.path)"
-        echo "🏃 PARENT PID: \(parentPID)"
-        echo "🏃 CURRENT DIR: $(pwd)"
-        
         # Change to the runner directory
         cd "\(runner.path)" 2>&1 || {
             echo "❌ ERROR: Cannot change to directory \(runner.path)"
             exit 1
         }
-        
-        echo "🏃 CHANGED TO: $(pwd)"
-        echo "🏃 LISTING DIRECTORY:"
-        ls -la | head -10
         
         # Verify run.sh exists and is executable
         if [ ! -f "./run.sh" ]; then
@@ -344,56 +334,40 @@ class RunnerService: ObservableObject {
             exit 127
         fi
         
-        echo "🏃 FOUND RUN.SH:"
-        ls -la ./run.sh
-        
         if [ ! -x "./run.sh" ]; then
-            echo "🔧 MAKING EXECUTABLE: ./run.sh"
+            echo "🔧 Making ./run.sh executable"
             chmod +x ./run.sh
         fi
         
-        echo "✅ READY: run.sh is executable"
-        
-        echo "🚀 STARTING: About to execute ./run.sh"
-        
-        # Test if we can execute the runner at all
-        echo "🧪 TESTING: Quick test of runner executable"
-        if timeout 2s ./run.sh --version 2>&1; then
-            echo "✅ RUNNER VERSION: Command worked"
-        else
-            echo "⚠️ RUNNER VERSION: Command failed or timed out"
-        fi
-        
-        echo "🔄 STARTING RUNNER LOOP"
+        echo "🏃 Starting runner '\(runner.name)'"
         
         # Simple loop to keep runner running
         while true; do
-            echo "🔄 LOOP START: $(date)"
-            
             # Run the runner and capture its output
-            echo "🏃 EXECUTING: ./run.sh"
             ./run.sh &
             RUNNER_PID=$!
-            
-            echo "🏃 RUNNER PID: $RUNNER_PID"
             
             # Wait for completion
             wait $RUNNER_PID
             EXIT_CODE=$?
             
-            echo "🏁 RUNNER EXIT: Code $EXIT_CODE at $(date)"
+            echo "🏁 Runner exited with code $EXIT_CODE"
             
             # Check if parent is still alive
             if ! kill -0 \(parentPID) 2>/dev/null; then
-                echo "🛑 PARENT DEAD: Stopping runner loop"
+                echo "🛑 Parent process terminated - stopping runner"
                 break
             fi
             
-            echo "💤 SLEEPING: 5 seconds before restart"
-            sleep 5
+            # Only restart if exit code suggests we should continue
+            if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
+                echo "🔄 Restarting runner in 5 seconds..."
+                sleep 5
+            else
+                echo "❌ Runner failed with exit code $EXIT_CODE - stopping"
+                break
+            fi
         done
-        
-        echo "🏁 WRAPPER END: Runner loop finished"
         """
         
         process.arguments = ["-c", wrapperScript]
