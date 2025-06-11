@@ -73,21 +73,32 @@ struct RunnerLogsView: View {
             
             Divider()
             
-            // Log content
+            // Log content - selectable text editor
             ScrollViewReader { proxy in
-                ScrollView {
-                    Text(logText.isEmpty ? "No logs available. Start the runner to see output." : logText)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding()
-                        .id("logContent")
-                }
-                .background(Color(NSColor.textBackgroundColor))
-                .onChange(of: logText) {
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        proxy.scrollTo("logContent", anchor: .bottom)
+                TextEditor(text: .constant(logText.isEmpty ? "No logs available. Start the runner to see output." : logText))
+                    .font(.system(.body, design: .monospaced))
+                    .scrollDisabled(false)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .overlay(
+                        // Hidden anchor for auto-scroll
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                Color.clear
+                                    .frame(width: 1, height: 1)
+                                    .id("logContent")
+                            }
+                        }
+                    )
+                    .onChange(of: logText) {
+                        // Small delay to ensure TextEditor has updated before scrolling
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                proxy.scrollTo("logContent", anchor: .bottom)
+                            }
+                        }
                     }
-                }
             }
         }
         .navigationTitle("Runner Logs")
