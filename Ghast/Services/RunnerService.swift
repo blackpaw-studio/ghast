@@ -277,6 +277,9 @@ class RunnerService: ObservableObject {
     func addLocalRunner(_ runner: LocalRunner) {
         localRunners.append(runner)
         saveRunners()
+        
+        // Sync environment files, pre-job and post-job scripts
+        syncRunnerFiles(for: runner)
     }
     
     /// Manually scan for existing runners (can be called from UI)
@@ -889,6 +892,185 @@ class RunnerService: ObservableObject {
             print("🏃 Error scanning runners directory: \(error)")
         }
     }
+    
+    // MARK: - Environment and Scripts Management
+    
+    func updateRunnerEnvironmentVariables(id: String, environmentVariables: [String: String]) {
+        guard let index = localRunners.firstIndex(where: { $0.id == id }) else { return }
+        
+        localRunners[index].environmentVariables = environmentVariables
+        saveRunners()
+        
+        // Write .env file to runner directory
+        writeEnvironmentFile(for: localRunners[index])
+    }
+    
+    func updateRunnerPreJobScript(id: String, script: String?) {
+        guard let index = localRunners.firstIndex(where: { $0.id == id }) else { return }
+        
+        localRunners[index].preJobScript = script
+        saveRunners()
+        
+        // Write or remove pre-job script file
+        writePreJobScript(for: localRunners[index])
+    }
+    
+    func updateRunnerPostJobScript(id: String, script: String?) {
+        guard let index = localRunners.firstIndex(where: { $0.id == id }) else { return }
+        
+        localRunners[index].postJobScript = script
+        saveRunners()
+        
+        // Write or remove post-job script file
+        writePostJobScript(for: localRunners[index])
+    }
+    
+    private func writeEnvironmentFile(for runner: LocalRunner) {
+        let envFilePath = "\(runner.path)/.env"
+        
+        if runner.environmentVariables.isEmpty {
+            // Remove .env file if no environment variables
+            try? FileManager.default.removeItem(atPath: envFilePath)
+            return
+        }
+        
+        var envContent = "# Environment variables for \(runner.name)\n"
+        envContent += "# Managed by Ghast - do not edit manually\n\n"
+        
+        for (key, value) in runner.environmentVariables.sorted(by: { $0.key < $1.key }) {
+            // Escape values that contain special characters
+            let escapedValue = value.replacingOccurrences(of: "\"", with: "\\\"")
+            envContent += "\(key)=\"\(escapedValue)\"\n"
+        }
+        
+        do {
+            try envContent.write(toFile: envFilePath, atomically: true, encoding: .utf8)
+            print("📝 Updated .env file for runner \(runner.name)")
+        } catch {
+            print("❌ Failed to write .env file for runner \(runner.name): \(error)")
+        }
+    }
+    
+    private func writePreJobScript(for runner: LocalRunner) {
+        let scriptPath = "\(runner.path)/pre-job.sh"
+        
+        guard let script = runner.preJobScript, !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Remove script file if no script
+            try? FileManager.default.removeItem(atPath: scriptPath)
+            // Remove environment variable
+            removeHookEnvironmentVariable(for: runner, hook: "ACTIONS_RUNNER_HOOK_JOB_STARTED")
+            return
+        }
+        
+        let scriptContent = """
+        #!/bin/bash
+        # Pre-job script for \(runner.name)
+        # Managed by Ghast - do not edit manually
+        
+        \(script)
+        """
+        
+        do {
+            try scriptContent.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Make script executable
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+            
+            // Set environment variable to point to script
+            setHookEnvironmentVariable(for: runner, hook: "ACTIONS_RUNNER_HOOK_JOB_STARTED", scriptPath: scriptPath)
+            
+            print("📝 Updated pre-job script for runner \(runner.name)")
+        } catch {
+            print("❌ Failed to write pre-job script for runner \(runner.name): \(error)")
+        }
+    }
+    
+    private func writePostJobScript(for runner: LocalRunner) {
+        let scriptPath = "\(runner.path)/post-job.sh"
+        
+        guard let script = runner.postJobScript, !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Remove script file if no script
+            try? FileManager.default.removeItem(atPath: scriptPath)
+            // Remove environment variable
+            removeHookEnvironmentVariable(for: runner, hook: "ACTIONS_RUNNER_HOOK_JOB_COMPLETED")
+            return
+        }
+        
+        let scriptContent = """
+        #!/bin/bash
+        # Post-job script for \(runner.name)
+        # Managed by Ghast - do not edit manually
+        
+        \(script)
+        """
+        
+        do {
+            try scriptContent.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Make script executable
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+            
+            // Set environment variable to point to script
+            setHookEnvironmentVariable(for: runner, hook: "ACTIONS_RUNNER_HOOK_JOB_COMPLETED", scriptPath: scriptPath)
+            
+            print("📝 Updated post-job script for runner \(runner.name)")
+        } catch {
+            print("❌ Failed to write post-job script for runner \(runner.name): \(error)")
+        }
+    }
+    
+    private func setHookEnvironmentVariable(for runner: LocalRunner, hook: String, scriptPath: String) {
+        let envFilePath = "\(runner.path)/.env"
+        var currentEnvContent = ""
+        
+        // Read existing .env content
+        if FileManager.default.fileExists(atPath: envFilePath) {
+            currentEnvContent = (try? String(contentsOfFile: envFilePath)) ?? ""
+        }
+        
+        // Remove existing hook variable if present
+        let lines = currentEnvContent.components(separatedBy: .newlines)
+        let filteredLines = lines.filter { !$0.hasPrefix("\(hook)=") }
+        
+        // Add new hook variable
+        var newContent = filteredLines.joined(separator: "\n")
+        if !newContent.isEmpty && !newContent.hasSuffix("\n") {
+            newContent += "\n"
+        }
+        newContent += "\(hook)=\"\(scriptPath)\"\n"
+        
+        do {
+            try newContent.write(toFile: envFilePath, atomically: true, encoding: .utf8)
+        } catch {
+            print("❌ Failed to update .env file with hook variable: \(error)")
+        }
+    }
+    
+    private func removeHookEnvironmentVariable(for runner: LocalRunner, hook: String) {
+        let envFilePath = "\(runner.path)/.env"
+        
+        guard FileManager.default.fileExists(atPath: envFilePath) else { return }
+        
+        let currentEnvContent = (try? String(contentsOfFile: envFilePath)) ?? ""
+        let lines = currentEnvContent.components(separatedBy: .newlines)
+        let filteredLines = lines.filter { !$0.hasPrefix("\(hook)=") }
+        
+        let newContent = filteredLines.joined(separator: "\n")
+        
+        do {
+            try newContent.write(toFile: envFilePath, atomically: true, encoding: .utf8)
+        } catch {
+            print("❌ Failed to update .env file: \(error)")
+        }
+    }
+    
+    // MARK: - Script and Environment File Synchronization
+    
+    func syncRunnerFiles(for runner: LocalRunner) {
+        writeEnvironmentFile(for: runner)
+        writePreJobScript(for: runner)
+        writePostJobScript(for: runner)
+    }
 }
 
 // MARK: - Data Models
@@ -901,6 +1083,9 @@ struct LocalRunner: Codable, Identifiable, Hashable {
     var labels: [String]
     var status: RunnerStatus
     let createdAt: Date
+    var environmentVariables: [String: String]
+    var preJobScript: String?
+    var postJobScript: String?
     
     init(name: String, repository: String, path: String, labels: [String] = []) {
         self.id = UUID().uuidString
@@ -910,6 +1095,9 @@ struct LocalRunner: Codable, Identifiable, Hashable {
         self.labels = labels
         self.status = .stopped
         self.createdAt = Date()
+        self.environmentVariables = [:]
+        self.preJobScript = nil
+        self.postJobScript = nil
     }
 }
 

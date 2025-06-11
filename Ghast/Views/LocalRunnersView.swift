@@ -233,6 +233,7 @@ struct ModernRunnerCard: View {
     
     @StateObject private var runnerService = RunnerService.shared
     @State private var showingDeleteAlert = false
+    @State private var showingConfiguration = false
     @State private var isHovered = false
     
     // Find the current runner from the service to get live status updates
@@ -286,6 +287,12 @@ struct ModernRunnerCard: View {
                     
                     // More menu
                     Menu {
+                        Button("Configure") {
+                            showingConfiguration = true
+                        }
+                        
+                        Divider()
+                        
                         Button("Remove Runner", role: .destructive) {
                             showingDeleteAlert = true
                         }
@@ -419,6 +426,9 @@ struct ModernRunnerCard: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Are you sure you want to remove '\(runner.name)'? This will stop the runner if it's running.")
+        }
+        .sheet(isPresented: $showingConfiguration) {
+            RunnerConfigurationView(runner: runner)
         }
     }
     
