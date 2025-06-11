@@ -25,25 +25,38 @@ struct LocalRunnersView: View {
                         
                         Spacer()
                         
-                        // Runner count badge
-                        HStack(spacing: 6) {
-                            Image(systemName: "server.rack")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.blue)
-                            Text("\(runnerService.localRunners.count)")
-                                .font(.system(.caption, design: .rounded, weight: .bold))
-                                .foregroundColor(.primary)
+                        HStack(spacing: 12) {
+                            // Scan button
+                            Button(action: {
+                                runnerService.scanForExistingRunners()
+                            }) {
+                                Image(systemName: "magnifyingglass.circle.fill")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(.blue)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Scan for existing runners")
+                            
+                            // Runner count badge
+                            HStack(spacing: 6) {
+                                Image(systemName: "server.rack")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.blue)
+                                Text("\(runnerService.localRunners.count)")
+                                    .font(.system(.caption, design: .rounded, weight: .bold))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.1))
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                                    )
+                            )
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(Color.blue.opacity(0.1))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                                )
-                        )
                     }
                     
                     // Action button

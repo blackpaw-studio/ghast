@@ -22,6 +22,8 @@ class RunnerService: ObservableObject {
     private init() {
         createRunnersDirectoryIfNeeded()
         loadRunners()
+        // Discover any existing runners not in our database
+        discoverExistingRunners()
     }
     
     // MARK: - Automatic Runner Setup
@@ -275,6 +277,11 @@ class RunnerService: ObservableObject {
     func addLocalRunner(_ runner: LocalRunner) {
         localRunners.append(runner)
         saveRunners()
+    }
+    
+    /// Manually scan for existing runners (can be called from UI)
+    func scanForExistingRunners() {
+        discoverExistingRunners()
     }
     
     func removeLocalRunner(id: String) {
@@ -787,6 +794,88 @@ class RunnerService: ObservableObject {
             print("🏃 Loaded \(localRunners.count) runners")
         } catch {
             print("Failed to load runners: \(error)")
+        }
+    }
+    
+    /// Discovers existing runners in the .ghast/runners directory that aren't tracked
+    private func discoverExistingRunners() {
+        print("🏃 Scanning for existing runners in \(runnersBaseDirectory.path)")
+        
+        guard FileManager.default.fileExists(atPath: runnersBaseDirectory.path) else {
+            print("🏃 Runners directory doesn't exist yet")
+            return
+        }
+        
+        do {
+            let runnerDirs = try FileManager.default.contentsOfDirectory(
+                at: runnersBaseDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            
+            for runnerDir in runnerDirs {
+                // Check if it's a directory
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: runnerDir.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else {
+                    continue
+                }
+                
+                // Check if runner is already tracked
+                let runnerName = runnerDir.lastPathComponent
+                if localRunners.contains(where: { $0.path == runnerDir.path }) {
+                    continue
+                }
+                
+                // Check if it has runner files (run.sh and config.sh are good indicators)
+                let runScript = runnerDir.appendingPathComponent("run.sh")
+                let configScript = runnerDir.appendingPathComponent("config.sh")
+                
+                guard FileManager.default.fileExists(atPath: runScript.path) ||
+                      FileManager.default.fileExists(atPath: configScript.path) else {
+                    print("🏃 Skipping \(runnerName) - doesn't appear to be a runner directory")
+                    continue
+                }
+                
+                // Try to extract repository info from .runner file if it exists
+                var repository = "Unknown/Repository"
+                let runnerFile = runnerDir.appendingPathComponent(".runner")
+                if FileManager.default.fileExists(atPath: runnerFile.path) {
+                    do {
+                        let data = try Data(contentsOf: runnerFile)
+                        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let gitHubUrl = json["gitHubUrl"] as? String {
+                            // Extract owner/repo from URL like https://github.com/owner/repo
+                            if let url = URL(string: gitHubUrl),
+                               url.pathComponents.count >= 3 {
+                                repository = "\(url.pathComponents[1])/\(url.pathComponents[2])"
+                            }
+                        }
+                    } catch {
+                        print("🏃 Couldn't parse .runner file for \(runnerName)")
+                    }
+                }
+                
+                // Create a LocalRunner entry for this discovered runner
+                let discoveredRunner = LocalRunner(
+                    name: runnerName,
+                    repository: repository,
+                    path: runnerDir.path,
+                    labels: ["self-hosted", "discovered"]
+                )
+                
+                print("🏃 Discovered existing runner: \(runnerName) for \(repository)")
+                localRunners.append(discoveredRunner)
+            }
+            
+            // Save if we discovered any new runners
+            if !localRunners.isEmpty {
+                saveRunners()
+                print("🏃 Total runners after discovery: \(localRunners.count)")
+            }
+            
+        } catch {
+            print("🏃 Error scanning runners directory: \(error)")
         }
     }
 }
