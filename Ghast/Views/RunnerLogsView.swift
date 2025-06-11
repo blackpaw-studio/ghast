@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Foundation
 
 struct RunnerLogsView: View {
     let runner: LocalRunner
@@ -7,6 +8,8 @@ struct RunnerLogsView: View {
     @State private var logText: String = ""
     @State private var refreshTimer: Timer?
     @State private var isAutoScrollEnabled: Bool = true
+    @State private var fileMonitor: DispatchSourceFileSystemObject?
+    @State private var logFileDescriptor: Int32 = -1
     
     // Find the current runner from the service to get live status updates
     private var currentRunner: LocalRunner? {
@@ -26,21 +29,11 @@ struct RunnerLogsView: View {
         .onAppear {
             runnerService.syncRunnerStatus(id: runner.id)
             loadLogs()
-            startAutoRefresh()
+            startFileMonitoring()
         }
         .onDisappear {
             stopAutoRefresh()
-        }
-        .onReceive(runnerService.$localRunners) { _ in
-            // Only manage timer if status actually changed
-            let isCurrentlyRunning = currentRunner?.status == .running
-            let hasTimer = refreshTimer != nil
-            
-            if isCurrentlyRunning && !hasTimer {
-                startAutoRefresh()
-            } else if !isCurrentlyRunning && hasTimer {
-                stopAutoRefresh()
-            }
+            stopFileMonitoring()
         }
     }
     
@@ -182,8 +175,7 @@ struct RunnerLogsView: View {
                         do {
                             try await runnerService.startRunner(id: runner.id)
                             loadLogs()
-                            // Start auto-refresh after starting the runner
-                            startAutoRefresh()
+                            // File monitoring will automatically pick up changes
                         } catch {
                             print("Failed to start runner: \(error)")
                             logText = "ERROR: Failed to start runner: \(error.localizedDescription)\n"
@@ -300,7 +292,7 @@ struct RunnerLogsView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 )
-                .onChange(of: logText) { _ in
+                .onChange(of: logText) {
                     if isAutoScrollEnabled {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             withAnimation(.easeOut(duration: 0.3)) {
@@ -348,6 +340,62 @@ struct RunnerLogsView: View {
         }
         refreshTimer?.invalidate()
         refreshTimer = nil
+    }
+    
+    private func startFileMonitoring() {
+        guard let logFileURL = runnerService.getRunnerLogFile(for: runner.id) else {
+            print("❌ Could not get log file URL for runner \(runner.name)")
+            return
+        }
+        
+        let logPath = logFileURL.path
+        print("📁 Starting file monitoring for: \(logPath)")
+        
+        // Create the log file if it doesn't exist
+        if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: nil)
+        }
+        
+        // Open file descriptor for monitoring
+        logFileDescriptor = open(logPath, O_RDONLY)
+        guard logFileDescriptor >= 0 else {
+            print("❌ Could not open log file: \(logPath)")
+            return
+        }
+        
+        // Create dispatch source to monitor file changes
+        fileMonitor = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: logFileDescriptor,
+            eventMask: [.write, .extend],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        
+        fileMonitor?.setEventHandler {
+            DispatchQueue.main.async {
+                loadLogs()
+            }
+        }
+        
+        fileMonitor?.setCancelHandler {
+            if logFileDescriptor >= 0 {
+                close(logFileDescriptor)
+                logFileDescriptor = -1
+            }
+        }
+        
+        fileMonitor?.resume()
+        print("✅ File monitoring started for runner \(runner.name)")
+    }
+    
+    private func stopFileMonitoring() {
+        print("🛑 Stopping file monitoring for runner \(runner.name)")
+        fileMonitor?.cancel()
+        fileMonitor = nil
+        
+        if logFileDescriptor >= 0 {
+            close(logFileDescriptor)
+            logFileDescriptor = -1
+        }
     }
 }
 
