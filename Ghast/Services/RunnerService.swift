@@ -348,7 +348,7 @@ class RunnerService: ObservableObject {
         
         # Function to log with timestamp
         log_message() {
-            echo "$(date '+%H:%M:%S') $1" | tee -a "$LOG_FILE"
+            echo "$(date '+%H:%M:%S') $1" | tee -a "$LOG_FILE" >/dev/null
         }
         
         # Change to the runner directory
@@ -374,7 +374,8 @@ class RunnerService: ObservableObject {
         while true; do
             # Run the runner and capture its output to log file
             log_message "🚀 Executing ./run.sh"
-            ./run.sh 2>&1 | while IFS= read -r line; do
+            # Use stdbuf to disable output buffering for real-time logging
+            stdbuf -oL -eL ./run.sh 2>&1 | while IFS= read -r line; do
                 echo "$(date '+%H:%M:%S') $line" >> "$LOG_FILE"
             done &
             RUNNER_PID=$!

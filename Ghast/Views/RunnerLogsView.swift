@@ -177,6 +177,8 @@ struct RunnerLogsView: View {
                         do {
                             try await runnerService.startRunner(id: runner.id)
                             loadLogs()
+                            // Start auto-refresh after starting the runner
+                            startAutoRefresh()
                         } catch {
                             print("Failed to start runner: \(error)")
                             logText = "ERROR: Failed to start runner: \(error.localizedDescription)\n"
@@ -316,16 +318,25 @@ struct RunnerLogsView: View {
     }
     
     private func loadLogs() {
-        logText = runnerService.readRunnerLogs(for: runner.id)
+        let newLogs = runnerService.readRunnerLogs(for: runner.id)
+        if newLogs != logText {
+            print("📝 Log update detected for runner \(runner.name)")
+            logText = newLogs
+        }
     }
     
     private func startAutoRefresh() {
-        // Only refresh if runner is running
-        guard currentRunner?.status == .running else { return }
+        // Stop any existing timer first
+        stopAutoRefresh()
         
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             DispatchQueue.main.async {
-                loadLogs()
+                self.loadLogs()
+                
+                // Stop refreshing if runner is no longer running
+                if self.currentRunner?.status != .running {
+                    self.stopAutoRefresh()
+                }
             }
         }
     }
