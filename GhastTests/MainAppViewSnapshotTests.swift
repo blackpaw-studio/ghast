@@ -108,7 +108,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         )
         
         // Clear any existing runners and add our mocks
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
         runnerService.addLocalRunner(mockRunner1)
         runnerService.addLocalRunner(mockRunner2)
         
@@ -125,7 +125,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
         
         // Clean up: Remove mock runners after test
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
     }
     
     func testMainAppViewSettings() async {

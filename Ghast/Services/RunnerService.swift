@@ -283,6 +283,19 @@ class RunnerService: ObservableObject {
         saveRunners()
     }
     
+    /// Removes all local runners and persists the empty state
+    /// This is useful for testing or resetting the app state
+    func removeAllLocalRunners() {
+        // Stop all running runners first
+        for runner in localRunners {
+            stopRunner(id: runner.id)
+        }
+        
+        // Clear the array and persist the empty state
+        localRunners.removeAll()
+        saveRunners()
+    }
+    
     func startRunner(id: String) async throws {
         guard let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) else {
             throw RunnerError.runnerNotFound
@@ -537,30 +550,32 @@ class RunnerService: ObservableObject {
         }
         
         // Give it a moment to terminate gracefully (reduced timeout)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak self] in
             if process.isRunning {
                 print("🏃 Force killing runner process group (PGID: \(pgid))")
                 kill(-pgid, SIGKILL)
                 kill(process.processIdentifier, SIGKILL)
                 
                 // Force kill any remaining processes for this runner (async)
-                if let runner = self.localRunners.first(where: { $0.id == id }) {
-                    let runnerPath = runner.path
-                    DispatchQueue.global(qos: .utility).async {
-                        let forceCleanupScript = """
-                        # Fast force kill processes in this specific runner directory
-                        pkill -9 -f "\(runnerPath)" 2>/dev/null || true
-                        """
-                        
-                        let forceCleanupProcess = Process()
-                        forceCleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-                        forceCleanupProcess.arguments = ["-c", forceCleanupScript]
-                        
-                        do {
-                            try forceCleanupProcess.run()
-                            forceCleanupProcess.waitUntilExit()
-                        } catch {
-                            print("🏃 Warning: Could not run force cleanup: \(error)")
+                Task { @MainActor in
+                    if let runner = self?.localRunners.first(where: { $0.id == id }) {
+                        let runnerPath = runner.path
+                        DispatchQueue.global(qos: .utility).async {
+                            let forceCleanupScript = """
+                            # Fast force kill processes in this specific runner directory
+                            pkill -9 -f "\(runnerPath)" 2>/dev/null || true
+                            """
+                            
+                            let forceCleanupProcess = Process()
+                            forceCleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
+                            forceCleanupProcess.arguments = ["-c", forceCleanupScript]
+                            
+                            do {
+                                try forceCleanupProcess.run()
+                                forceCleanupProcess.waitUntilExit()
+                            } catch {
+                                print("🏃 Warning: Could not run force cleanup: \(error)")
+                            }
                         }
                     }
                 }

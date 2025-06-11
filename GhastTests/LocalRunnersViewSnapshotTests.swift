@@ -40,7 +40,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Clear any existing runners
         let runnerService = RunnerService.shared
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
         
         let view = LocalRunnersView()
             .environmentObject(appState)
@@ -48,7 +48,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
         
         // Clean up
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
     }
     
     func testLocalRunnersViewWithRunners() async {
@@ -67,7 +67,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Add mock runners
         let runnerService = RunnerService.shared
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
         
         let mockRunners = createMockRunners()
         for (index, runner) in mockRunners.enumerated() {
@@ -86,7 +86,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
         
         // Clean up
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
     }
     
     func testLocalRunnersViewWithSelectedRunner() async {
@@ -105,7 +105,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Add mock runners
         let runnerService = RunnerService.shared
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
         
         let mockRunners = createMockRunners()
         for runner in mockRunners {
@@ -202,7 +202,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
         
         // Clean up
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
     }
     
     func testLocalRunnersViewSmallWindow() async {
@@ -221,7 +221,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Add mock runners
         let runnerService = RunnerService.shared
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
         
         let mockRunners = createMockRunners()
         for runner in mockRunners {
@@ -253,7 +253,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Add mock runners
         let runnerService = RunnerService.shared
-        runnerService.localRunners.removeAll()
+        runnerService.removeAllLocalRunners()
         
         let mockRunners = createMockRunners()
         for (index, runner) in mockRunners.enumerated() {
