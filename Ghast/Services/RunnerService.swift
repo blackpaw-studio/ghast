@@ -374,10 +374,8 @@ class RunnerService: ObservableObject {
         while true; do
             # Run the runner and capture its output to log file
             log_message "🚀 Executing ./run.sh"
-            # Use stdbuf to disable output buffering for real-time logging
-            stdbuf -oL -eL ./run.sh 2>&1 | while IFS= read -r line; do
-                echo "$(date '+%H:%M:%S') $line" >> "$LOG_FILE"
-            done &
+            # Run the runner and log output with timestamps
+            ./run.sh > >(while IFS= read -r line; do echo "$(date '+%H:%M:%S') $line" >> "$LOG_FILE"; done) 2>&1 &
             RUNNER_PID=$!
             
             # Wait for completion
