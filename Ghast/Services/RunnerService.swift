@@ -743,7 +743,11 @@ class RunnerService: ObservableObject {
         
         do {
             if FileManager.default.fileExists(atPath: logFileURL.path) {
-                try "".write(to: logFileURL, atomically: true, encoding: .utf8)
+                // Use FileHandle to truncate file while preserving file descriptor
+                let fileHandle = try FileHandle(forWritingTo: logFileURL)
+                fileHandle.truncateFile(atOffset: 0)
+                fileHandle.closeFile()
+                print("🏃 Cleared logs for runner \(runnerId)")
             }
         } catch {
             print("🏃 Warning: Could not clear log file: \(error)")
