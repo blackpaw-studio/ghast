@@ -1099,6 +1099,16 @@ struct LocalRunner: Codable, Identifiable, Hashable {
         self.preJobScript = nil
         self.postJobScript = nil
     }
+    
+    // Custom equality based on ID only
+    static func == (lhs: LocalRunner, rhs: LocalRunner) -> Bool {
+        return lhs.id == rhs.id
+    }
+    
+    // Custom hash based on ID only
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 enum RunnerStatus: String, Codable, CaseIterable {
