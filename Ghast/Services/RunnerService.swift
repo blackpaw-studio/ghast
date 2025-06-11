@@ -9,6 +9,7 @@ class RunnerService: ObservableObject {
     @Published var localRunners: [LocalRunner] = []
     
     private var runningProcesses: [String: Process] = [:]
+    private var processGroupIDs: [String: pid_t] = [:]
     private var logStreams: [String: PassthroughSubject<String, Never>] = [:]
     
     /// Base directory for all managed runners
@@ -296,8 +297,19 @@ class RunnerService: ObservableObject {
         }
         
         // Check if already running
-        if runningProcesses[id] != nil {
-            throw RunnerError.runnerAlreadyRunning
+        if let existingProcess = runningProcesses[id] {
+            if existingProcess.isRunning {
+                throw RunnerError.runnerAlreadyRunning
+            } else {
+                // Clean up dead process reference
+                print("🏃 Cleaning up dead process reference for runner \(id)")
+                runningProcesses.removeValue(forKey: id)
+                processGroupIDs.removeValue(forKey: id)
+                if let stream = logStreams[id] {
+                    stream.send(completion: .finished)
+                    logStreams.removeValue(forKey: id)
+                }
+            }
         }
         
         let process = Process()
@@ -310,44 +322,78 @@ class RunnerService: ObservableObject {
         let wrapperScript = """
         #!/bin/bash
         
-        # Create a new process group for this runner and all its children
-        set -m  # Enable job control
+        # Remove set -e to prevent early exit and add more debugging
+        echo "🏃 WRAPPER START: Wrapper script starting for runner '\(runner.name)'"
+        echo "🏃 TARGET DIR: \(runner.path)"
+        echo "🏃 PARENT PID: \(parentPID)"
+        echo "🏃 CURRENT DIR: $(pwd)"
         
-        # Function to cleanup all processes in this group
-        cleanup() {
-            echo "Cleaning up runner process group..."
-            # Kill all processes in our process group
-            kill -TERM -$$ 2>/dev/null || true
-            sleep 1
-            kill -KILL -$$ 2>/dev/null || true
-            exit 0
+        # Change to the runner directory
+        cd "\(runner.path)" 2>&1 || {
+            echo "❌ ERROR: Cannot change to directory \(runner.path)"
+            exit 1
         }
         
-        # Set up signal handlers for cleanup
-        trap cleanup TERM INT QUIT
+        echo "🏃 CHANGED TO: $(pwd)"
+        echo "🏃 LISTING DIRECTORY:"
+        ls -la | head -10
         
-        # Function to check if parent process is still running
-        check_parent() {
+        # Verify run.sh exists and is executable
+        if [ ! -f "./run.sh" ]; then
+            echo "❌ ERROR: ./run.sh not found"
+            exit 127
+        fi
+        
+        echo "🏃 FOUND RUN.SH:"
+        ls -la ./run.sh
+        
+        if [ ! -x "./run.sh" ]; then
+            echo "🔧 MAKING EXECUTABLE: ./run.sh"
+            chmod +x ./run.sh
+        fi
+        
+        echo "✅ READY: run.sh is executable"
+        
+        echo "🚀 STARTING: About to execute ./run.sh"
+        
+        # Test if we can execute the runner at all
+        echo "🧪 TESTING: Quick test of runner executable"
+        if timeout 2s ./run.sh --version 2>&1; then
+            echo "✅ RUNNER VERSION: Command worked"
+        else
+            echo "⚠️ RUNNER VERSION: Command failed or timed out"
+        fi
+        
+        echo "🔄 STARTING RUNNER LOOP"
+        
+        # Simple loop to keep runner running
+        while true; do
+            echo "🔄 LOOP START: $(date)"
+            
+            # Run the runner and capture its output
+            echo "🏃 EXECUTING: ./run.sh"
+            ./run.sh &
+            RUNNER_PID=$!
+            
+            echo "🏃 RUNNER PID: $RUNNER_PID"
+            
+            # Wait for completion
+            wait $RUNNER_PID
+            EXIT_CODE=$?
+            
+            echo "🏁 RUNNER EXIT: Code $EXIT_CODE at $(date)"
+            
+            # Check if parent is still alive
             if ! kill -0 \(parentPID) 2>/dev/null; then
-                echo "Parent process \(parentPID) no longer exists, terminating runner..."
-                cleanup
+                echo "🛑 PARENT DEAD: Stopping runner loop"
+                break
             fi
-        }
+            
+            echo "💤 SLEEPING: 5 seconds before restart"
+            sleep 5
+        done
         
-        # Start background monitoring of parent process
-        (
-            while true; do
-                sleep 5
-                check_parent
-            done
-        ) &
-        
-        # Start the actual runner in the background so we can handle signals
-        ./run.sh &
-        RUNNER_PID=$!
-        
-        # Wait for the runner to finish, but also handle signals
-        wait $RUNNER_PID
+        echo "🏁 WRAPPER END: Runner loop finished"
         """
         
         process.arguments = ["-c", wrapperScript]
@@ -365,24 +411,24 @@ class RunnerService: ObservableObject {
         // Send initial log message
         logSubject.send("🏃 Starting runner '\(runner.name)' at \(runner.path)\n")
         
-        // Monitor output
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+        // Monitor output with weak references to avoid crashes
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak logSubject] handle in
             let data = handle.availableData
             if !data.isEmpty {
                 if let output = String(data: data, encoding: .utf8), !output.isEmpty {
-                    Task { @MainActor in
-                        logSubject.send(output)
+                    DispatchQueue.main.async {
+                        logSubject?.send(output)
                     }
                 }
             }
         }
         
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+        errorPipe.fileHandleForReading.readabilityHandler = { [weak logSubject] handle in
             let data = handle.availableData
             if !data.isEmpty {
                 if let output = String(data: data, encoding: .utf8), !output.isEmpty {
-                    Task { @MainActor in
-                        logSubject.send("[STDERR] \(output)")
+                    DispatchQueue.main.async {
+                        logSubject?.send("[STDERR] \(output)")
                     }
                 }
             }
@@ -390,28 +436,66 @@ class RunnerService: ObservableObject {
         
         // Setup termination handler
         process.terminationHandler = { [weak self] terminatedProcess in
-            Task { @MainActor in
-                let exitCode = terminatedProcess.terminationStatus
-                self?.logStreams[id]?.send("🏃 Runner process terminated (exit code: \(exitCode))\n")
-                print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+            let exitCode = terminatedProcess.terminationStatus
+            print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+            
+            // Immediately clear file handle readability handlers to prevent crashes
+            // Use the stored pipe references instead of accessing the terminated process
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+            
+            // Log specific error messages for common exit codes
+            let errorMessage: String
+            switch exitCode {
+            case 127:
+                errorMessage = "❌ Error: Command not found (./run.sh missing or not executable)\n"
+                print("❌ Error: ./run.sh not found or not executable in \(runner.path)")
+            case 126:
+                errorMessage = "❌ Error: Permission denied (./run.sh not executable)\n"
+            case 1:
+                errorMessage = "⚠️ Runner exited with error\n"
+            case 0:
+                errorMessage = "✅ Runner exited normally\n"
+            default:
+                errorMessage = "⚠️ Runner exited with code \(exitCode)\n"
+            }
+            
+            // Schedule cleanup on main actor
+            DispatchQueue.main.async {
+                guard let strongSelf = self else { return }
                 
-                // Clean up file handles to prevent leaks
-                terminatedProcess.standardOutput = nil
-                terminatedProcess.standardError = nil
+                // Send termination message to log stream
+                strongSelf.logStreams[id]?.send("🏃 Runner process terminated (exit code: \(exitCode))\n")
+                strongSelf.logStreams[id]?.send(errorMessage)
                 
-                self?.runningProcesses[id] = nil
-                self?.logStreams[id]?.send(completion: .finished)
-                self?.logStreams[id] = nil
+                // Remove from tracking - this prevents reuse of the Process instance
+                strongSelf.runningProcesses.removeValue(forKey: id)
+                strongSelf.processGroupIDs.removeValue(forKey: id)
                 
-                if let index = self?.localRunners.firstIndex(where: { $0.id == id }) {
-                    self?.localRunners[index].status = .stopped
-                    self?.saveRunners()
+                // Close log stream
+                strongSelf.logStreams[id]?.send(completion: .finished)
+                strongSelf.logStreams[id] = nil
+                
+                if let index = strongSelf.localRunners.firstIndex(where: { $0.id == id }) {
+                    strongSelf.localRunners[index].status = .stopped
+                    strongSelf.saveRunners()
                 }
             }
         }
         
         try process.run()
+        
+        // Store the PID and PGID immediately after launch
+        let processPID = process.processIdentifier
         runningProcesses[id] = process
+        
+        // Store the process group ID (initially same as PID, will change with setsid)
+        let pgid = getpgid(processPID)
+        if pgid != -1 {
+            processGroupIDs[id] = pgid
+            print("🏃 Runner '\(runner.name)' initial process group: \(pgid)")
+        }
+        
         localRunners[runnerIndex].status = .running
         saveRunners()
         
@@ -431,17 +515,20 @@ class RunnerService: ObservableObject {
             print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
         }
         
-        let pid = process.processIdentifier
+        // Use stored process group ID if available, otherwise fall back to process PID
+        let pgid = processGroupIDs[id] ?? process.processIdentifier
+        
+        print("🏃 Terminating process group \(pgid)")
         
         // First try graceful termination of the process group
-        kill(-pid, SIGTERM)
+        kill(-pgid, SIGTERM)
         
         // Give it a moment to terminate gracefully
         DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
             if process.isRunning {
-                print("🏃 Force killing runner process group (PGID: \(pid))")
-                kill(-pid, SIGKILL)
-                kill(pid, SIGKILL)
+                print("🏃 Force killing runner process group (PGID: \(pgid))")
+                kill(-pgid, SIGKILL)
+                kill(process.processIdentifier, SIGKILL)
             }
         }
         
@@ -454,31 +541,48 @@ class RunnerService: ObservableObject {
     func stopAllRunners() {
         print("🏃 Stopping all running runners due to app termination...")
         
-        for (id, process) in runningProcesses {
+        // Create a list of processes to terminate to avoid modifying while iterating
+        let processesToStop = Array(runningProcesses)
+        
+        for (id, process) in processesToStop {
             if let runner = localRunners.first(where: { $0.id == id }) {
                 print("🏃 Terminating runner '\(runner.name)' (PID: \(process.processIdentifier))")
                 logStreams[id]?.send("🏃 App terminating - stopping runner '\(runner.name)'...\n")
             }
             
+            // Use stored process group ID if available, otherwise fall back to process PID
+            let pgid = processGroupIDs[id] ?? process.processIdentifier
             let pid = process.processIdentifier
             
-            // First try graceful termination of the process group
-            // Use negative PID to signal the entire process group
-            kill(-pid, SIGTERM)
+            print("🏃 Terminating process group \(pgid) for runner \(id)")
             
-            // Give it a moment to terminate gracefully
-            let deadline = Date().addingTimeInterval(3.0)
+            // First try to terminate the process normally
+            process.terminate()
+            
+            // Send SIGTERM to the process group using stored PGID
+            kill(-pgid, SIGTERM)
+            
+            // Give it a moment to terminate gracefully (reduced timeout for app termination)
+            let deadline = Date().addingTimeInterval(1.0)
             while process.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.1)
+                Thread.sleep(forTimeInterval: 0.05)
             }
             
             // If still running, force kill the entire process group
             if process.isRunning {
-                print("🏃 Force killing runner process group (PGID: \(pid))")
-                kill(-pid, SIGKILL)
+                print("🏃 Force killing runner process group (PGID: \(pgid))")
+                
+                // Force terminate through Process API
+                process.interrupt()
+                
+                // Send SIGKILL to process group
+                kill(-pgid, SIGKILL)
                 
                 // Also kill the main process directly as backup
                 kill(pid, SIGKILL)
+                
+                // Final wait
+                Thread.sleep(forTimeInterval: 0.1)
             }
             
             if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
@@ -486,8 +590,9 @@ class RunnerService: ObservableObject {
             }
         }
         
-        // Clear all running processes
+        // Clear all running processes and process group IDs
         runningProcesses.removeAll()
+        processGroupIDs.removeAll()
         
         // Close all log streams
         for (_, stream) in logStreams {
@@ -499,6 +604,25 @@ class RunnerService: ObservableObject {
         saveRunners()
         
         print("🏃 All runners stopped")
+        
+        // As a final safety measure, look for any orphaned runner processes
+        // and kill them by searching for processes containing "./run.sh"
+        let killOrphansScript = """
+        pkill -f "./run.sh" 2>/dev/null || true
+        pkill -f "github-actions-runner" 2>/dev/null || true
+        """
+        
+        let cleanupProcess = Process()
+        cleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
+        cleanupProcess.arguments = ["-c", killOrphansScript]
+        
+        do {
+            try cleanupProcess.run()
+            cleanupProcess.waitUntilExit()
+            print("🏃 Orphan process cleanup completed")
+        } catch {
+            print("🏃 Warning: Could not run orphan process cleanup: \(error)")
+        }
     }
     
     func getLogStream(for runnerId: String) -> AnyPublisher<String, Never>? {

@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 @main
 struct GhastApp: App {
@@ -49,6 +50,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set activation policy to ensure we can become active
         NSApp.setActivationPolicy(.regular)
+        
+        // Install signal handlers for cleanup on abnormal termination
+        installSignalHandlers()
+        
+        // Register for termination notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleTermination),
+            name: NSApplication.willTerminateNotification,
+            object: nil
+        )
+        
+        // Disable sudden termination to ensure cleanup
+        ProcessInfo.processInfo.disableSuddenTermination()
     }
     
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
@@ -89,11 +104,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
     
-    func applicationWillTerminate(_ notification: Notification) {
-        // Stop all running runners when app terminates
-        Task { @MainActor in
-            RunnerService.shared.stopAllRunners()
+    @objc private func handleTermination() {
+        // Ensure we're on the main thread for cleanup
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                performRunnerCleanup()
+            }
+        } else {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    performRunnerCleanup()
+                }
+            }
         }
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        // applicationWillTerminate is called on the main thread
+        MainActor.assumeIsolated {
+            performRunnerCleanup()
+        }
+    }
+    
+    @MainActor
+    private func performRunnerCleanup() {
+        // Stop all running runners when app terminates
+        // This must be synchronous to ensure cleanup completes before termination
+        print("🏃 Application terminating - stopping all runners...")
+        
+        // Re-enable sudden termination after cleanup
+        defer {
+            ProcessInfo.processInfo.enableSuddenTermination()
+        }
+        
+        RunnerService.shared.stopAllRunners()
+        
+        print("🏃 Runner cleanup completed")
     }
     
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
@@ -102,6 +148,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         // Do nothing
+    }
+    
+    private func installSignalHandlers() {
+        // Install handlers for common termination signals
+        let signals = [SIGTERM, SIGINT, SIGHUP, SIGQUIT]
+        
+        for sig in signals {
+            signal(sig) { signalNumber in
+                print("🏃 Received signal \(signalNumber) - cleaning up runners...")
+                
+                // We need to perform cleanup synchronously on the main thread
+                // Using CFRunLoopPerformBlock to ensure it runs on main thread
+                CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes as CFTypeRef) {
+                    MainActor.assumeIsolated {
+                        RunnerService.shared.stopAllRunners()
+                    }
+                }
+                CFRunLoopWakeUp(CFRunLoopGetMain())
+                
+                // Give a brief moment for cleanup to complete
+                Thread.sleep(forTimeInterval: 0.5)
+                
+                // Exit cleanly
+                exit(0)
+            }
+        }
+        
+        print("🏃 Signal handlers installed for runner cleanup")
     }
 }
 
