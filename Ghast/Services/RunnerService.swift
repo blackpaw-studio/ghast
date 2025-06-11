@@ -523,12 +523,52 @@ class RunnerService: ObservableObject {
         // First try graceful termination of the process group
         kill(-pgid, SIGTERM)
         
+        // Also kill any related processes by pattern for this specific runner
+        if let runner = localRunners.first(where: { $0.id == id }) {
+            let runnerPath = runner.path
+            let cleanupScript = """
+            # Kill processes in this specific runner directory
+            pgrep -f "\(runnerPath)" | xargs -r kill -TERM 2>/dev/null || true
+            """
+            
+            let cleanupProcess = Process()
+            cleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
+            cleanupProcess.arguments = ["-c", cleanupScript]
+            
+            do {
+                try cleanupProcess.run()
+                cleanupProcess.waitUntilExit()
+            } catch {
+                print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
+            }
+        }
+        
         // Give it a moment to terminate gracefully
         DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
             if process.isRunning {
                 print("🏃 Force killing runner process group (PGID: \(pgid))")
                 kill(-pgid, SIGKILL)
                 kill(process.processIdentifier, SIGKILL)
+                
+                // Force kill any remaining processes for this runner
+                if let runner = self.localRunners.first(where: { $0.id == id }) {
+                    let runnerPath = runner.path
+                    let forceCleanupScript = """
+                    # Force kill processes in this specific runner directory
+                    pgrep -f "\(runnerPath)" | xargs -r kill -KILL 2>/dev/null || true
+                    """
+                    
+                    let forceCleanupProcess = Process()
+                    forceCleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
+                    forceCleanupProcess.arguments = ["-c", forceCleanupScript]
+                    
+                    do {
+                        try forceCleanupProcess.run()
+                        forceCleanupProcess.waitUntilExit()
+                    } catch {
+                        print("🏃 Warning: Could not run force cleanup: \(error)")
+                    }
+                }
             }
         }
         
@@ -605,23 +645,130 @@ class RunnerService: ObservableObject {
         
         print("🏃 All runners stopped")
         
-        // As a final safety measure, look for any orphaned runner processes
-        // and kill them by searching for processes containing "./run.sh"
-        let killOrphansScript = """
-        pkill -f "./run.sh" 2>/dev/null || true
-        pkill -f "github-actions-runner" 2>/dev/null || true
+        // Comprehensive cleanup of all runner-related processes
+        comprehensiveRunnerCleanup()
+    }
+    
+    private func comprehensiveRunnerCleanup() {
+        print("🏃 Starting comprehensive runner process cleanup...")
+        
+        // Create a comprehensive cleanup script that finds and kills all runner-related processes
+        let cleanupScript = """
+        #!/bin/bash
+        
+        echo "🔍 Finding all runner-related processes..."
+        
+        # Function to kill processes by pattern with retries
+        kill_processes_by_pattern() {
+            local pattern="$1"
+            local signal="$2"
+            local description="$3"
+            
+            echo "🎯 Killing $description processes..."
+            
+            # Find PIDs matching the pattern
+            local pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+            
+            if [ -n "$pids" ]; then
+                echo "📋 Found $description processes: $pids"
+                for pid in $pids; do
+                    if kill -0 "$pid" 2>/dev/null; then
+                        echo "🔪 Killing $description process $pid with $signal"
+                        kill "$signal" "$pid" 2>/dev/null || true
+                    fi
+                done
+            else
+                echo "✅ No $description processes found"
+            fi
+        }
+        
+        # Function to kill entire process trees
+        kill_process_tree() {
+            local parent_pid="$1"
+            local signal="$2"
+            
+            if [ -z "$parent_pid" ]; then
+                return
+            fi
+            
+            echo "🌳 Killing process tree for PID $parent_pid with $signal"
+            
+            # Get all child processes recursively
+            local children=$(pgrep -P "$parent_pid" 2>/dev/null || true)
+            
+            # Recursively kill children first
+            for child in $children; do
+                kill_process_tree "$child" "$signal"
+            done
+            
+            # Kill the parent
+            if kill -0 "$parent_pid" 2>/dev/null; then
+                echo "🔪 Killing parent process $parent_pid"
+                kill "$signal" "$parent_pid" 2>/dev/null || true
+            fi
+        }
+        
+        # 1. Kill GitHub Actions runner processes by common patterns
+        kill_processes_by_pattern "Runner.Listener" "-TERM" "GitHub Actions Listener"
+        kill_processes_by_pattern "run-helper.sh" "-TERM" "GitHub Actions Helper"
+        kill_processes_by_pattern "\\./run\\.sh" "-TERM" "GitHub Actions Runner Script"
+        kill_processes_by_pattern "/bin/bash.*run" "-TERM" "Runner Bash Scripts"
+        kill_processes_by_pattern "\\.ghast/runners" "-TERM" "Ghast Runner Processes"
+        
+        # 2. Find and kill processes in our runner directories
+        echo "🏠 Checking runner directories for active processes..."
+        for runner_dir in ~/.ghast/runners/*/; do
+            if [ -d "$runner_dir" ]; then
+                echo "📂 Checking directory: $runner_dir"
+                # Find processes with working directory in this runner directory
+                local dir_pids=$(lsof +D "$runner_dir" 2>/dev/null | awk 'NR>1 {print $2}' | sort -u || true)
+                
+                for pid in $dir_pids; do
+                    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                        echo "🏠 Found process $pid in runner directory, killing..."
+                        kill -TERM "$pid" 2>/dev/null || true
+                    fi
+                done
+            fi
+        done
+        
+        # 3. Wait a moment for graceful termination
+        echo "⏳ Waiting 2 seconds for graceful termination..."
+        sleep 2
+        
+        # 4. Force kill any remaining processes
+        echo "💀 Force killing any remaining runner processes..."
+        kill_processes_by_pattern "Runner.Listener" "-KILL" "GitHub Actions Listener (FORCE)"
+        kill_processes_by_pattern "run-helper.sh" "-KILL" "GitHub Actions Helper (FORCE)"
+        kill_processes_by_pattern "\\./run\\.sh" "-KILL" "GitHub Actions Runner Script (FORCE)"
+        kill_processes_by_pattern "/bin/bash.*run" "-KILL" "Runner Bash Scripts (FORCE)"
+        kill_processes_by_pattern "\\.ghast/runners" "-KILL" "Ghast Runner Processes (FORCE)"
+        
+        # 5. Final check - show any remaining runner processes
+        echo "🔍 Final check for remaining runner processes..."
+        echo "Remaining Runner.Listener processes:"
+        pgrep -f "Runner.Listener" 2>/dev/null | while read pid; do
+            echo "  ⚠️ PID $pid: $(ps -p $pid -o comm= 2>/dev/null || echo 'unknown')"
+        done || echo "  ✅ None found"
+        
+        echo "Remaining run-helper.sh processes:"
+        pgrep -f "run-helper.sh" 2>/dev/null | while read pid; do
+            echo "  ⚠️ PID $pid: $(ps -p $pid -o comm= 2>/dev/null || echo 'unknown')"
+        done || echo "  ✅ None found"
+        
+        echo "✅ Comprehensive runner cleanup completed"
         """
         
         let cleanupProcess = Process()
         cleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-        cleanupProcess.arguments = ["-c", killOrphansScript]
+        cleanupProcess.arguments = ["-c", cleanupScript]
         
         do {
             try cleanupProcess.run()
             cleanupProcess.waitUntilExit()
-            print("🏃 Orphan process cleanup completed")
+            print("🏃 Comprehensive runner cleanup completed")
         } catch {
-            print("🏃 Warning: Could not run orphan process cleanup: \(error)")
+            print("🏃 Warning: Could not run comprehensive cleanup: \(error)")
         }
     }
     
