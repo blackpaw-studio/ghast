@@ -107,7 +107,7 @@ struct LocalRunnersView: View {
                     .background(Color(NSColor.controlBackgroundColor))
                 }
             }
-            .frame(minWidth: 350, idealWidth: 400, maxWidth: 500)
+            .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
             
             // Separator
             Rectangle()
@@ -124,6 +124,7 @@ struct LocalRunnersView: View {
             }
             .frame(maxWidth: .infinity)
         }
+        .frame(minWidth: 900)
         .background(Color(NSColor.controlBackgroundColor))
         .navigationTitle("")
         .sheet(isPresented: $showingNewRunnerFlow) {

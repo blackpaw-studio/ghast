@@ -3,6 +3,7 @@ import SwiftUI
 struct SidebarView: View {
     @EnvironmentObject var authService: GitHubAuthService
     @EnvironmentObject var appState: AppState
+    @Environment(\.gitHubAPIService) var apiService
     @State private var searchText = ""
     
     var filteredRepositories: [GitHubRepository] {
@@ -64,13 +65,6 @@ struct SidebarView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search repositories")
         .navigationTitle("")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                if let user = authService.currentUser {
-                    modernUserMenu(user: user)
-                }
-            }
-        }
         .frame(minWidth: 320)
         .task {
             if appState.repositories.isEmpty {
@@ -336,87 +330,23 @@ struct SidebarView: View {
         .buttonStyle(.plain)
     }
     
-    private func modernUserMenu(user: GitHubUser) -> some View {
-        Menu {
-            Button("Settings") {
-                appState.selectedView = .settings
-            }
-            
-            Divider()
-            
-            Button("Sign Out", role: .destructive) {
-                authService.signOut()
-            }
-        } label: {
-            HStack(spacing: 8) {
-                AsyncImage(url: URL(string: user.avatarURL)) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.white)
-                        )
-                }
-                .frame(width: 28, height: 28)
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-                
-                Text(user.login)
-                    .font(.system(.caption, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                    )
-            )
-        }
-        .menuStyle(.borderlessButton)
-    }
-    
     private func loadRepositories() async {
-        appState.isLoadingRepositories = true
+        guard !appState.isLoadingRepositories else { return }
+        
         do {
-            let repositories = try await GitHubAPIService.shared.fetchRepositories()
-            await MainActor.run {
-                appState.repositories = repositories
-                appState.isLoadingRepositories = false
-            }
+            appState.isLoadingRepositories = true
+            let repos = try await apiService.fetchRepositories()
+            appState.repositories = repos
         } catch {
-            await MainActor.run {
-                appState.isLoadingRepositories = false
-            }
             print("Failed to load repositories: \(error)")
         }
+        
+        appState.isLoadingRepositories = false
     }
 }
 
 #Preview {
-    NavigationSplitView {
-        SidebarView()
-            .environmentObject(GitHubAuthService())
-            .environmentObject(AppState())
-    } detail: {
-        Text("Detail View")
-    }
+    SidebarView()
+        .environmentObject(GitHubAuthService())
+        .environmentObject(AppState())
 }
