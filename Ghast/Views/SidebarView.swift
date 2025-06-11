@@ -71,6 +71,7 @@ struct SidebarView: View {
                 }
             }
         }
+        .frame(minWidth: 320)
         .task {
             if appState.repositories.isEmpty {
                 await loadRepositories()

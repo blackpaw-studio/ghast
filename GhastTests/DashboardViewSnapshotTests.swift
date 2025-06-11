@@ -56,7 +56,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         } detail: {
             DashboardView()
         }
-        .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
+        .navigationSplitViewColumnWidth(320)
         .environmentObject(authService as GitHubAuthService)
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
@@ -80,7 +80,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         } detail: {
             DashboardView()
         }
-        .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
+        .navigationSplitViewColumnWidth(320)
         .environmentObject(authService as GitHubAuthService)
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
@@ -104,7 +104,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         } detail: {
             DashboardView()
         }
-        .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
+        .navigationSplitViewColumnWidth(320)
         .environmentObject(authService as GitHubAuthService)
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
@@ -128,7 +128,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         } detail: {
             DashboardView()
         }
-        .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
+        .navigationSplitViewColumnWidth(320)
         .environmentObject(authService as GitHubAuthService)
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
@@ -152,7 +152,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         } detail: {
             DashboardView()
         }
-        .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
+        .navigationSplitViewColumnWidth(320)
         .environmentObject(authService as GitHubAuthService)
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
