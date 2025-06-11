@@ -238,11 +238,12 @@ struct RunnerConfigurationView: View {
                     .overlay(
                         Group {
                             if preJobScript.isEmpty {
-                                VStack {
+                                VStack(alignment: .leading) {
                                     Text("#!/bin/bash\n# Example: Setup environment\necho \"Pre-job setup starting...\"\n# Your setup commands here")
                                         .font(.system(.body, design: .monospaced))
                                         .foregroundColor(.secondary.opacity(0.6))
                                         .padding(12)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     Spacer()
                                 }
                                 .allowsHitTesting(false)
@@ -307,11 +308,12 @@ struct RunnerConfigurationView: View {
                     .overlay(
                         Group {
                             if postJobScript.isEmpty {
-                                VStack {
+                                VStack(alignment: .leading) {
                                     Text("#!/bin/bash\n# Example: Cleanup after job\necho \"Post-job cleanup starting...\"\n# Your cleanup commands here")
                                         .font(.system(.body, design: .monospaced))
                                         .foregroundColor(.secondary.opacity(0.6))
                                         .padding(12)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     Spacer()
                                 }
                                 .allowsHitTesting(false)
