@@ -503,7 +503,7 @@ class RunnerService: ObservableObject {
             DispatchQueue.global(qos: .utility).async {
                 let cleanupScript = """
                 # Fast kill processes in this specific runner directory
-                timeout 2s bash -c 'pkill -f "\(runnerPath)" 2>/dev/null || true' || true
+                pkill -f "\(runnerPath)" 2>/dev/null || true
                 """
                 
                 let cleanupProcess = Process()
@@ -532,7 +532,7 @@ class RunnerService: ObservableObject {
                     DispatchQueue.global(qos: .utility).async {
                         let forceCleanupScript = """
                         # Fast force kill processes in this specific runner directory
-                        timeout 1s bash -c 'pkill -9 -f "\(runnerPath)" 2>/dev/null || true' || true
+                        pkill -9 -f "\(runnerPath)" 2>/dev/null || true
                         """
                         
                         let forceCleanupProcess = Process()
@@ -635,9 +635,6 @@ class RunnerService: ObservableObject {
         #!/bin/bash
         
         # Fast kill all runner-related processes - no verbose output during app quit
-        # Use timeout to prevent hanging
-        timeout 3s bash -c '
-        
         # Kill common GitHub Actions processes immediately
         pkill -f "Runner.Listener" 2>/dev/null || true
         pkill -f "run-helper.sh" 2>/dev/null || true
@@ -652,8 +649,6 @@ class RunnerService: ObservableObject {
         pkill -9 -f "run-helper.sh" 2>/dev/null || true
         pkill -9 -f "./run.sh" 2>/dev/null || true
         pkill -9 -f ".ghast/runners" 2>/dev/null || true
-        
-        ' 2>/dev/null || true
         
         exit 0
         """
