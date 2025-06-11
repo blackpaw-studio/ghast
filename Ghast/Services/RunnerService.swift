@@ -319,52 +319,64 @@ class RunnerService: ObservableObject {
         // Create a wrapper script that monitors the parent process and kills itself if parent dies
         // This ensures the runner process doesn't outlive Ghast
         let parentPID = ProcessInfo.processInfo.processIdentifier
+        let logFile = "\(runner.path)/ghast-runner.log"
         let wrapperScript = """
         #!/bin/bash
         
+        # Set up log file
+        LOG_FILE="\(logFile)"
+        
+        # Function to log with timestamp
+        log_message() {
+            echo "$(date '+%H:%M:%S') $1" | tee -a "$LOG_FILE"
+        }
+        
         # Change to the runner directory
         cd "\(runner.path)" 2>&1 || {
-            echo "❌ ERROR: Cannot change to directory \(runner.path)"
+            log_message "❌ ERROR: Cannot change to directory \(runner.path)"
             exit 1
         }
         
         # Verify run.sh exists and is executable
         if [ ! -f "./run.sh" ]; then
-            echo "❌ ERROR: ./run.sh not found"
+            log_message "❌ ERROR: ./run.sh not found"
             exit 127
         fi
         
         if [ ! -x "./run.sh" ]; then
-            echo "🔧 Making ./run.sh executable"
+            log_message "🔧 Making ./run.sh executable"
             chmod +x ./run.sh
         fi
         
-        echo "🏃 Starting runner '\(runner.name)'"
+        log_message "🏃 Starting runner '\(runner.name)'"
         
         # Simple loop to keep runner running
         while true; do
-            # Run the runner and capture its output
-            ./run.sh &
+            # Run the runner and capture its output to log file
+            log_message "🚀 Executing ./run.sh"
+            ./run.sh 2>&1 | while IFS= read -r line; do
+                echo "$(date '+%H:%M:%S') $line" >> "$LOG_FILE"
+            done &
             RUNNER_PID=$!
             
             # Wait for completion
             wait $RUNNER_PID
             EXIT_CODE=$?
             
-            echo "🏁 Runner exited with code $EXIT_CODE"
+            log_message "🏁 Runner exited with code $EXIT_CODE"
             
             # Check if parent is still alive
             if ! kill -0 \(parentPID) 2>/dev/null; then
-                echo "🛑 Parent process terminated - stopping runner"
+                log_message "🛑 Parent process terminated - stopping runner"
                 break
             fi
             
             # Only restart if exit code suggests we should continue
             if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
-                echo "🔄 Restarting runner in 5 seconds..."
+                log_message "🔄 Restarting runner in 5 seconds..."
                 sleep 5
             else
-                echo "❌ Runner failed with exit code $EXIT_CODE - stopping"
+                log_message "❌ Runner failed with exit code $EXIT_CODE - stopping"
                 break
             fi
         done
@@ -382,30 +394,21 @@ class RunnerService: ObservableObject {
         let logSubject = PassthroughSubject<String, Never>()
         logStreams[id] = logSubject
         
-        // Send initial log message
-        logSubject.send("🏃 Starting runner '\(runner.name)' at \(runner.path)\n")
+        // Send initial log message to file
+        let logFileURL = URL(fileURLWithPath: logFile)
+        let initialMessage = "\(Date().formatted(date: .omitted, time: .standard)) 🏃 Starting runner '\(runner.name)' at \(runner.path)\n"
         
-        // Monitor output with weak references to avoid crashes
-        outputPipe.fileHandleForReading.readabilityHandler = { [weak logSubject] handle in
-            let data = handle.availableData
-            if !data.isEmpty {
-                if let output = String(data: data, encoding: .utf8), !output.isEmpty {
-                    DispatchQueue.main.async {
-                        logSubject?.send(output)
-                    }
+        // Append to existing log file or create new one
+        if FileManager.default.fileExists(atPath: logFileURL.path) {
+            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                fileHandle.seekToEndOfFile()
+                if let data = initialMessage.data(using: .utf8) {
+                    fileHandle.write(data)
                 }
+                fileHandle.closeFile()
             }
-        }
-        
-        errorPipe.fileHandleForReading.readabilityHandler = { [weak logSubject] handle in
-            let data = handle.availableData
-            if !data.isEmpty {
-                if let output = String(data: data, encoding: .utf8), !output.isEmpty {
-                    DispatchQueue.main.async {
-                        logSubject?.send("[STDERR] \(output)")
-                    }
-                }
-            }
+        } else {
+            try? initialMessage.write(to: logFileURL, atomically: false, encoding: .utf8)
         }
         
         // Setup termination handler
@@ -413,10 +416,18 @@ class RunnerService: ObservableObject {
             let exitCode = terminatedProcess.terminationStatus
             print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
             
-            // Immediately clear file handle readability handlers to prevent crashes
-            // Use the stored pipe references instead of accessing the terminated process
-            outputPipe.fileHandleForReading.readabilityHandler = nil
-            errorPipe.fileHandleForReading.readabilityHandler = nil
+            // Log termination to file
+            let logFileURL = URL(fileURLWithPath: logFile)
+            let terminationMessage = "\(Date().formatted(date: .omitted, time: .standard)) 🏃 Runner process terminated (exit code: \(exitCode))\n"
+            
+            // Append termination message
+            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                fileHandle.seekToEndOfFile()
+                if let data = terminationMessage.data(using: .utf8) {
+                    fileHandle.write(data)
+                }
+                fileHandle.closeFile()
+            }
             
             // Log specific error messages for common exit codes
             let errorMessage: String
@@ -434,13 +445,19 @@ class RunnerService: ObservableObject {
                 errorMessage = "⚠️ Runner exited with code \(exitCode)\n"
             }
             
+            // Write error message to log file
+            let errorLogMessage = "\(Date().formatted(date: .omitted, time: .standard)) \(errorMessage)"
+            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                fileHandle.seekToEndOfFile()
+                if let data = errorLogMessage.data(using: .utf8) {
+                    fileHandle.write(data)
+                }
+                fileHandle.closeFile()
+            }
+            
             // Schedule cleanup on main actor
             DispatchQueue.main.async {
                 guard let strongSelf = self else { return }
-                
-                // Send termination message to log stream
-                strongSelf.logStreams[id]?.send("🏃 Runner process terminated (exit code: \(exitCode))\n")
-                strongSelf.logStreams[id]?.send(errorMessage)
                 
                 // Remove from tracking - this prevents reuse of the Process instance
                 strongSelf.runningProcesses.removeValue(forKey: id)
@@ -671,6 +688,37 @@ class RunnerService: ObservableObject {
     
     func getLogStream(for runnerId: String) -> AnyPublisher<String, Never>? {
         return logStreams[runnerId]?.eraseToAnyPublisher()
+    }
+    
+    func getRunnerLogFile(for runnerId: String) -> URL? {
+        guard let runner = localRunners.first(where: { $0.id == runnerId }) else { return nil }
+        return URL(fileURLWithPath: runner.path).appendingPathComponent("ghast-runner.log")
+    }
+    
+    func readRunnerLogs(for runnerId: String) -> String {
+        guard let logFileURL = getRunnerLogFile(for: runnerId),
+              FileManager.default.fileExists(atPath: logFileURL.path) else {
+            return "No logs available. Start the runner to see output."
+        }
+        
+        do {
+            let logContent = try String(contentsOf: logFileURL, encoding: .utf8)
+            return logContent.isEmpty ? "No logs available. Start the runner to see output." : logContent
+        } catch {
+            return "Error reading log file: \(error.localizedDescription)"
+        }
+    }
+    
+    func clearRunnerLogs(for runnerId: String) {
+        guard let logFileURL = getRunnerLogFile(for: runnerId) else { return }
+        
+        do {
+            if FileManager.default.fileExists(atPath: logFileURL.path) {
+                try "".write(to: logFileURL, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            print("🏃 Warning: Could not clear log file: \(error)")
+        }
     }
     
     func isRunnerRunning(id: String) -> Bool {

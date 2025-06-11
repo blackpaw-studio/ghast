@@ -5,7 +5,7 @@ struct RunnerLogsView: View {
     let runner: LocalRunner
     @StateObject private var runnerService = RunnerService.shared
     @State private var logText: String = ""
-    @State private var cancellable: AnyCancellable?
+    @State private var refreshTimer: Timer?
     
     // Find the current runner from the service to get live status updates
     private var currentRunner: LocalRunner? {
@@ -49,8 +49,8 @@ struct RunnerLogsView: View {
                             Task {
                                 do {
                                     try await runnerService.startRunner(id: runner.id)
-                                    // Setup log stream after starting
-                                    setupLogStream()
+                                    // Load logs after starting
+                                    loadLogs()
                                 } catch {
                                     print("Failed to start runner: \(error)")
                                     logText += "ERROR: Failed to start runner: \(error.localizedDescription)\n"
@@ -62,7 +62,8 @@ struct RunnerLogsView: View {
                     }
                     
                     Button("Clear") {
-                        logText = ""
+                        runnerService.clearRunnerLogs(for: runner.id)
+                        loadLogs()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -105,14 +106,18 @@ struct RunnerLogsView: View {
         .onAppear {
             // Sync runner status to ensure accuracy
             runnerService.syncRunnerStatus(id: runner.id)
-            setupLogStream()
+            loadLogs()
+            startAutoRefresh()
         }
         .onDisappear {
-            cancellable?.cancel()
+            stopAutoRefresh()
         }
         .onReceive(runnerService.$localRunners) { _ in
-            // Re-setup log stream when runners change (e.g., when status updates)
-            setupLogStream()
+            // Restart auto-refresh when runner status changes
+            stopAutoRefresh()
+            if currentRunner?.status == .running {
+                startAutoRefresh()
+            }
         }
     }
     
@@ -124,28 +129,24 @@ struct RunnerLogsView: View {
         }
     }
     
-    private func setupLogStream() {
-        // Cancel any existing subscription
-        cancellable?.cancel()
+    private func loadLogs() {
+        logText = runnerService.readRunnerLogs(for: runner.id)
+    }
+    
+    private func startAutoRefresh() {
+        // Only refresh if runner is running
+        guard currentRunner?.status == .running else { return }
         
-        // Try to get the log stream
-        if let logStream = runnerService.getLogStream(for: runner.id) {
-            cancellable = logStream
-                .receive(on: DispatchQueue.main)
-                .sink { logLine in
-                    logText += logLine
-                }
-            print("🏃 Log stream setup for runner: \(runner.name)")
-        } else {
-            print("🏃 No log stream available for runner: \(runner.name)")
-            
-            // If no stream exists and runner is running, try to reconnect in a moment
-            if currentRunner?.status == .running {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    setupLogStream()
-                }
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            DispatchQueue.main.async {
+                loadLogs()
             }
         }
+    }
+    
+    private func stopAutoRefresh() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 }
 
