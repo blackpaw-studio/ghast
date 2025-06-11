@@ -281,6 +281,14 @@ class RunnerService: ObservableObject {
     
     /// Manually scan for existing runners (can be called from UI)
     func scanForExistingRunners() {
+        // Clean up "discovered" labels from existing runners
+        for index in localRunners.indices {
+            if localRunners[index].labels.contains("discovered") {
+                localRunners[index].labels.removeAll { $0 == "discovered" }
+            }
+        }
+        saveRunners()
+        
         discoverExistingRunners()
     }
     
@@ -860,7 +868,7 @@ class RunnerService: ObservableObject {
                     name: runnerName,
                     repository: repository,
                     path: runnerDir.path,
-                    labels: ["self-hosted", "discovered"]
+                    labels: ["self-hosted"]
                 )
                 
                 print("🏃 Discovered existing runner: \(runnerName) for \(repository)")
@@ -886,7 +894,7 @@ struct LocalRunner: Codable, Identifiable, Hashable {
     let name: String
     let repository: String
     let path: String
-    let labels: [String]
+    var labels: [String]
     var status: RunnerStatus
     let createdAt: Date
     
