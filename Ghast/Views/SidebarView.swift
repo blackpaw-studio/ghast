@@ -202,11 +202,10 @@ struct SidebarView: View {
                                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                                 )
                         )
-                        .rotationEffect(.degrees(appState.isLoadingRepositories ? 360 : 0))
-                        .animation(appState.isLoadingRepositories ? .linear(duration: 1).repeatForever(autoreverses: false) : nil, value: appState.isLoadingRepositories)
                 }
                 .buttonStyle(.plain)
                 .disabled(appState.isLoadingRepositories)
+                .opacity(appState.isLoadingRepositories ? 0.6 : 1.0)
                 
                 // Repository count badge
                 if !appState.repositories.isEmpty {
