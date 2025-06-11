@@ -26,16 +26,31 @@ struct LocalRunnersView: View {
                         Spacer()
                         
                         HStack(spacing: 12) {
-                            // Scan button
+                            // Refresh/discover button
                             Button(action: {
                                 runnerService.scanForExistingRunners()
                             }) {
-                                Image(systemName: "magnifyingglass.circle.fill")
-                                    .font(.system(size: 20, weight: .medium))
-                                    .foregroundColor(.blue)
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.clockwise.circle.fill")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.blue)
+                                    Text("Refresh")
+                                        .font(.system(.caption, design: .rounded, weight: .medium))
+                                        .foregroundColor(.blue)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.blue.opacity(0.1))
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                                        )
+                                )
                             }
                             .buttonStyle(.plain)
-                            .help("Scan for existing runners")
+                            .help("Discover existing runners and refresh list")
                             
                             // Runner count badge
                             HStack(spacing: 6) {
