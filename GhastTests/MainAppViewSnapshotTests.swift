@@ -92,12 +92,40 @@ final class MainAppViewSnapshotTests: XCTestCase {
         let mockAPIService = MockGitHubAPIService()
         mockAPIService.mockRunners = []
         
+        // Add mock runners to the RunnerService
+        let runnerService = RunnerService.shared
+        let mockRunner1 = LocalRunner(
+            name: "production-runner-1",
+            repository: "testuser/ghast",
+            path: "/Users/test/.ghast/runners/production-runner-1",
+            labels: ["self-hosted", "macOS", "ARM64"]
+        )
+        let mockRunner2 = LocalRunner(
+            name: "staging-runner",
+            repository: "testuser/private-project",
+            path: "/Users/test/.ghast/runners/staging-runner",
+            labels: ["self-hosted", "staging"]
+        )
+        
+        // Clear any existing runners and add our mocks
+        runnerService.localRunners.removeAll()
+        runnerService.addLocalRunner(mockRunner1)
+        runnerService.addLocalRunner(mockRunner2)
+        
+        // Set one runner as running for visual variety
+        if let index = runnerService.localRunners.firstIndex(where: { $0.id == mockRunner1.id }) {
+            runnerService.localRunners[index].status = .running
+        }
+        
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        
+        // Clean up: Remove mock runners after test
+        runnerService.localRunners.removeAll()
     }
     
     func testMainAppViewSettings() async {

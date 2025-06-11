@@ -107,7 +107,7 @@ struct LocalRunnersView: View {
                     .background(Color(NSColor.controlBackgroundColor))
                 }
             }
-            .frame(minWidth: 300, idealWidth: 350, maxWidth: 450)
+            .frame(minWidth: 350, idealWidth: 400, maxWidth: 500)
             
             // Separator
             Rectangle()
