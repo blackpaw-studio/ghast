@@ -79,14 +79,7 @@ struct RunnerLogsView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .background(
-                Rectangle()
-                    .fill(.thinMaterial)
-                    .overlay(
-                        Rectangle()
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                    )
-            )
+            .background(.thinMaterial)
             
             // Toolbar with additional controls
             HStack(spacing: 12) {
@@ -141,10 +134,6 @@ struct RunnerLogsView: View {
         .background(
             Capsule()
                 .fill(statusColor.opacity(0.08))
-                .overlay(
-                    Capsule()
-                        .stroke(statusColor.opacity(0.2), lineWidth: 1)
-                )
         )
     }
     
@@ -215,10 +204,6 @@ struct RunnerLogsView: View {
                 .background(
                     Capsule()
                         .fill(.thinMaterial)
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                        )
                 )
             }
             .buttonStyle(.plain)
@@ -288,10 +273,6 @@ struct RunnerLogsView: View {
                         )
                 )
                 .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
                 .onChange(of: logText) {
                     if isAutoScrollEnabled {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

@@ -109,14 +109,7 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 20)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Rectangle()
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
-        )
+        .background(.ultraThinMaterial)
     }
     
     private func modernNavItem(
@@ -156,10 +149,6 @@ struct SidebarView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSelected ? color.opacity(0.1) : Color.clear)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? color.opacity(0.2) : Color.clear, lineWidth: 1)
-            )
         }
         .buttonStyle(.plain)
     }
@@ -191,10 +180,6 @@ struct SidebarView: View {
                         .background(
                             Circle()
                                 .fill(.ultraThinMaterial)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                                )
                         )
                 }
                 .buttonStyle(.plain)
@@ -210,11 +195,7 @@ struct SidebarView: View {
                         .padding(.vertical, 2)
                         .background(
                             Capsule()
-                                .fill(Color.orange.opacity(0.1))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                                )
+                                .fill(Color.orange.opacity(0.08))
                         )
                 }
             }
@@ -318,13 +299,6 @@ struct SidebarView: View {
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(appState.selectedView == .repository(repository) ? Color.blue.opacity(0.1) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(
-                        appState.selectedView == .repository(repository) ? Color.blue.opacity(0.2) : Color.clear,
-                        lineWidth: 1
-                    )
             )
         }
         .buttonStyle(.plain)

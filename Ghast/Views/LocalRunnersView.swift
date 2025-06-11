@@ -42,11 +42,7 @@ struct LocalRunnersView: View {
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
-                                        .fill(Color.blue.opacity(0.1))
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-                                        )
+                                        .fill(Color.blue.opacity(0.08))
                                 )
                             }
                             .buttonStyle(.plain)
@@ -65,11 +61,7 @@ struct LocalRunnersView: View {
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
-                                    .fill(Color.blue.opacity(0.1))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                                    )
+                                    .fill(Color.blue.opacity(0.08))
                             )
                         }
                     }
