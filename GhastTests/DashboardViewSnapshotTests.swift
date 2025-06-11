@@ -51,15 +51,10 @@ final class DashboardViewSnapshotTests: XCTestCase {
         // Set empty runners to avoid API calls
         mockAPIService.mockRunners = []
         
-        let view = NavigationSplitView {
-            SidebarView()
-        } detail: {
-            DashboardView()
-        }
-        .navigationSplitViewColumnWidth(320)
-        .environmentObject(authService as GitHubAuthService)
-        .environmentObject(appState)
-        .environment(\.gitHubAPIService, mockAPIService)
+        let view = DashboardView()
+            .environmentObject(authService as GitHubAuthService)
+            .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: false)
     }
@@ -75,15 +70,10 @@ final class DashboardViewSnapshotTests: XCTestCase {
         // Set empty runners to avoid API calls
         mockAPIService.mockRunners = []
         
-        let view = NavigationSplitView {
-            SidebarView()
-        } detail: {
-            DashboardView()
-        }
-        .navigationSplitViewColumnWidth(320)
-        .environmentObject(authService as GitHubAuthService)
-        .environmentObject(appState)
-        .environment(\.gitHubAPIService, mockAPIService)
+        let view = DashboardView()
+            .environmentObject(authService as GitHubAuthService)
+            .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: false)
     }
@@ -99,15 +89,10 @@ final class DashboardViewSnapshotTests: XCTestCase {
         // Set empty runners to avoid API calls
         mockAPIService.mockRunners = []
         
-        let view = NavigationSplitView {
-            SidebarView()
-        } detail: {
-            DashboardView()
-        }
-        .navigationSplitViewColumnWidth(320)
-        .environmentObject(authService as GitHubAuthService)
-        .environmentObject(appState)
-        .environment(\.gitHubAPIService, mockAPIService)
+        let view = DashboardView()
+            .environmentObject(authService as GitHubAuthService)
+            .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: false)
     }
@@ -123,15 +108,10 @@ final class DashboardViewSnapshotTests: XCTestCase {
         // Set empty runners to avoid API calls
         mockAPIService.mockRunners = []
         
-        let view = NavigationSplitView {
-            SidebarView()
-        } detail: {
-            DashboardView()
-        }
-        .navigationSplitViewColumnWidth(320)
-        .environmentObject(authService as GitHubAuthService)
-        .environmentObject(appState)
-        .environment(\.gitHubAPIService, mockAPIService)
+        let view = DashboardView()
+            .environmentObject(authService as GitHubAuthService)
+            .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600, record: false)
     }
@@ -147,15 +127,10 @@ final class DashboardViewSnapshotTests: XCTestCase {
         // Set empty runners to avoid API calls
         mockAPIService.mockRunners = []
         
-        let view = NavigationSplitView {
-            SidebarView()
-        } detail: {
-            DashboardView()
-        }
-        .navigationSplitViewColumnWidth(320)
-        .environmentObject(authService as GitHubAuthService)
-        .environmentObject(appState)
-        .environment(\.gitHubAPIService, mockAPIService)
+        let view = DashboardView()
+            .environmentObject(authService as GitHubAuthService)
+            .environmentObject(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000, record: false)
     }
