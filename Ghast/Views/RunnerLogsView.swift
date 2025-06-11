@@ -32,9 +32,14 @@ struct RunnerLogsView: View {
             stopAutoRefresh()
         }
         .onReceive(runnerService.$localRunners) { _ in
-            stopAutoRefresh()
-            if currentRunner?.status == .running {
+            // Only manage timer if status actually changed
+            let isCurrentlyRunning = currentRunner?.status == .running
+            let hasTimer = refreshTimer != nil
+            
+            if isCurrentlyRunning && !hasTimer {
                 startAutoRefresh()
+            } else if !isCurrentlyRunning && hasTimer {
+                stopAutoRefresh()
             }
         }
     }
@@ -326,22 +331,21 @@ struct RunnerLogsView: View {
     }
     
     private func startAutoRefresh() {
-        // Stop any existing timer first
-        stopAutoRefresh()
+        // Don't start if already running
+        guard refreshTimer == nil else { return }
         
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+        print("🔄 Starting auto-refresh timer for runner \(runner.name)")
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             DispatchQueue.main.async {
                 self.loadLogs()
-                
-                // Stop refreshing if runner is no longer running
-                if self.currentRunner?.status != .running {
-                    self.stopAutoRefresh()
-                }
             }
         }
     }
     
     private func stopAutoRefresh() {
+        if refreshTimer != nil {
+            print("⏹️ Stopping auto-refresh timer for runner \(runner.name)")
+        }
         refreshTimer?.invalidate()
         refreshTimer = nil
     }
