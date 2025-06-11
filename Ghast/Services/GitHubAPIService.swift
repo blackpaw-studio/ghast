@@ -56,25 +56,51 @@ class GitHubAPIService: GitHubAPIServiceProtocol {
     // MARK: - Repository APIs
     
     func fetchRepositories() async throws -> [GitHubRepository] {
-        let url = "\(baseURL)/user/repos"
-        let parameters: [String: Any] = [
-            "type": "all",
-            "sort": "updated",
-            "per_page": 100
-        ]
+        var allRepositories: [GitHubRepository] = []
+        var page = 1
+        let perPage = 100 // Maximum allowed by GitHub API
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, parameters: parameters, headers: headers)
-                .validate()
-                .responseDecodable(of: [GitHubRepository].self) { response in
-                    switch response.result {
-                    case .success(let repositories):
-                        continuation.resume(returning: repositories)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
+        while true {
+            let url = "\(baseURL)/user/repos"
+            let parameters: [String: Any] = [
+                "type": "all",
+                "sort": "updated",
+                "direction": "desc",
+                "page": page,
+                "per_page": perPage
+            ]
+            
+            let repositories = try await withCheckedThrowingContinuation { continuation in
+                AF.request(url, parameters: parameters, headers: headers)
+                    .validate()
+                    .responseDecodable(of: [GitHubRepository].self) { response in
+                        switch response.result {
+                        case .success(let repositories):
+                            continuation.resume(returning: repositories)
+                        case .failure(let error):
+                            continuation.resume(throwing: self.mapAFError(error, response: response.response))
+                        }
                     }
-                }
+            }
+            
+            // If we got fewer than perPage results, we've reached the end
+            if repositories.count < perPage {
+                allRepositories.append(contentsOf: repositories)
+                break
+            }
+            
+            allRepositories.append(contentsOf: repositories)
+            page += 1
+            
+            // Safety limit to prevent infinite loops
+            if page > 50 { // Max 5000 repositories
+                print("⚠️ Repository pagination limit reached (5000 repos)")
+                break
+            }
         }
+        
+        print("📦 Fetched \(allRepositories.count) repositories")
+        return allRepositories
     }
     
     // MARK: - Runner APIs
