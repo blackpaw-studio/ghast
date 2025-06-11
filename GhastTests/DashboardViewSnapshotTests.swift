@@ -61,7 +61,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: false)
     }
     
     func testDashboardEmpty() async {
@@ -85,7 +85,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: false)
     }
     
     func testDashboardLoading() async {
@@ -109,7 +109,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: false)
     }
     
     func testDashboardSmallWindow() async {
@@ -133,7 +133,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600, record: false)
     }
     
     func testDashboardLargeWindow() async {
@@ -157,6 +157,6 @@ final class DashboardViewSnapshotTests: XCTestCase {
         .environmentObject(appState)
         .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000, record: false)
     }
 }

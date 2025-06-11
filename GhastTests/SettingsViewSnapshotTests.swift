@@ -19,7 +19,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         let view = SettingsView()
             .environmentObject(authService as GitHubAuthService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
     
     func testSettingsViewNotAuthenticated() async {
@@ -29,7 +29,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         let view = SettingsView()
             .environmentObject(authService as GitHubAuthService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
     
     func testSettingsViewLongUserName() async {
@@ -45,7 +45,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         let view = SettingsView()
             .environmentObject(authService as GitHubAuthService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
     
     func testSettingsViewDarkMode() async {
@@ -62,6 +62,6 @@ final class SettingsViewSnapshotTests: XCTestCase {
             .environmentObject(authService as GitHubAuthService)
             .preferredColorScheme(.dark)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
 }

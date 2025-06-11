@@ -378,20 +378,12 @@ struct ModernRunnerCard: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         Rectangle()
-                            .stroke(
-                                isSelected ? Color.blue.opacity(0.5) : (isHovered ? Color.primary.opacity(0.2) : Color.primary.opacity(0.1)),
-                                lineWidth: isSelected ? 2 : 1
-                            )
+                            .stroke(strokeColor, lineWidth: strokeWidth)
                     )
             )
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .scaleEffect(isHovered && !isSelected ? 1.02 : 1.0)
-            .shadow(
-                color: isSelected ? Color.blue.opacity(0.2) : (isHovered ? Color.black.opacity(0.1) : Color.clear),
-                radius: isSelected ? 8 : (isHovered ? 4 : 0),
-                x: 0,
-                y: 2
-            )
+            .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: 2)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -406,6 +398,40 @@ struct ModernRunnerCard: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Are you sure you want to remove '\(runner.name)'? This will stop the runner if it's running.")
+        }
+    }
+    
+    private var strokeColor: Color {
+        if isSelected {
+            return Color.blue.opacity(0.5)
+        } else if isHovered {
+            return Color.primary.opacity(0.2)
+        } else {
+            return Color.primary.opacity(0.1)
+        }
+    }
+    
+    private var strokeWidth: CGFloat {
+        isSelected ? 2 : 1
+    }
+    
+    private var shadowColor: Color {
+        if isSelected {
+            return Color.blue.opacity(0.2)
+        } else if isHovered {
+            return Color.black.opacity(0.1)
+        } else {
+            return Color.clear
+        }
+    }
+    
+    private var shadowRadius: CGFloat {
+        if isSelected {
+            return 8
+        } else if isHovered {
+            return 4
+        } else {
+            return 0
         }
     }
     

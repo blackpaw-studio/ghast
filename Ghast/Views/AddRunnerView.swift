@@ -49,85 +49,43 @@ struct AddRunnerView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-                // Progress indicator
-                HStack {
-                    ForEach(Array(Step.allCases.enumerated()), id: \.offset) { index, step in
-                        HStack {
-                            Circle()
-                                .fill(stepColor(for: step))
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Text("\(index + 1)")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.white)
-                                )
-                            
-                            if index < Step.allCases.count - 1 {
-                                Rectangle()
-                                    .fill(currentStep.rawValue > step.rawValue ? .accentColor : Color.secondary.opacity(0.3))
-                                    .frame(height: 2)
+            // Modern header with progress indicator
+            modernHeader
+            
+            // Content area with modern design
+            GeometryReader { geometry in
+                ZStack {
+                    // Background gradient
+                    LinearGradient(
+                        colors: [
+                            Color(NSColor.controlBackgroundColor),
+                            Color(NSColor.controlBackgroundColor).opacity(0.8)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+                    
+                    ScrollView {
+                        VStack(spacing: 32) {
+                            switch currentStep {
+                            case .selectPlatform:
+                                modernPlatformSelectionView
+                            case .configure:
+                                modernConfigurationView
+                            case .creating:
+                                modernCreatingView
                             }
                         }
+                        .padding(.horizontal, 40)
+                        .padding(.vertical, 32)
                     }
                 }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
-                
-                Divider()
-                
-                // Content
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text(currentStep.title)
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                        
-                        switch currentStep {
-                        case .selectPlatform:
-                            platformSelectionView
-                        case .configure:
-                            configurationView
-                        case .creating:
-                            creatingView
-                        }
-                    }
-                    .padding()
-                }
-                
-                Divider()
-                
-                // Navigation buttons
-                HStack {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    
-                    Spacer()
-                    
-                    if currentStep != .selectPlatform {
-                        Button("Back") {
-                            withAnimation {
-                                currentStep = Step(rawValue: currentStep.rawValue - 1) ?? .selectPlatform
-                            }
-                        }
-                    }
-                    
-                    Button(buttonTitle) {
-                        if currentStep == .creating {
-                            onRunnerAdded()
-                            dismiss()
-                        } else {
-                            Task {
-                                await nextStep()
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isNextDisabled)
-                }
-                .padding()
             }
+            
+            // Modern navigation footer
+            modernFooter
+        }
         .frame(minWidth: 900, idealWidth: 1000, maxWidth: 1200, minHeight: 650, idealHeight: 750, maxHeight: 900)
         .task {
             await loadRunnerApplications()
@@ -143,51 +101,170 @@ struct AddRunnerView: View {
         }
     }
     
-    private var platformSelectionView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Choose the macOS architecture for your local runner:")
-                .foregroundColor(.secondary)
-            
-            if runnerApplications.isEmpty {
-                VStack {
-                    ProgressView()
-                    Text("Loading available platforms...")
-                        .foregroundColor(.secondary)
+    private var modernHeader: some View {
+        VStack(spacing: 20) {
+            // Title and repository info
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 56, height: 56)
+                    
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundColor(.blue)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-            } else if macOSApplications.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 32))
-                        .foregroundColor(.orange)
-                    Text("No macOS runners available")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    Text("This repository doesn't have macOS runner applications available.")
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.blue)
-                        Text("Detected architecture: \(currentArchitecture)")
-                            .font(.caption)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("New Self-Hosted Runner")
+                        .font(.system(.title, design: .rounded, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(repository.isPrivate ? .orange : .green)
+                        Text(repository.fullName)
+                            .font(.system(.body, design: .rounded, weight: .medium))
                             .foregroundColor(.secondary)
                     }
+                }
+                
+                Spacer()
+            }
+            
+            // Modern progress indicator
+            HStack(spacing: 8) {
+                ForEach(Array(Step.allCases.enumerated()), id: \.offset) { index, step in
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(stepColor(for: step))
+                                .frame(width: 32, height: 32)
+                                .shadow(color: stepColor(for: step).opacity(0.3), radius: 4, x: 0, y: 2)
+                            
+                            if step.rawValue < currentStep.rawValue {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                            } else {
+                                Text("\(index + 1)")
+                                    .font(.system(.caption, design: .rounded, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.title)
+                                .font(.system(.body, design: .rounded, weight: .semibold))
+                                .foregroundColor(step == currentStep ? stepColor(for: step) : .secondary)
+                            
+                            Text(stepDescription(for: step))
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        
+                        if index < Step.allCases.count - 1 {
+                            Rectangle()
+                                .fill(stepColor(for: step))
+                                .frame(width: 32, height: 2)
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 24)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+    
+    private func stepDescription(for step: Step) -> String {
+        switch step {
+        case .selectPlatform: return "Choose architecture"
+        case .configure: return "Set runner details"
+        case .creating: return "Download & setup"
+        }
+    }
+    
+    private var modernPlatformSelectionView: some View {
+        VStack(spacing: 24) {
+            // Section header
+            VStack(spacing: 12) {
+                Text("Choose Platform")
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .foregroundColor(.primary)
+                
+                Text("Select the macOS architecture for your local runner. We've detected your current system architecture and highlighted the recommended option.")
+                    .font(.system(.body, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+            }
+            
+            if runnerApplications.isEmpty {
+                modernLoadingCard(message: "Loading available platforms...")
+            } else if macOSApplications.isEmpty {
+                modernErrorCard(
+                    icon: "exclamationmark.triangle.fill",
+                    title: "No macOS Runners Available",
+                    message: "This repository doesn't have macOS runner applications available. Contact your repository administrator to enable macOS runners."
+                )
+            } else {
+                VStack(spacing: 20) {
+                    // Architecture detection info
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.green.opacity(0.15))
+                                .frame(width: 32, height: 32)
+                            
+                            Image(systemName: "cpu")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.green)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Detected Architecture")
+                                .font(.system(.body, design: .rounded, weight: .semibold))
+                                .foregroundColor(.primary)
+                            
+                            Text("\(currentArchitecture) - We'll highlight the best match")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                     
+                    // Platform selection grid
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible())
-                    ], spacing: 12) {
+                    ], spacing: 16) {
                         ForEach(macOSApplications, id: \.downloadURL) { application in
-                            PlatformCard(
+                            ModernPlatformCard(
                                 application: application,
-                                isSelected: selectedApplication?.downloadURL == application.downloadURL
+                                isSelected: selectedApplication?.downloadURL == application.downloadURL,
+                                isRecommended: application.architecture == currentArchitecture
                             ) {
                                 selectedApplication = application
                             }
@@ -198,91 +275,475 @@ struct AddRunnerView: View {
         }
     }
     
-    private var configurationView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Configure your runner settings:")
+    private func modernLoadingCard(message: String) -> some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.1)
+            
+            Text(message)
+                .font(.system(.body, design: .rounded, weight: .medium))
                 .foregroundColor(.secondary)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Runner Name")
-                    .font(.headline)
-                TextField("Enter a name for your runner", text: $runnerName)
-                    .textFieldStyle(.roundedBorder)
-                Text("Choose a unique name to identify this runner.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private func modernErrorCard(icon: String, title: String, message: String) -> some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.15))
+                    .frame(width: 64, height: 64)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundColor(.orange)
             }
             
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Labels (Optional)")
-                    .font(.headline)
-                TextField("e.g., gpu, large-memory", text: $runnerLabels)
-                    .textFieldStyle(.roundedBorder)
-                Text("Comma-separated labels to help target specific runners in your workflows.")
-                    .font(.caption)
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Text(message)
+                    .font(.system(.body, design: .rounded))
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private var modernConfigurationView: some View {
+        VStack(spacing: 24) {
+            // Section header
+            VStack(spacing: 12) {
+                Text("Configure Runner")
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .foregroundColor(.primary)
+                
+                Text("Set up your runner with a unique name and optional labels to help target specific workflows.")
+                    .font(.system(.body, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
             
-            if let app = selectedApplication {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Selected Platform")
-                            .font(.headline)
-                        HStack {
-                            Image(systemName: platformIcon(for: app.os))
-                            Text("\(app.os.capitalized) (\(app.architecture))")
+            VStack(spacing: 20) {
+                // Runner name input
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "tag.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.blue)
+                        
+                        Text("Runner Name")
+                            .font(.system(.headline, design: .rounded, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    TextField("Enter a unique name for your runner", text: $runnerName)
+                        .font(.system(.body, design: .rounded))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    Text("Choose a descriptive name to easily identify this runner in your workflows.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+                .padding(20)
+                .background(
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                // Labels input
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "tag.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.purple)
+                        
+                        Text("Labels (Optional)")
+                            .font(.system(.headline, design: .rounded, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    TextField("e.g., gpu, large-memory, macos", text: $runnerLabels)
+                        .font(.system(.body, design: .rounded))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    Text("Comma-separated labels to help target specific runners in your GitHub Actions workflows.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+                .padding(20)
+                .background(
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.purple.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                // Selected platform summary
+                if let app = selectedApplication {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.green)
+                            
+                            Text("Selected Platform")
+                                .font(.system(.headline, design: .rounded, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.green.opacity(0.15))
+                                    .frame(width: 40, height: 40)
+                                
+                                Image(systemName: platformIcon(for: app.os))
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.green)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(app.os.capitalized)")
+                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                
+                                Text("Architecture: \(app.architecture)")
+                                    .font(.system(.caption, design: .rounded))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                    .background(
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
             }
         }
     }
     
-    private var creatingView: some View {
-        VStack(alignment: .leading, spacing: 20) {
+    private var modernCreatingView: some View {
+        VStack(spacing: 32) {
             if isLoading {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                    
-                    Text("Creating your runner...")
-                        .font(.headline)
-                    
-                    Text("This may take a few moments while we download, extract, and configure your GitHub Actions runner.")
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 48))
-                        .foregroundColor(.green)
-                    
-                    Text("Runner Created Successfully!")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    Text("Your GitHub Actions runner '\(runnerName)' has been automatically downloaded, configured, and is ready to use.")
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                    
-                    GroupBox("What happens next?") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("• Your runner is now available in the Local Runners view")
-                            Text("• You can start/stop the runner with a single click")
-                            Text("• View real-time logs directly in Ghast")
-                            Text("• The runner is automatically managed by Ghast")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(spacing: 24) {
+                    // Animated progress indicator
+                    ZStack {
+                        Circle()
+                            .stroke(Color.blue.opacity(0.2), lineWidth: 8)
+                            .frame(width: 80, height: 80)
+                        
+                        Circle()
+                            .trim(from: 0, to: 0.7)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color.blue, Color.purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                            )
+                            .frame(width: 80, height: 80)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: isLoading)
+                        
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 32, weight: .medium))
+                            .foregroundColor(.blue)
                     }
+                    
+                    VStack(spacing: 12) {
+                        Text("Creating Your Runner")
+                            .font(.system(.title2, design: .rounded, weight: .bold))
+                            .foregroundColor(.primary)
+                        
+                        Text("Please wait while we download, extract, and configure your GitHub Actions runner. This process may take a few minutes depending on your internet connection.")
+                            .font(.system(.body, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(4)
+                    }
+                    
+                    // Progress steps
+                    VStack(alignment: .leading, spacing: 8) {
+                        progressStep(title: "Downloading runner binary", isCompleted: true)
+                        progressStep(title: "Extracting files", isCompleted: true) 
+                        progressStep(title: "Configuring runner", isCompleted: false)
+                        progressStep(title: "Registering with GitHub", isCompleted: false)
+                    }
+                    .padding(20)
+                    .background(
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                            )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 24) {
+                    // Success animation
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.15))
+                            .frame(width: 100, height: 100)
+                            .scaleEffect(1.2)
+                            .opacity(0.7)
+                            .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: isLoading)
+                        
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.green, Color.green.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 80, height: 80)
+                            .shadow(color: Color.green.opacity(0.3), radius: 12, x: 0, y: 4)
+                        
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(spacing: 16) {
+                        Text("Runner Created Successfully!")
+                            .font(.system(.title, design: .rounded, weight: .bold))
+                            .foregroundColor(.primary)
+                        
+                        Text("Your GitHub Actions runner '\(runnerName)' has been automatically downloaded, configured, and is ready to use.")
+                            .font(.system(.body, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                    }
+                    
+                    // Next steps card
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.orange)
+                            
+                            Text("What's Next?")
+                                .font(.system(.headline, design: .rounded, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            nextStepItem(icon: "list.bullet", text: "View your runner in the Local Runners section")
+                            nextStepItem(icon: "play.circle", text: "Start/stop the runner with a single click")
+                            nextStepItem(icon: "doc.text", text: "Monitor real-time logs directly in Ghast")
+                            nextStepItem(icon: "gearshape", text: "Runner is automatically managed by Ghast")
+                        }
+                    }
+                    .padding(20)
+                    .background(
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
             }
         }
+    }
+    
+    private func progressStep(title: String, isCompleted: Bool) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(isCompleted ? Color.green : Color.secondary.opacity(0.3))
+                    .frame(width: 20, height: 20)
+                
+                if isCompleted {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                } else {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(isLoading ? 1.2 : 0.8)
+                        .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isLoading)
+                }
+            }
+            
+            Text(title)
+                .font(.system(.body, design: .rounded, weight: .medium))
+                .foregroundColor(isCompleted ? .primary : .secondary)
+            
+            Spacer()
+        }
+    }
+    
+    private func nextStepItem(icon: String, text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.blue)
+                .frame(width: 20)
+            
+            Text(text)
+                .font(.system(.body, design: .rounded))
+                .foregroundColor(.primary)
+            
+            Spacer()
+        }
+    }
+    
+    private var modernFooter: some View {
+        HStack(spacing: 12) {
+            Button("Cancel") {
+                dismiss()
+            }
+            .font(.system(.body, design: .rounded, weight: .semibold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                    )
+            )
+            .buttonStyle(.plain)
+            
+            Spacer()
+            
+            if currentStep != .selectPlatform {
+                Button("Back") {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        currentStep = Step(rawValue: currentStep.rawValue - 1) ?? .selectPlatform
+                    }
+                }
+                .font(.system(.body, design: .rounded, weight: .semibold))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .buttonStyle(.plain)
+            }
+            
+            Button(buttonTitle) {
+                if currentStep == .creating {
+                    onRunnerAdded()
+                    dismiss()
+                } else {
+                    Task {
+                        await nextStep()
+                    }
+                }
+            }
+            .font(.system(.body, design: .rounded, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(
+                LinearGradient(
+                    colors: isNextDisabled ? 
+                        [Color.gray, Color.gray.opacity(0.8)] :
+                        [Color.blue, Color.purple],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(Capsule())
+            .shadow(
+                color: isNextDisabled ? Color.clear : Color.blue.opacity(0.3),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
+            .disabled(isNextDisabled)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 20)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
     }
     
     private var buttonTitle: String {
@@ -406,45 +867,121 @@ struct AddRunnerView: View {
     
 }
 
+struct ModernPlatformCard: View {
+    let application: GitHubRunnerApplication
+    let isSelected: Bool
+    let isRecommended: Bool
+    let onTap: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 16) {
+                // Platform icon with modern styling
+                ZStack {
+                    Circle()
+                        .fill(circleBackground)
+                        .frame(width: 60, height: 60)
+                        .shadow(color: isSelected ? Color.blue.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+                    
+                    Image(systemName: platformIcon)
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundColor(isSelected ? .white : .primary)
+                }
+                
+                VStack(spacing: 6) {
+                    Text(application.os.capitalized)
+                        .font(.system(.headline, design: .rounded, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text(application.architecture)
+                        .font(.system(.body, design: .rounded, weight: .medium))
+                        .foregroundColor(.secondary)
+                    
+                    if isRecommended {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.orange)
+                            Text("Recommended")
+                                .font(.system(.caption2, design: .rounded, weight: .semibold))
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.orange.opacity(0.1))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(20)
+            .background(
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Rectangle()
+                            .stroke(
+                                isSelected ? Color.blue.opacity(0.5) : (isHovered ? Color.primary.opacity(0.2) : Color.primary.opacity(0.1)),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .scaleEffect(isHovered && !isSelected ? 1.02 : 1.0)
+            .shadow(
+                color: isSelected ? Color.blue.opacity(0.2) : (isHovered ? Color.black.opacity(0.1) : Color.clear),
+                radius: isSelected ? 12 : (isHovered ? 6 : 0),
+                x: 0,
+                y: isSelected ? 6 : (isHovered ? 3 : 0)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+    
+    private var circleBackground: some ShapeStyle {
+        if isSelected {
+            return AnyShapeStyle(LinearGradient(colors: [Color.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+        } else {
+            return AnyShapeStyle(Color.primary.opacity(0.1))
+        }
+    }
+    
+    private var platformIcon: String {
+        switch application.os.lowercased() {
+        case "linux": return "server.rack"
+        case "osx", "macos": return "desktopcomputer"
+        case "win": return "pc"
+        default: return "desktopcomputer"
+        }
+    }
+}
+
+// Keep old PlatformCard for backward compatibility
 struct PlatformCard: View {
     let application: GitHubRunnerApplication
     let isSelected: Bool
     let onTap: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 8) {
-                Image(systemName: platformIcon)
-                    .font(.system(size: 32))
-                    .foregroundColor(isSelected ? .white : .accentColor)
-                
-                Text(application.os.capitalized)
-                    .font(.headline)
-                    .foregroundColor(isSelected ? .white : .primary)
-                
-                Text(application.architecture)
-                    .font(.caption)
-                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var platformIcon: String {
-        switch application.os.lowercased() {
-        case "linux": return "server.rack"
-        case "osx": return "desktopcomputer"
-        case "win": return "pc"
-        default: return "desktopcomputer"
-        }
+        ModernPlatformCard(
+            application: application,
+            isSelected: isSelected,
+            isRecommended: false,
+            onTap: onTap
+        )
     }
 }
 

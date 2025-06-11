@@ -17,108 +17,57 @@ struct SidebarView: View {
     }
     
     var body: some View {
-        List {
-            Button(action: {
-                appState.selectedView = .dashboard
-            }) {
-                Label("Dashboard", systemImage: "chart.bar.fill")
-            }
-            .buttonStyle(PlainButtonStyle())
-            .foregroundColor(appState.selectedView == .dashboard ? .accentColor : .primary)
+        VStack(spacing: 0) {
+            // Modern header with branding
+            modernHeader
             
-            Button(action: {
-                appState.selectedView = .localRunners
-            }) {
-                Label("Local Runners", systemImage: "server.rack")
-            }
-            .buttonStyle(PlainButtonStyle())
-            .foregroundColor(appState.selectedView == .localRunners ? .accentColor : .primary)
-            
-            Section {
-                if appState.isLoadingRepositories {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Loading repositories...")
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                } else if appState.repositories.isEmpty {
-                    Text("No repositories found")
-                        .foregroundColor(.secondary)
-                        .italic()
-                } else {
-                    ForEach(filteredRepositories) { repository in
-                        Button(action: {
-                            appState.selectedView = .repository(repository)
-                            appState.selectedRepository = repository
-                        }) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
-                                        .font(.caption)
-                                        .foregroundColor(repository.isPrivate ? .orange : .green)
-                                    Text(repository.name)
-                                        .font(.headline)
-                                        .lineLimit(1)
-                                    Spacer()
-                                }
-                                if let description = repository.description, !description.isEmpty {
-                                    Text(description)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(2)
-                                }
-                            }
+            // Navigation content
+            ScrollView {
+                VStack(spacing: 8) {
+                    // Main navigation items
+                    VStack(spacing: 4) {
+                        modernNavItem(
+                            title: "Dashboard",
+                            icon: "chart.line.uptrend.xyaxis",
+                            isSelected: appState.selectedView == .dashboard,
+                            color: .blue
+                        ) {
+                            appState.selectedView = .dashboard
                         }
-                        .buttonStyle(PlainButtonStyle())
-                        .foregroundColor(
-                            appState.selectedView == .repository(repository) ? .accentColor : .primary
-                        )
+                        
+                        modernNavItem(
+                            title: "Local Runners", 
+                            icon: "server.rack",
+                            isSelected: appState.selectedView == .localRunners,
+                            color: .green
+                        ) {
+                            appState.selectedView = .localRunners
+                        }
+                        
+                        modernNavItem(
+                            title: "Settings",
+                            icon: "gearshape.fill",
+                            isSelected: appState.selectedView == .settings,
+                            color: .purple
+                        ) {
+                            appState.selectedView = .settings
+                        }
                     }
-                }
-            } header: {
-                HStack {
-                    Text("Repositories")
-                    Spacer()
-                    Button(action: {
-                        Task { await loadRepositories() }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .disabled(appState.isLoadingRepositories)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    
+                    // Repositories section
+                    repositoriesSection
                 }
             }
-            .searchable(text: $searchText, placement: .sidebar, prompt: "Search repositories")
+            .background(Color(NSColor.controlBackgroundColor))
         }
-        .navigationTitle("Ghast")
+        .searchable(text: $searchText, placement: .sidebar, prompt: "Search repositories")
+        .navigationTitle("")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if let user = authService.currentUser {
-                    Menu {
-                        Button("Sign Out") {
-                            authService.signOut()
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            AsyncImage(url: URL(string: user.avatarURL)) { image in
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                Circle()
-                                    .fill(Color.secondary)
-                            }
-                            .frame(width: 24, height: 24)
-                            .clipShape(Circle())
-                            .clipped()
-                            
-                            Text(user.login)
-                                .font(.caption)
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
+                    modernUserMenu(user: user)
                 }
             }
         }
@@ -127,6 +76,323 @@ struct SidebarView: View {
                 await loadRepositories()
             }
         }
+    }
+    
+    private var modernHeader: some View {
+        VStack(spacing: 16) {
+            // App branding
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue, Color.purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 40, height: 40)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 2)
+                    
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ghast")
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    Text("GitHub Actions Tool")
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 20)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+    
+    private func modernNavItem(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? color.opacity(0.2) : Color.clear)
+                        .frame(width: 28, height: 28)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isSelected ? color : .secondary)
+                }
+                
+                Text(title)
+                    .font(.system(.body, design: .rounded, weight: isSelected ? .semibold : .medium))
+                    .foregroundColor(isSelected ? color : .primary)
+                
+                Spacer()
+                
+                if isSelected {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? color.opacity(0.1) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? color.opacity(0.2) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var repositoriesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section header
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder.badge.gearshape")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.orange)
+                    
+                    Text("Repositories")
+                        .font(.system(.headline, design: .rounded, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                // Refresh button
+                Button(action: {
+                    Task { await loadRepositories() }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(6)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.isLoadingRepositories)
+                .scaleEffect(appState.isLoadingRepositories ? 0.9 : 1.0)
+                .rotationEffect(.degrees(appState.isLoadingRepositories ? 360 : 0))
+                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: appState.isLoadingRepositories)
+                
+                // Repository count badge
+                if !appState.repositories.isEmpty {
+                    Text("\(filteredRepositories.count)")
+                        .font(.system(.caption2, design: .rounded, weight: .bold))
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(Color.orange.opacity(0.1))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            
+            // Repository list
+            if appState.isLoadingRepositories {
+                modernLoadingState
+            } else if appState.repositories.isEmpty {
+                modernEmptyState
+            } else {
+                LazyVStack(spacing: 4) {
+                    ForEach(filteredRepositories) { repository in
+                        modernRepositoryRow(repository: repository)
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+    }
+    
+    private var modernLoadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(0.9)
+            
+            Text("Loading repositories...")
+                .font(.system(.caption, design: .rounded, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var modernEmptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.secondary.opacity(0.6))
+            
+            VStack(spacing: 4) {
+                Text("No repositories")
+                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Text("Check your access permissions")
+                    .font(.system(.caption2, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+    }
+    
+    private func modernRepositoryRow(repository: GitHubRepository) -> some View {
+        Button(action: {
+            appState.selectedView = .repository(repository)
+            appState.selectedRepository = repository
+        }) {
+            HStack(spacing: 10) {
+                // Repository status icon
+                ZStack {
+                    Circle()
+                        .fill((repository.isPrivate ? Color.orange : Color.green).opacity(0.15))
+                        .frame(width: 24, height: 24)
+                    
+                    Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(repository.isPrivate ? .orange : .green)
+                }
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(repository.name)
+                        .font(.system(.body, design: .rounded, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    if let description = repository.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(.caption2, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                
+                Spacer()
+                
+                // Selection indicator
+                if appState.selectedView == .repository(repository) {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(appState.selectedView == .repository(repository) ? Color.blue.opacity(0.1) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        appState.selectedView == .repository(repository) ? Color.blue.opacity(0.2) : Color.clear,
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private func modernUserMenu(user: GitHubUser) -> some View {
+        Menu {
+            Button("Settings") {
+                appState.selectedView = .settings
+            }
+            
+            Divider()
+            
+            Button("Sign Out", role: .destructive) {
+                authService.signOut()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                AsyncImage(url: URL(string: user.avatarURL)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white)
+                        )
+                }
+                .frame(width: 28, height: 28)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+                
+                Text(user.login)
+                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                    )
+            )
+        }
+        .menuStyle(.borderlessButton)
     }
     
     private func loadRepositories() async {

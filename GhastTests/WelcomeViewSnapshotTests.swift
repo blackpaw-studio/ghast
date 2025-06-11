@@ -13,7 +13,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
         let view = WelcomeView()
             .environmentObject(authService as GitHubAuthService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600, record: false)
     }
     
     func testWelcomeViewDarkMode() async {
@@ -24,7 +24,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
             .environmentObject(authService as GitHubAuthService)
             .preferredColorScheme(.dark)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600, record: false)
     }
     
     func testWelcomeViewSmallWindow() async {
@@ -34,7 +34,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
         let view = WelcomeView()
             .environmentObject(authService as GitHubAuthService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 450)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 450, record: false)
     }
     
     func testWelcomeViewLargeWindow() async {
@@ -44,6 +44,6 @@ final class WelcomeViewSnapshotTests: XCTestCase {
         let view = WelcomeView()
             .environmentObject(authService as GitHubAuthService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1000, height: 750)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1000, height: 750, record: false)
     }
 }

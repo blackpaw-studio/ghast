@@ -20,108 +20,32 @@ struct RepositoryDetailView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
-                        .foregroundColor(repository.isPrivate ? .orange : .green)
-                    Text(repository.name)
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    Spacer()
-                    Button("Add Runner") {
-                        showingAddRunner = true
-                    }
-                    .buttonStyle(.borderedProminent)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Modern header
+                    modernHeader
+                    
+                    // Stats overview
+                    statsOverview
+                    
+                    // Runners content
+                    modernRunnersContent
                 }
-                
-                if let description = repository.description {
-                    Text(description)
-                        .foregroundColor(.secondary)
-                }
-                
-                Text(repository.fullName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .padding(.vertical, 20)
             }
-            .padding()
-            .background(Color(NSColor.controlBackgroundColor))
-            
-            Divider()
-            
-            // Runners List
-            if isLoadingRunners {
-                VStack {
-                    ProgressView()
-                    Text("Loading runners...")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if filteredRemoteRunners.isEmpty && localRunners.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "play.circle")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    
-                    Text("No runners configured")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Add a self-hosted runner to start running GitHub Actions on your own hardware.")
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                    
-                    Button("Add Runner") {
-                        showingAddRunner = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    // Local Runners Section
-                    if !localRunners.isEmpty {
-                        Section {
-                            ForEach(localRunners) { runner in
-                                LocalRunnerRepositoryRowView(runner: runner)
-                            }
-                        } header: {
-                            HStack {
-                                Image(systemName: "desktopcomputer")
-                                Text("Local Runners")
-                                Spacer()
-                                Text("\(localRunners.count)")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    
-                    // Remote Runners Section
-                    if !filteredRemoteRunners.isEmpty {
-                        Section {
-                            ForEach(filteredRemoteRunners) { runner in
-                                RunnerRowView(runner: runner, repository: repository) {
-                                    Task {
-                                        await loadRunners()
-                                    }
-                                }
-                            }
-                        } header: {
-                            HStack {
-                                Image(systemName: "cloud")
-                                Text("Remote Runners")
-                                Spacer()
-                                Text("\(filteredRemoteRunners.count)")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(NSColor.controlBackgroundColor),
+                        Color(NSColor.controlBackgroundColor).opacity(0.8)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
         }
-        .navigationTitle(repository.name)
+        .navigationTitle("")
         .sheet(isPresented: $showingAddRunner) {
             AddRunnerView(repository: repository) {
                 Task {
@@ -146,6 +70,338 @@ struct RepositoryDetailView: View {
         }
     }
     
+    private var modernHeader: some View {
+        VStack(spacing: 20) {
+            // Repository info with modern styling
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue, Color.purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 64, height: 64)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 12, x: 0, y: 4)
+                    
+                    Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(repository.name)
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 8) {
+                        Text(repository.fullName)
+                            .font(.system(.body, design: .rounded, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        // Privacy badge
+                        HStack(spacing: 4) {
+                            Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(repository.isPrivate ? .orange : .green)
+                            Text(repository.isPrivate ? "Private" : "Public")
+                                .font(.system(.caption2, design: .rounded, weight: .semibold))
+                                .foregroundColor(repository.isPrivate ? .orange : .green)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill((repository.isPrivate ? Color.orange : Color.green).opacity(0.1))
+                                .overlay(
+                                    Capsule()
+                                        .stroke((repository.isPrivate ? Color.orange : Color.green).opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                    }
+                    
+                    if let description = repository.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(.body, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                
+                Spacer()
+                
+                // Add runner button
+                Button(action: { showingAddRunner = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Add Runner")
+                            .font(.system(.body, design: .rounded, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 24)
+    }
+    
+    private var statsOverview: some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible()),
+            GridItem(.flexible()),
+            GridItem(.flexible())
+        ], spacing: 16) {
+            ModernStatCard(
+                title: "Total Runners",
+                value: "\(runners.count + localRunners.count)",
+                icon: "server.rack",
+                color: .blue,
+                isLoading: isLoadingRunners,
+                onTap: nil
+            )
+            
+            ModernStatCard(
+                title: "Remote Runners",
+                value: "\(filteredRemoteRunners.count)",
+                icon: "cloud.fill",
+                color: .green,
+                isLoading: isLoadingRunners,
+                onTap: nil
+            )
+            
+            ModernStatCard(
+                title: "Local Runners",
+                value: "\(localRunners.count)",
+                icon: "desktopcomputer",
+                color: .purple,
+                isLoading: false,
+                onTap: nil
+            )
+        }
+        .padding(.horizontal, 24)
+    }
+    
+    private var modernRunnersContent: some View {
+        VStack(spacing: 24) {
+            // Local runners section
+            if !localRunners.isEmpty {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "desktopcomputer")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.purple)
+                        
+                        Text("Local Runners")
+                            .font(.system(.title2, design: .rounded, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Text("\(localRunners.count)")
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .foregroundColor(.purple)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(Color.purple.opacity(0.1))
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                                    )
+                            )
+                    }
+                    
+                    VStack(spacing: 8) {
+                        ForEach(localRunners) { runner in
+                            ModernLocalRunnerCard(runner: runner)
+                        }
+                    }
+                }
+                .padding(20)
+                .background(
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.purple.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 24)
+            }
+            
+            // Remote runners section
+            if !filteredRemoteRunners.isEmpty {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cloud.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.green)
+                        
+                        Text("Remote Runners")
+                            .font(.system(.title2, design: .rounded, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Text("\(filteredRemoteRunners.count)")
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(Color.green.opacity(0.1))
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                                    )
+                            )
+                    }
+                    
+                    VStack(spacing: 8) {
+                        ForEach(filteredRemoteRunners) { runner in
+                            ModernRemoteRunnerCard(runner: runner, repository: repository) {
+                                Task {
+                                    await loadRunners()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(20)
+                .background(
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 24)
+            }
+            
+            // Empty state
+            if localRunners.isEmpty && filteredRemoteRunners.isEmpty && !isLoadingRunners {
+                modernEmptyState
+            }
+            
+            // Loading state
+            if isLoadingRunners {
+                modernLoadingState
+            }
+        }
+    }
+    
+    private var modernEmptyState: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.1))
+                    .frame(width: 100, height: 100)
+                
+                Image(systemName: "server.rack")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundColor(.blue.opacity(0.7))
+            }
+            
+            VStack(spacing: 12) {
+                Text("No Runners Found")
+                    .font(.system(.title2, design: .rounded, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Text("Get started by adding your first self-hosted runner for this repository.")
+                    .font(.system(.body, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                Button(action: { showingAddRunner = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Add Runner")
+                            .font(.system(.body, design: .rounded, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 60)
+        .frame(maxWidth: .infinity)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 24)
+    }
+    
+    private var modernLoadingState: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.2)
+            
+            Text("Loading runners...")
+                .font(.system(.body, design: .rounded, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 40)
+        .frame(maxWidth: .infinity)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 24)
+    }
+    
     private func loadRunners() async {
         isLoadingRunners = true
         do {
@@ -164,67 +420,106 @@ struct RepositoryDetailView: View {
     }
 }
 
-struct RunnerRowView: View {
-    let runner: GitHubRunner
-    let repository: GitHubRepository
-    let onRunnerDeleted: () -> Void
-    @State private var showingDeleteConfirmation = false
-    @State private var isDeleting = false
+
+struct ModernLocalRunnerCard: View {
+    let runner: LocalRunner
+    @StateObject private var runnerService = RunnerService.shared
+    @State private var isHovered = false
+    
+    // Find the current runner from the service to get live status updates
+    private var currentRunner: LocalRunner? {
+        runnerService.localRunners.first { $0.id == runner.id }
+    }
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Status indicator
-            Circle()
-                .fill(statusColor)
-                .frame(width: 12, height: 12)
+        HStack(spacing: 16) {
+            // Status indicator with modern styling
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.15))
+                    .frame(width: 32, height: 32)
+                
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 12, height: 12)
+            }
             
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            // Runner info
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
                     Text(runner.name)
-                        .font(.headline)
+                        .font(.system(.body, design: .rounded, weight: .semibold))
+                        .foregroundColor(.primary)
                     
-                    if runner.busy {
-                        Text("BUSY")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
+                    // Local badge
+                    HStack(spacing: 4) {
+                        Image(systemName: "desktopcomputer")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(.purple)
+                        Text("LOCAL")
+                            .font(.system(.caption2, design: .rounded, weight: .bold))
+                            .foregroundColor(.purple)
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.purple.opacity(0.1))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                            )
+                    )
                     
                     Spacer()
                 }
                 
                 HStack(spacing: 8) {
-                    Text(runner.os.capitalized)
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.2))
-                        .clipShape(Capsule())
+                    // Status badge
+                    Text(currentRunner?.status.displayName ?? runner.status.displayName)
+                        .font(.system(.caption2, design: .rounded, weight: .semibold))
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(statusColor.opacity(0.1))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(statusColor.opacity(0.3), lineWidth: 1)
+                                )
+                        )
                     
-                    Text(runner.status.capitalized)
-                        .font(.caption)
+                    // Platform badge
+                    Text("macOS")
+                        .font(.system(.caption2, design: .rounded, weight: .medium))
                         .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.secondary.opacity(0.1))
+                        )
                 }
                 
+                // Labels if any
                 if !runner.labels.isEmpty {
-                    HStack {
-                        ForEach(runner.labels.prefix(3)) { label in
-                            Text(label.name)
-                                .font(.caption2)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.blue.opacity(0.2))
+                    HStack(spacing: 4) {
+                        ForEach(runner.labels.prefix(2), id: \.self) { label in
+                            Text(label)
+                                .font(.system(.caption2, design: .rounded, weight: .medium))
                                 .foregroundColor(.blue)
-                                .clipShape(Capsule())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.blue.opacity(0.1))
+                                )
                         }
                         
-                        if runner.labels.count > 3 {
-                            Text("+\(runner.labels.count - 3)")
-                                .font(.caption2)
+                        if runner.labels.count > 2 {
+                            Text("+\(runner.labels.count - 2)")
+                                .font(.system(.caption2, design: .rounded, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -233,17 +528,259 @@ struct RunnerRowView: View {
             
             Spacer()
             
+            // Control buttons
+            HStack(spacing: 8) {
+                if currentRunner?.status == .running {
+                    Button("Stop") {
+                        runnerService.stopRunner(id: runner.id)
+                    }
+                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.red.opacity(0.1))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                    .buttonStyle(.plain)
+                } else {
+                    Button("Start") {
+                        Task {
+                            do {
+                                try await runnerService.startRunner(id: runner.id)
+                            } catch {
+                                print("Failed to start runner: \(error)")
+                            }
+                        }
+                    }
+                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.green, Color.green.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
+                }
+                
+                Menu {
+                    Button("View Logs") {
+                        print("Navigate to logs for runner: \(runner.name)")
+                    }
+                    
+                    Divider()
+                    
+                    Button("Remove", role: .destructive) {
+                        runnerService.removeLocalRunner(id: runner.id)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(8)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(
+            Rectangle()
+                .fill(isHovered ? Color.primary.opacity(0.02) : Color.clear)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+    
+    private var statusColor: Color {
+        switch currentRunner?.status ?? runner.status {
+        case .stopped: return .gray
+        case .running: return .green
+        case .error: return .red
+        }
+    }
+}
+
+struct ModernRemoteRunnerCard: View {
+    let runner: GitHubRunner
+    let repository: GitHubRepository
+    let onRunnerDeleted: () -> Void
+    @State private var isHovered = false
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeleting = false
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Status indicator with modern styling
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.15))
+                    .frame(width: 32, height: 32)
+                
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 12, height: 12)
+            }
+            
+            // Runner info
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(runner.name)
+                        .font(.system(.body, design: .rounded, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    // Remote badge
+                    HStack(spacing: 4) {
+                        Image(systemName: "cloud.fill")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(.green)
+                        Text("REMOTE")
+                            .font(.system(.caption2, design: .rounded, weight: .bold))
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.green.opacity(0.1))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                    
+                    // Busy indicator
+                    if runner.busy {
+                        HStack(spacing: 4) {
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 6, weight: .bold))
+                                .foregroundColor(.orange)
+                            Text("BUSY")
+                                .font(.system(.caption2, design: .rounded, weight: .bold))
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(Color.orange.opacity(0.1))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                    }
+                    
+                    Spacer()
+                }
+                
+                HStack(spacing: 8) {
+                    // Status badge
+                    Text(runner.status.capitalized)
+                        .font(.system(.caption2, design: .rounded, weight: .semibold))
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(statusColor.opacity(0.1))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(statusColor.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                    
+                    // Platform badge
+                    Text(runner.os.capitalized)
+                        .font(.system(.caption2, design: .rounded, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.secondary.opacity(0.1))
+                        )
+                }
+                
+                // Labels if any
+                if !runner.labels.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(runner.labels.prefix(2)) { label in
+                            Text(label.name)
+                                .font(.system(.caption2, design: .rounded, weight: .medium))
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.blue.opacity(0.1))
+                                )
+                        }
+                        
+                        if runner.labels.count > 2 {
+                            Text("+\(runner.labels.count - 2)")
+                                .font(.system(.caption2, design: .rounded, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Actions menu
             Menu {
                 Button("Remove Runner", role: .destructive) {
                     showingDeleteConfirmation = true
                 }
             } label: {
                 Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
+                    .padding(8)
+                    .background(
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                            )
+                    )
             }
+            .buttonStyle(.plain)
             .disabled(isDeleting)
         }
-        .padding(.vertical, 4)
+        .padding(16)
+        .background(
+            Rectangle()
+                .fill(isHovered ? Color.primary.opacity(0.02) : Color.clear)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
         .confirmationDialog(
             "Remove Runner",
             isPresented: $showingDeleteConfirmation
@@ -283,139 +820,6 @@ struct RunnerRowView: View {
                 isDeleting = false
             }
             print("Failed to delete runner: \(error)")
-        }
-    }
-}
-
-struct LocalRunnerRepositoryRowView: View {
-    let runner: LocalRunner
-    @StateObject private var runnerService = RunnerService.shared
-    @State private var showingDeleteAlert = false
-    
-    // Find the current runner from the service to get live status updates
-    private var currentRunner: LocalRunner? {
-        runnerService.localRunners.first { $0.id == runner.id }
-    }
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Status indicator
-            Circle()
-                .fill(statusColor)
-                .frame(width: 12, height: 12)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(runner.name)
-                        .font(.headline)
-                    
-                    // Local indicator
-                    Text("LOCAL")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.purple.opacity(0.2))
-                        .foregroundColor(.purple)
-                        .clipShape(Capsule())
-                    
-                    Spacer()
-                    
-                    // Control buttons - use current runner for live updates
-                    HStack(spacing: 4) {
-                        if currentRunner?.status == .running {
-                            Button("Stop") {
-                                runnerService.stopRunner(id: runner.id)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                        } else {
-                            Button("Start") {
-                                Task {
-                                    do {
-                                        try await runnerService.startRunner(id: runner.id)
-                                    } catch {
-                                        print("Failed to start runner: \(error)")
-                                    }
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.mini)
-                        }
-                        
-                        Menu {
-                            Button("View Logs") {
-                                // TODO: Navigate to logs view - for now just print
-                                print("Navigate to logs for runner: \(runner.name)")
-                            }
-                            
-                            Divider()
-                            
-                            Button("Remove", role: .destructive) {
-                                showingDeleteAlert = true
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .foregroundColor(.secondary)
-                        }
-                        .controlSize(.mini)
-                    }
-                }
-                
-                HStack(spacing: 8) {
-                    Text(currentRunner?.status.displayName ?? runner.status.displayName)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(statusColor.opacity(0.2))
-                        .foregroundColor(statusColor)
-                        .clipShape(Capsule())
-                    
-                    Text("macOS")
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.2))
-                        .clipShape(Capsule())
-                }
-                
-                if !runner.labels.isEmpty {
-                    HStack {
-                        ForEach(runner.labels.prefix(3), id: \.self) { label in
-                            Text(label)
-                                .font(.caption2)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.blue.opacity(0.2))
-                                .foregroundColor(.blue)
-                                .clipShape(Capsule())
-                        }
-                        
-                        if runner.labels.count > 3 {
-                            Text("+\(runner.labels.count - 3)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .alert("Remove Runner", isPresented: $showingDeleteAlert) {
-            Button("Remove", role: .destructive) {
-                runnerService.removeLocalRunner(id: runner.id)
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Are you sure you want to remove '\(runner.name)'? This will stop the runner if it's running.")
-        }
-    }
-    
-    private var statusColor: Color {
-        switch currentRunner?.status ?? runner.status {
-        case .stopped: return .gray
-        case .running: return .green
-        case .error: return .red
         }
     }
 }
