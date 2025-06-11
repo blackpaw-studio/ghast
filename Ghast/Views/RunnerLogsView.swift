@@ -43,14 +43,14 @@ struct RunnerLogsView: View {
             HStack(spacing: 16) {
                 // Runner info with modern card design
                 HStack(spacing: 12) {
-                    // Status indicator with glow effect
+                    // Status indicator
                     ZStack {
                         Circle()
-                            .fill(statusColor.opacity(0.2))
-                            .frame(width: 20, height: 20)
+                            .fill(statusColor.opacity(0.1))
+                            .frame(width: 16, height: 16)
                         Circle()
                             .fill(statusColor)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 6, height: 6)
                     }
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -81,10 +81,10 @@ struct RunnerLogsView: View {
             .padding(.vertical, 16)
             .background(
                 Rectangle()
-                    .fill(.ultraThinMaterial)
+                    .fill(.thinMaterial)
                     .overlay(
                         Rectangle()
-                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                     )
             )
             
@@ -140,10 +140,10 @@ struct RunnerLogsView: View {
         .padding(.vertical, 4)
         .background(
             Capsule()
-                .fill(statusColor.opacity(0.1))
+                .fill(statusColor.opacity(0.08))
                 .overlay(
                     Capsule()
-                        .stroke(statusColor.opacity(0.3), lineWidth: 1)
+                        .stroke(statusColor.opacity(0.2), lineWidth: 1)
                 )
         )
     }
@@ -214,10 +214,10 @@ struct RunnerLogsView: View {
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
-                        .fill(.ultraThinMaterial)
+                        .fill(.thinMaterial)
                         .overlay(
                             Capsule()
-                                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
                         )
                 )
             }
