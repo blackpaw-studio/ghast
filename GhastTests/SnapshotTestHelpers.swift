@@ -7,13 +7,18 @@ import SnapshotTesting
 @MainActor
 enum SnapshotTestHelpers {
     
+    /// Check if snapshot recording is enabled via environment variable
+    static var isRecordingSnapshots: Bool {
+        return ProcessInfo.processInfo.environment["SNAPSHOT_RECORD_MODE"] == "true"
+    }
+    
     /// Creates a snapshot of a SwiftUI view with specified dimensions using NSHostingController
     /// This helper resolves type ambiguity issues with SnapshotTesting framework on macOS
     static func assertSnapshot<V: View>(
         of view: V,
         width: CGFloat,
         height: CGFloat,
-        record: Bool = false,
+        record: Bool? = nil,
         file: StaticString = #file,
         testName: String = #function,
         line: UInt = #line
@@ -32,8 +37,11 @@ enum SnapshotTestHelpers {
         // Force layout to ensure proper sizing
         hostingController.view.layoutSubtreeIfNeeded()
         
+        // Use environment variable if record parameter is not explicitly set
+        let shouldRecord = record ?? isRecordingSnapshots
+        
         // Use record parameter or withSnapshotTesting to record snapshots
-        if record {
+        if shouldRecord {
             withSnapshotTesting(record: .all) {
                 SnapshotTesting.assertSnapshot(
                     of: hostingController,
@@ -61,7 +69,7 @@ enum SnapshotTestHelpers {
         of view: V,
         containerWidth: CGFloat = 1200,
         containerHeight: CGFloat = 800,
-        record: Bool = false,
+        record: Bool? = nil,
         file: StaticString = #file,
         testName: String = #function,
         line: UInt = #line
@@ -81,8 +89,11 @@ enum SnapshotTestHelpers {
         // Force layout to ensure proper sizing
         hostingController.view.layoutSubtreeIfNeeded()
         
+        // Use environment variable if record parameter is not explicitly set
+        let shouldRecord = record ?? isRecordingSnapshots
+        
         // Use record parameter or withSnapshotTesting to record snapshots
-        if record {
+        if shouldRecord {
             withSnapshotTesting(record: .all) {
                 SnapshotTesting.assertSnapshot(
                     of: hostingController,

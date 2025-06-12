@@ -8,8 +8,6 @@ final class RunnerConfigurationViewSnapshotTests: XCTestCase {
     
     override func setUp() async throws {
         try await super.setUp()
-        // Uncomment to record new snapshots
-        // isRecording = true
     }
     
     func testRunnerConfigurationViewEmpty() {

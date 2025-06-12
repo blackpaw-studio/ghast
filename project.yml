@@ -70,3 +70,42 @@ packages:
   SnapshotTesting:
     url: https://github.com/pointfreeco/swift-snapshot-testing
     from: "1.15.0"
+
+schemes:
+  Ghast:
+    build:
+      targets:
+        Ghast: all
+        GhastTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - GhastTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+  
+  Ghast-RecordSnapshots:
+    build:
+      targets:
+        Ghast: all
+        GhastTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - GhastTests
+      environmentVariables:
+        SNAPSHOT_RECORD_MODE: "true"
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
