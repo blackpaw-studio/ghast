@@ -62,7 +62,7 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: envFilePath))
         
         // Verify .env file contents
-        let envContent = try? String(contentsOfFile: envFilePath)
+        let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
         XCTAssertNotNil(envContent)
         XCTAssertTrue(envContent!.contains("NODE_ENV=\"production\""))
         XCTAssertTrue(envContent!.contains("API_URL=\"https://api.example.com\""))
@@ -80,7 +80,7 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         runnerService.updateRunnerEnvironmentVariables(id: testRunner.id, environmentVariables: envVars)
         
         let envFilePath = tempDirectory.appendingPathComponent(".env").path
-        let envContent = try? String(contentsOfFile: envFilePath)
+        let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
         XCTAssertNotNil(envContent)
         
         // Verify special characters are properly escaped
@@ -135,14 +135,14 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         XCTAssertEqual(permissions?.intValue, 0o755)
         
         // Verify script content
-        let scriptContent = try? String(contentsOfFile: scriptPath)
+        let scriptContent = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         XCTAssertNotNil(scriptContent)
         XCTAssertTrue(scriptContent!.contains(script))
         XCTAssertTrue(scriptContent!.contains("# Pre-job script for Test Environment Runner"))
         
         // Verify .env file contains hook variable
         let envFilePath = tempDirectory.appendingPathComponent(".env").path
-        let envContent = try? String(contentsOfFile: envFilePath)
+        let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
         XCTAssertNotNil(envContent)
         XCTAssertTrue(envContent!.contains("ACTIONS_RUNNER_HOOK_JOB_STARTED=\"\(scriptPath)\""))
     }
@@ -167,7 +167,7 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         // Verify hook variable is removed from .env
         let envFilePath = tempDirectory.appendingPathComponent(".env").path
         if FileManager.default.fileExists(atPath: envFilePath) {
-            let envContent = try? String(contentsOfFile: envFilePath)
+            let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
             XCTAssertFalse(envContent?.contains("ACTIONS_RUNNER_HOOK_JOB_STARTED") ?? true)
         }
     }
@@ -198,14 +198,14 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         XCTAssertEqual(permissions?.intValue, 0o755)
         
         // Verify script content
-        let scriptContent = try? String(contentsOfFile: scriptPath)
+        let scriptContent = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         XCTAssertNotNil(scriptContent)
         XCTAssertTrue(scriptContent!.contains(script))
         XCTAssertTrue(scriptContent!.contains("# Post-job script for Test Environment Runner"))
         
         // Verify .env file contains hook variable
         let envFilePath = tempDirectory.appendingPathComponent(".env").path
-        let envContent = try? String(contentsOfFile: envFilePath)
+        let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
         XCTAssertNotNil(envContent)
         XCTAssertTrue(envContent!.contains("ACTIONS_RUNNER_HOOK_JOB_COMPLETED=\"\(scriptPath)\""))
     }
@@ -230,7 +230,7 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         // Verify hook variable is removed from .env
         let envFilePath = tempDirectory.appendingPathComponent(".env").path
         if FileManager.default.fileExists(atPath: envFilePath) {
-            let envContent = try? String(contentsOfFile: envFilePath)
+            let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
             XCTAssertFalse(envContent?.contains("ACTIONS_RUNNER_HOOK_JOB_COMPLETED") ?? true)
         }
     }
@@ -260,7 +260,7 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: postScriptPath))
         
         // Verify .env file contains all variables including hooks
-        let envContent = try? String(contentsOfFile: envFilePath)
+        let envContent = try? String(contentsOfFile: envFilePath, encoding: .utf8)
         XCTAssertNotNil(envContent)
         XCTAssertTrue(envContent!.contains("COMBINED_TEST=\"true\""))
         XCTAssertTrue(envContent!.contains("RUNNER_NAME=\"\(testRunner.name)\""))
