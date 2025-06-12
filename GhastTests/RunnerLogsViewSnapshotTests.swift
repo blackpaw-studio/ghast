@@ -6,8 +6,6 @@ import SnapshotTesting
 @MainActor
 final class RunnerLogsViewSnapshotTests: XCTestCase {
     
-    // Set to true to record new snapshots, false to compare against existing
-    private let isRecording = false
     
     private func createMockRunner(status: RunnerStatus = .stopped) -> LocalRunner {
         LocalRunner(
@@ -27,7 +25,7 @@ final class RunnerLogsViewSnapshotTests: XCTestCase {
             of: view,
             width: 900,
             height: 600,
-            record: isRecording
+            
         )
     }
     
@@ -62,7 +60,7 @@ final class RunnerLogsViewSnapshotTests: XCTestCase {
             of: view,
             width: 900,
             height: 600,
-            record: isRecording
+            
         )
     }
     
@@ -76,7 +74,7 @@ final class RunnerLogsViewSnapshotTests: XCTestCase {
             of: view,
             width: 900,
             height: 600,
-            record: isRecording
+            
         )
     }
     
@@ -90,7 +88,7 @@ final class RunnerLogsViewSnapshotTests: XCTestCase {
             of: view,
             width: 900,
             height: 600,
-            record: isRecording
+            
         )
     }
     
@@ -104,7 +102,7 @@ final class RunnerLogsViewSnapshotTests: XCTestCase {
             of: view,
             width: 600,
             height: 400,
-            record: isRecording
+            
         )
     }
     
@@ -118,7 +116,7 @@ final class RunnerLogsViewSnapshotTests: XCTestCase {
             of: view,
             width: 1200,
             height: 800,
-            record: isRecording
+            
         )
     }
 }

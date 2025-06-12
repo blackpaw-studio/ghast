@@ -6,8 +6,6 @@ import SnapshotTesting
 @MainActor
 final class MainAppViewSnapshotTests: XCTestCase {
     
-    // Set to true to record new snapshots, false to compare against existing
-    private let isRecording = false
     
     private func createMockUser() -> GitHubUser {
         GitHubUser(
@@ -59,7 +57,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testMainAppViewEmpty() async {
@@ -78,7 +76,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testMainAppViewLocalRunners() async {
@@ -122,7 +120,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
         
         // Clean up: Remove mock runners after test
         runnerService.removeAllLocalRunners()
@@ -144,7 +142,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
     func testMainAppViewSmallWindow() async {
@@ -163,7 +161,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
     }
     
     func testMainAppViewLargeWindow() async {
@@ -182,6 +180,6 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environmentObject(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
     }
 }

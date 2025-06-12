@@ -6,9 +6,6 @@ import SnapshotTesting
 @MainActor
 final class LocalRunnersViewSnapshotTests: XCTestCase {
     
-    // Set to true to record new snapshots, false to compare against existing
-    private let isRecording = false
-    
     private func createMockRunners() -> [LocalRunner] {
         let runner1 = LocalRunner(
             name: "production-runner-1",
@@ -45,7 +42,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .environmentObject(appState)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
         
         // Clean up
         runnerService.removeAllLocalRunners()
@@ -83,7 +80,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .environmentObject(appState)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
         
         // Clean up
         runnerService.removeAllLocalRunners()
@@ -199,7 +196,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         let view = TestWrapper()
             .environmentObject(appState)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
         
         // Clean up
         runnerService.removeAllLocalRunners()
@@ -231,7 +228,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .environmentObject(appState)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
         
         // Clean up
         runnerService.localRunners.removeAll()
@@ -269,7 +266,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         let view = LocalRunnersView()
             .environmentObject(appState)
         
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000, record: isRecording)
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
         
         // Clean up
         runnerService.localRunners.removeAll()
