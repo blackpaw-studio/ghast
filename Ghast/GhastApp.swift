@@ -7,16 +7,20 @@ struct GhastApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .onOpenURL { url in
-                    print("🔗 SwiftUI onOpenURL: \(url.absoluteString)")
-                    
-                    // Bring app to front
-                    NSApp.activate(ignoringOtherApps: true)
-                    
-                    // Post notification for OAuth callback
-                    NotificationCenter.default.post(name: .oauthCallback, object: url)
-                }
+            if !isRunningTests() {
+                ContentView()
+                    .onOpenURL { url in
+                        print("🔗 SwiftUI onOpenURL: \(url.absoluteString)")
+
+                        // Bring app to front
+                        NSApp.activate(ignoringOtherApps: true)
+
+                        // Post notification for OAuth callback
+                        NotificationCenter.default.post(name: .oauthCallback, object: url)
+                    }
+            } else {
+                EmptyView()
+            }
         }
         .windowStyle(.titleBar)
         .windowResizability(.contentSize)
@@ -26,10 +30,18 @@ struct GhastApp: App {
             CommandGroup(replacing: .newItem) { }
         }
     }
+    
+    /// Check if the app is running in a test environment
+    private func isRunningTests() -> Bool {
+        return NSClassFromString("XCTest") != nil || 
+               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+               ProcessInfo.processInfo.arguments.contains { $0.contains("test") }
+    }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        
         // Ensure single instance behavior
         let runningApps = NSWorkspace.shared.runningApplications
         let ghastApps = runningApps.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
@@ -101,7 +113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
+        return false
     }
     
     @objc private func handleTermination() {

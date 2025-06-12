@@ -33,8 +33,22 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         // This prevents the login screen flash without triggering keychain access
     }
     
+    /// Check if the app is running in a test environment
+    private func isRunningTests() -> Bool {
+        return NSClassFromString("XCTest") != nil || 
+               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+               ProcessInfo.processInfo.arguments.contains { $0.contains("test") }
+    }
+    
     func checkStoredAuthentication() async {
         defer { isCheckingStoredAuth = false }
+        
+        // Skip keychain access during tests
+        if isRunningTests() {
+            print("🔐 OAuth: Test mode detected - skipping stored auth check")
+            return
+        }
+        
         await checkExistingAuth()
     }
     
@@ -134,8 +148,13 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         print("🔐 OAuth: Starting OAuth flow")
         print("🔐 OAuth: Auth URL: \(authURL.absoluteString)")
         
-        // Open URL in default browser
-        NSWorkspace.shared.open(authURL)
+        // Don't open browser during tests
+        if !isRunningTests() {
+            // Open URL in default browser
+            NSWorkspace.shared.open(authURL)
+        } else {
+            print("🔐 OAuth: Test mode detected - skipping browser launch")
+        }
         
         // Set up notification observer for URL callback
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
