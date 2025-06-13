@@ -77,22 +77,10 @@ struct SidebarView: View {
         VStack(spacing: 16) {
             // App branding
             HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue, Color.purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 40, height: 40)
-                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 2)
-                    
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(.white)
-                }
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 32, height: 32)
+                    .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ghast")

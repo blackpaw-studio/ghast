@@ -70,22 +70,10 @@ struct WelcomeView: View {
                                 .frame(width: 160, height: 160)
                                 .blur(radius: 20)
                             
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.blue, Color.purple],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                            Image(nsImage: NSApp.applicationIconImage)
+                                .resizable()
                                 .frame(width: 120, height: 120)
-                                .shadow(color: Color.blue.opacity(0.4), radius: 20, x: 0, y: 8)
-                                .overlay(
-                                    Image(systemName: "play.circle.fill")
-                                        .font(.system(size: 60, weight: .light))
-                                        .foregroundColor(.white)
-                                        .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
-                                )
+                                .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
                         }
                         
                         // Title and description
