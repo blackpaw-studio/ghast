@@ -65,7 +65,7 @@ struct SidebarView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search repositories")
         .navigationTitle("")
-        .frame(minWidth: 320)
+        .frame(minWidth: 280)
         .task {
             if appState.repositories.isEmpty {
                 await loadRepositories()

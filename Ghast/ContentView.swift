@@ -33,7 +33,7 @@ struct ContentView: View {
                     }
             }
         }
-        .frame(minWidth: 1000, maxWidth: .infinity, minHeight: 650, maxHeight: .infinity)
+        .frame(minWidth: 1200, maxWidth: .infinity, minHeight: 650, maxHeight: .infinity)
         .onAppear {
             // Check for stored authentication when app starts
             Task {
@@ -65,7 +65,7 @@ struct MainAppView: View {
                 SettingsView()
             }
         }
-        .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
+        .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {

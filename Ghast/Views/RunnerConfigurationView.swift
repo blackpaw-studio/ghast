@@ -10,12 +10,42 @@ struct RunnerConfigurationView: View {
     @State private var postJobScript: String
     @State private var newEnvKey = ""
     @State private var newEnvValue = ""
+    @State private var showingUnsavedChangesAlert = false
     
     init(runner: LocalRunner) {
         self.runner = runner
         self._environmentVariables = State(initialValue: runner.environmentVariables)
         self._preJobScript = State(initialValue: runner.preJobScript ?? "")
         self._postJobScript = State(initialValue: runner.postJobScript ?? "")
+    }
+    
+    private var hasUnsavedChanges: Bool {
+        let originalEnvVars = runner.environmentVariables
+        let originalPreScript = runner.preJobScript ?? ""
+        let originalPostScript = runner.postJobScript ?? ""
+        
+        let currentPreScript = preJobScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentPostScript = postJobScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedOriginalPreScript = originalPreScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedOriginalPostScript = originalPostScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let envChanged = environmentVariables != originalEnvVars
+        let preScriptChanged = currentPreScript != trimmedOriginalPreScript
+        let postScriptChanged = currentPostScript != trimmedOriginalPostScript
+        
+        // Debug: print to console to see what's happening
+        print("🔍 Checking for changes:")
+        print("  Original env vars: \(originalEnvVars)")
+        print("  Current env vars: \(environmentVariables)")
+        print("  Environment variables changed: \(envChanged)")
+        print("  Pre-job script changed: \(preScriptChanged)")
+        print("  Post-job script changed: \(postScriptChanged)")
+        
+        if envChanged || preScriptChanged || postScriptChanged {
+            print("🔍 Changes detected!")
+        }
+        
+        return envChanged || preScriptChanged || postScriptChanged
     }
     
     var body: some View {
@@ -49,6 +79,14 @@ struct RunnerConfigurationView: View {
             footerView
         }
         .frame(minWidth: 800, idealWidth: 900, maxWidth: 1200, minHeight: 600, idealHeight: 700, maxHeight: 900)
+        .alert("Unsaved Changes", isPresented: $showingUnsavedChangesAlert) {
+            Button("Discard Changes", role: .destructive) {
+                dismiss()
+            }
+            Button("Keep Editing", role: .cancel) { }
+        } message: {
+            Text("You have unsaved changes. Are you sure you want to close without saving?")
+        }
     }
     
     private var headerView: some View {
@@ -80,13 +118,6 @@ struct RunnerConfigurationView: View {
                 }
                 
                 Spacer()
-                
-                Button("Done") {
-                    saveChanges()
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             }
             
             Text("Manage environment variables and pre/post job scripts for this runner")
@@ -329,7 +360,11 @@ struct RunnerConfigurationView: View {
     private var footerView: some View {
         HStack {
             Button("Cancel") {
-                dismiss()
+                if hasUnsavedChanges {
+                    showingUnsavedChangesAlert = true
+                } else {
+                    dismiss()
+                }
             }
             
             Spacer()
