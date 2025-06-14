@@ -1,0 +1,129 @@
+name: Release and Notarize
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.1)'
+        required: true
+
+jobs:
+  build-and-notarize:
+    name: Build, Notarize, and Release
+    runs-on: macos-14
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+    
+    - name: Install dependencies
+      run: |
+        brew install xcodegen jq
+    
+    - name: Generate Xcode project
+      run: xcodegen
+    
+    - name: Build and Archive
+      run: |
+        xcodebuild archive \
+          -project Ghast.xcodeproj \
+          -scheme Ghast \
+          -configuration Release \
+          -archivePath build/Ghast.xcarchive \
+          DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
+          CODE_SIGN_STYLE=Automatic
+    
+    - name: Export Archive
+      run: |
+        xcodebuild -exportArchive \
+          -archivePath build/Ghast.xcarchive \
+          -exportPath build/export \
+          -exportOptionsPlist ExportOptions.plist
+    
+    - name: Create ZIP for notarization
+      run: |
+        cd build/export
+        zip -r -y ../Ghast.zip Ghast.app
+        cd ../..
+    
+    - name: Notarize app
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        # Submit for notarization
+        xcrun notarytool submit build/Ghast.zip \
+          --apple-id "$APPLE_ID" \
+          --password "$APPLE_ID_PASSWORD" \
+          --team-id "$APPLE_TEAM_ID" \
+          --wait \
+          --timeout 30m
+    
+    - name: Staple notarization ticket
+      run: |
+        xcrun stapler staple build/export/Ghast.app
+    
+    - name: Create final distribution ZIP
+      run: |
+        cd build/export
+        zip -r -y ../Ghast-notarized.zip Ghast.app
+        cd ../..
+    
+    - name: Generate Sparkle signature
+      if: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      env:
+        SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      run: |
+        # Download Sparkle tools
+        git clone https://github.com/sparkle-project/Sparkle.git
+        cd Sparkle
+        make build
+        cd ..
+        
+        # Sign the update
+        echo "$SPARKLE_PRIVATE_KEY" > sparkle_key
+        SIGNATURE=$(./Sparkle/bin/sign_update build/Ghast-notarized.zip -f sparkle_key)
+        echo "SPARKLE_SIGNATURE=$SIGNATURE" >> $GITHUB_ENV
+        rm sparkle_key
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/Ghast-notarized.zip
+        draft: true
+        prerelease: false
+        body: |
+          ## What's New
+          
+          <!-- Add release notes here -->
+          
+          ## Installation
+          
+          1. Download `Ghast-notarized.zip`
+          2. Unzip and drag Ghast.app to your Applications folder
+          3. Launch Ghast
+          
+          ## Sparkle Update Signature
+          
+          ```
+          ${{ env.SPARKLE_SIGNATURE }}
+          ```
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ghast-release
+        path: |
+          build/Ghast-notarized.zip
+          build/Ghast.xcarchive
