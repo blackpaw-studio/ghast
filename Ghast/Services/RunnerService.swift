@@ -74,7 +74,9 @@ class RunnerService: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: runnersBaseDirectory, withIntermediateDirectories: true)
         } catch {
+            #if DEBUG
             print("Failed to create runners directory: \(error)")
+            #endif
         }
     }
     
@@ -139,9 +141,13 @@ class RunnerService: ObservableObject {
                     // Clear quarantine attribute to avoid Gatekeeper issues
                     try await clearQuarantineAttribute(for: fullPath)
                     
+                    #if DEBUG
                     print("🏃 Set executable permissions for: \(executablePath)")
+                    #endif
                 } catch {
+                    #if DEBUG
                     print("🏃 Warning: Failed to set permissions for \(executablePath): \(error)")
+                    #endif
                 }
             }
         }
@@ -160,7 +166,9 @@ class RunnerService: ObservableObject {
                     }
                 }
             } catch {
+                #if DEBUG
                 print("🏃 Warning: Could not scan bin directory: \(error)")
+                #endif
             }
         }
     }
@@ -179,10 +187,14 @@ class RunnerService: ObservableObject {
         do {
             try process.run()
             process.waitUntilExit()
+            #if DEBUG
             print("🏃 Cleared quarantine attributes from runner directory")
+            #endif
             // Don't throw on non-zero exit - files might not have quarantine attribute
         } catch {
+            #if DEBUG
             print("🏃 Warning: Could not clear quarantine attributes: \(error)")
+            #endif
         }
     }
     
@@ -216,7 +228,9 @@ class RunnerService: ObservableObject {
         // Check if config.sh exists
         let configPath = directory.appendingPathComponent("config.sh")
         guard FileManager.default.fileExists(atPath: configPath.path) else {
+            #if DEBUG
             print("🏃 Config script not found at: \(configPath.path)")
+            #endif
             throw RunnerError.configurationFailed()
         }
         
@@ -248,8 +262,10 @@ class RunnerService: ObservableObject {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
+        #if DEBUG
         print("🏃 Running configuration command: \(arguments.joined(separator: " "))")
         print("🏃 Working directory: \(directory.path)")
+        #endif
         
         try process.run()
         process.waitUntilExit()
@@ -261,13 +277,17 @@ class RunnerService: ObservableObject {
         let output = String(data: outputData, encoding: .utf8) ?? ""
         let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
         
+        #if DEBUG
         print("🏃 Configuration output: \(output)")
         if !errorOutput.isEmpty {
             print("🏃 Configuration error: \(errorOutput)")
         }
+        #endif
         
         if process.terminationStatus != 0 {
+            #if DEBUG
             print("🏃 Configuration failed with exit code: \(process.terminationStatus)")
+            #endif
             throw RunnerError.configurationFailed()
         }
     }
@@ -333,7 +353,9 @@ class RunnerService: ObservableObject {
                 throw RunnerError.runnerAlreadyRunning
             } else {
                 // Clean up dead process reference
+                #if DEBUG
                 print("🏃 Cleaning up dead process reference for runner \(id)")
+                #endif
                 runningProcesses.removeValue(forKey: id)
                 processGroupIDs.removeValue(forKey: id)
                 if let stream = logStreams[id] {
@@ -444,7 +466,9 @@ class RunnerService: ObservableObject {
         // Setup termination handler
         process.terminationHandler = { [weak self] terminatedProcess in
             let exitCode = terminatedProcess.terminationStatus
+            #if DEBUG
             print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+            #endif
             
             // Log termination to file
             let logFileURL = URL(fileURLWithPath: logFile)
@@ -464,7 +488,9 @@ class RunnerService: ObservableObject {
             switch exitCode {
             case 127:
                 errorMessage = "❌ Error: Command not found (./run.sh missing or not executable)\n"
+                #if DEBUG
                 print("❌ Error: ./run.sh not found or not executable in \(runner.path)")
+                #endif
             case 126:
                 errorMessage = "❌ Error: Permission denied (./run.sh not executable)\n"
             case 1:
@@ -514,7 +540,9 @@ class RunnerService: ObservableObject {
         let pgid = getpgid(processPID)
         if pgid != -1 {
             processGroupIDs[id] = pgid
+            #if DEBUG
             print("🏃 Runner '\(runner.name)' initial process group: \(pgid)")
+            #endif
         }
         
         localRunners[runnerIndex].status = .running
@@ -522,24 +550,32 @@ class RunnerService: ObservableObject {
         
         // Send process started confirmation
         logSubject.send("🏃 Runner process started (PID: \(process.processIdentifier))\n")
+        #if DEBUG
         print("🏃 Started runner '\(runner.name)' with PID: \(process.processIdentifier)")
+        #endif
     }
     
     func stopRunner(id: String) {
         guard let process = runningProcesses[id] else { 
+            #if DEBUG
             print("🏃 No running process found for runner ID: \(id)")
+            #endif
             return 
         }
         
         if let runner = localRunners.first(where: { $0.id == id }) {
             logStreams[id]?.send("🏃 Stopping runner '\(runner.name)'...\n")
+            #if DEBUG
             print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
+            #endif
         }
         
         // Use stored process group ID if available, otherwise fall back to process PID
         let pgid = processGroupIDs[id] ?? process.processIdentifier
         
+        #if DEBUG
         print("🏃 Terminating process group \(pgid)")
+        #endif
         
         // First try graceful termination of the process group
         kill(-pgid, SIGTERM)
@@ -561,7 +597,9 @@ class RunnerService: ObservableObject {
                     try cleanupProcess.run()
                     cleanupProcess.waitUntilExit()
                 } catch {
+                    #if DEBUG
                     print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
+                    #endif
                 }
             }
         }
@@ -569,7 +607,9 @@ class RunnerService: ObservableObject {
         // Give it a moment to terminate gracefully (reduced timeout)
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak self] in
             if process.isRunning {
+                #if DEBUG
                 print("🏃 Force killing runner process group (PGID: \(pgid))")
+                #endif
                 kill(-pgid, SIGKILL)
                 kill(process.processIdentifier, SIGKILL)
                 
@@ -591,7 +631,9 @@ class RunnerService: ObservableObject {
                                 try forceCleanupProcess.run()
                                 forceCleanupProcess.waitUntilExit()
                             } catch {
+                                #if DEBUG
                                 print("🏃 Warning: Could not run force cleanup: \(error)")
+                                #endif
                             }
                         }
                     }
@@ -606,14 +648,18 @@ class RunnerService: ObservableObject {
     }
     
     func stopAllRunners() {
+        #if DEBUG
         print("🏃 Stopping all running runners due to app termination...")
+        #endif
         
         // Create a list of processes to terminate to avoid modifying while iterating
         let processesToStop = Array(runningProcesses)
         
         for (id, process) in processesToStop {
             if let runner = localRunners.first(where: { $0.id == id }) {
+                #if DEBUG
                 print("🏃 Terminating runner '\(runner.name)' (PID: \(process.processIdentifier))")
+                #endif
                 logStreams[id]?.send("🏃 App terminating - stopping runner '\(runner.name)'...\n")
             }
             
@@ -621,7 +667,9 @@ class RunnerService: ObservableObject {
             let pgid = processGroupIDs[id] ?? process.processIdentifier
             let pid = process.processIdentifier
             
+            #if DEBUG
             print("🏃 Terminating process group \(pgid) for runner \(id)")
+            #endif
             
             // First try to terminate the process normally
             process.terminate()
@@ -637,7 +685,9 @@ class RunnerService: ObservableObject {
             
             // If still running, force kill the entire process group
             if process.isRunning {
+                #if DEBUG
                 print("🏃 Force killing runner process group (PGID: \(pgid))")
+                #endif
                 
                 // Force terminate through Process API
                 process.interrupt()
@@ -670,14 +720,18 @@ class RunnerService: ObservableObject {
         // Save updated runner states
         saveRunners()
         
+        #if DEBUG
         print("🏃 All runners stopped")
+        #endif
         
         // Comprehensive cleanup of all runner-related processes
         comprehensiveRunnerCleanup()
     }
     
     private func comprehensiveRunnerCleanup() {
+        #if DEBUG
         print("🏃 Starting fast runner process cleanup...")
+        #endif
         
         // Fast cleanup script with minimal delays and no verbose output
         let cleanupScript = """
@@ -711,9 +765,13 @@ class RunnerService: ObservableObject {
             do {
                 try cleanupProcess.run()
                 // Don't wait for completion - let it run in background
+                #if DEBUG
                 print("🏃 Fast cleanup initiated")
+                #endif
             } catch {
+                #if DEBUG
                 print("🏃 Warning: Could not run fast cleanup: \(error)")
+                #endif
             }
         }
     }
@@ -750,10 +808,14 @@ class RunnerService: ObservableObject {
                 let fileHandle = try FileHandle(forWritingTo: logFileURL)
                 fileHandle.truncateFile(atOffset: 0)
                 fileHandle.closeFile()
+                #if DEBUG
                 print("🏃 Cleared logs for runner \(runnerId)")
+                #endif
             }
         } catch {
+            #if DEBUG
             print("🏃 Warning: Could not clear log file: \(error)")
+            #endif
         }
     }
     
@@ -770,11 +832,15 @@ class RunnerService: ObservableObject {
         
         // If status is out of sync, update it
         if currentStatus == .running && !isActuallyRunning {
+            #if DEBUG
             print("🏃 Syncing runner status: \(localRunners[runnerIndex].name) is not actually running")
+            #endif
             localRunners[runnerIndex].status = .stopped
             saveRunners()
         } else if currentStatus == .stopped && isActuallyRunning {
+            #if DEBUG
             print("🏃 Syncing runner status: \(localRunners[runnerIndex].name) is actually running")
+            #endif
             localRunners[runnerIndex].status = .running
             saveRunners()
         }
@@ -787,7 +853,9 @@ class RunnerService: ObservableObject {
             let data = try JSONEncoder().encode(localRunners)
             UserDefaults.standard.set(data, forKey: "localRunners")
         } catch {
+            #if DEBUG
             print("Failed to save runners: \(error)")
+            #endif
         }
     }
     
@@ -805,18 +873,26 @@ class RunnerService: ObservableObject {
             }
             saveRunners()
             
+            #if DEBUG
             print("🏃 Loaded \(localRunners.count) runners")
+            #endif
         } catch {
+            #if DEBUG
             print("Failed to load runners: \(error)")
+            #endif
         }
     }
     
     /// Discovers existing runners in the .ghast/runners directory that aren't tracked
     private func discoverExistingRunners() {
+        #if DEBUG
         print("🏃 Scanning for existing runners in \(runnersBaseDirectory.path)")
+        #endif
         
         guard FileManager.default.fileExists(atPath: runnersBaseDirectory.path) else {
+            #if DEBUG
             print("🏃 Runners directory doesn't exist yet")
+            #endif
             return
         }
         
@@ -847,7 +923,9 @@ class RunnerService: ObservableObject {
                 
                 guard FileManager.default.fileExists(atPath: runScript.path) ||
                       FileManager.default.fileExists(atPath: configScript.path) else {
+                    #if DEBUG
                     print("🏃 Skipping \(runnerName) - doesn't appear to be a runner directory")
+                    #endif
                     continue
                 }
                 
@@ -866,7 +944,9 @@ class RunnerService: ObservableObject {
                             }
                         }
                     } catch {
+                        #if DEBUG
                         print("🏃 Couldn't parse .runner file for \(runnerName)")
+                        #endif
                     }
                 }
                 
@@ -878,18 +958,24 @@ class RunnerService: ObservableObject {
                     labels: ["self-hosted"]
                 )
                 
+                #if DEBUG
                 print("🏃 Discovered existing runner: \(runnerName) for \(repository)")
+                #endif
                 localRunners.append(discoveredRunner)
             }
             
             // Save if we discovered any new runners
             if !localRunners.isEmpty {
                 saveRunners()
+                #if DEBUG
                 print("🏃 Total runners after discovery: \(localRunners.count)")
+                #endif
             }
             
         } catch {
+            #if DEBUG
             print("🏃 Error scanning runners directory: \(error)")
+            #endif
         }
     }
     
@@ -945,9 +1031,13 @@ class RunnerService: ObservableObject {
         
         do {
             try envContent.write(toFile: envFilePath, atomically: true, encoding: .utf8)
+            #if DEBUG
             print("📝 Updated .env file for runner \(runner.name)")
+            #endif
         } catch {
+            #if DEBUG
             print("❌ Failed to write .env file for runner \(runner.name): \(error)")
+            #endif
         }
     }
     
@@ -979,9 +1069,13 @@ class RunnerService: ObservableObject {
             // Set environment variable to point to script
             setHookEnvironmentVariable(for: runner, hook: "ACTIONS_RUNNER_HOOK_JOB_STARTED", scriptPath: scriptPath)
             
+            #if DEBUG
             print("📝 Updated pre-job script for runner \(runner.name)")
+            #endif
         } catch {
+            #if DEBUG
             print("❌ Failed to write pre-job script for runner \(runner.name): \(error)")
+            #endif
         }
     }
     
@@ -1013,9 +1107,13 @@ class RunnerService: ObservableObject {
             // Set environment variable to point to script
             setHookEnvironmentVariable(for: runner, hook: "ACTIONS_RUNNER_HOOK_JOB_COMPLETED", scriptPath: scriptPath)
             
+            #if DEBUG
             print("📝 Updated post-job script for runner \(runner.name)")
+            #endif
         } catch {
+            #if DEBUG
             print("❌ Failed to write post-job script for runner \(runner.name): \(error)")
+            #endif
         }
     }
     
@@ -1042,7 +1140,9 @@ class RunnerService: ObservableObject {
         do {
             try newContent.write(toFile: envFilePath, atomically: true, encoding: .utf8)
         } catch {
+            #if DEBUG
             print("❌ Failed to update .env file with hook variable: \(error)")
+            #endif
         }
     }
     
@@ -1060,7 +1160,9 @@ class RunnerService: ObservableObject {
         do {
             try newContent.write(toFile: envFilePath, atomically: true, encoding: .utf8)
         } catch {
+            #if DEBUG
             print("❌ Failed to update .env file: \(error)")
+            #endif
         }
     }
     

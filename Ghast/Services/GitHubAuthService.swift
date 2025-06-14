@@ -8,7 +8,9 @@ import Alamofire
 class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
     @Published var isAuthenticated = false {
         didSet {
+            #if DEBUG
             print("🔐 OAuth: isAuthenticated changed to \(isAuthenticated)")
+            #endif
         }
     }
     @Published var currentUser: GitHubUser?
@@ -45,7 +47,9 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         
         // Skip keychain access during tests
         if isRunningTests() {
+            #if DEBUG
             print("🔐 OAuth: Test mode detected - skipping stored auth check")
+            #endif
             return
         }
         
@@ -69,7 +73,9 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
             group.addTask {
                 // 60 second timeout for OAuth flow
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
+                #if DEBUG
                 print("🔐 OAuth: Timeout reached, cancelling OAuth flow")
+                #endif
             }
             
             // Wait for first task to complete (either OAuth or timeout)
@@ -84,59 +90,30 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         do {
             try keychain.remove("github_token")
         } catch {
+            #if DEBUG
             print("🔐 Warning: Failed to remove token from keychain: \(error)")
+            #endif
         }
-    }
-    
-    // Test helper method - DO NOT USE IN PRODUCTION
-    func simulateSuccessfulAuth(user: GitHubUser) {
-        self.currentUser = user
-        self.isAuthenticated = true
-        self.isLoading = false
-        self.isAuthenticating = false
-    }
-    
-    // Debug method to test OAuth callback without browser
-    func debugTestOAuthCallback() async {
-        print("🔐 DEBUG: Starting debug OAuth test")
-        
-        isLoading = true
-        isAuthenticating = true
-        
-        // Simulate the callback URL that GitHub would send
-        let callbackURL = URL(string: "ghast://auth/callback?code=debug_test_code&state=debug_state")!
-        
-        print("🔐 DEBUG: Posting notification for URL: \(callbackURL.absoluteString)")
-        
-        // Post the notification just like the real callback would
-        NotificationCenter.default.post(name: .oauthCallback, object: callbackURL)
-        
-        print("🔐 DEBUG: Notification posted, OAuth flow should continue...")
     }
     
     private func checkExistingAuth() async {
         do {
             // Check if key exists before trying to get it
             guard try keychain.contains("github_token") else {
-                print("🔐 OAuth: No stored token found")
                 return
             }
             
             guard let token = try keychain.get("github_token") else {
-                print("🔐 OAuth: Token exists but couldn't retrieve it")
                 return
             }
             
-            print("🔐 OAuth: Found stored token, validating...")
             let user = try await GitHubAPIService.shared.fetchCurrentUser(token: token)
             await MainActor.run {
                 self.currentUser = user
                 self.isAuthenticated = true
                 GitHubAPIService.shared.setAccessToken(token)
             }
-            print("🔐 OAuth: Successfully restored authentication")
         } catch {
-            print("🔐 OAuth: Error checking stored auth: \(error)")
             // Token is invalid or keychain access failed, remove it silently
             try? keychain.remove("github_token")
         }
@@ -145,15 +122,11 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
     private func performOAuthFlow() async {
         let authURL = buildAuthURL()
         
-        print("🔐 OAuth: Starting OAuth flow")
-        print("🔐 OAuth: Auth URL: \(authURL.absoluteString)")
         
         // Don't open browser during tests
         if !isRunningTests() {
             // Open URL in default browser
             NSWorkspace.shared.open(authURL)
-        } else {
-            print("🔐 OAuth: Test mode detected - skipping browser launch")
         }
         
         // Set up notification observer for URL callback
@@ -164,37 +137,27 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                print("🔐 OAuth: Received callback notification")
                 guard let callbackURL = notification.object as? URL else {
-                    print("🔐 OAuth: ERROR - No URL in notification object")
                     continuation.resume()
                     return
                 }
-                
-                print("🔐 OAuth: Callback URL: \(callbackURL.absoluteString)")
                 
                 guard let code = self?.extractCode(from: callbackURL) else {
-                    print("🔐 OAuth: ERROR - Failed to extract authorization code from URL")
                     continuation.resume()
                     return
                 }
-                
-                print("🔐 OAuth: Successfully extracted code: \(String(code.prefix(10)))...")
                 
                 // Remove observer
                 if let obs = observer {
                     NotificationCenter.default.removeObserver(obs)
-                    print("🔐 OAuth: Removed notification observer")
                 }
                 
                 Task {
-                    print("🔐 OAuth: Starting token exchange")
                     await self?.exchangeCodeForToken(code)
                     continuation.resume()
                 }
             }
             
-            print("🔐 OAuth: Set up notification observer, waiting for callback...")
         }
     }
     
@@ -219,7 +182,6 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
     }
     
     private func exchangeCodeForToken(_ code: String) async {
-        print("🔐 OAuth: Starting token exchange for code: \(String(code.prefix(10)))...")
         
         let tokenURL = URL(string: "https://github.com/login/oauth/access_token")!
         var request = URLRequest(url: tokenURL)
@@ -235,50 +197,27 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            print("🔐 OAuth: Sending token request to GitHub")
             
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("🔐 OAuth: Token response status: \(httpResponse.statusCode)")
-            }
-            
-            // Debug: Print raw response
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("🔐 OAuth: Token response: \(responseString)")
-            }
+            let (data, _) = try await URLSession.shared.data(for: request)
             
             if let tokenResponse = try? JSONDecoder().decode(TokenResponse.self, from: data) {
-                print("🔐 OAuth: Successfully decoded token response")
                 do {
                     try keychain.set(tokenResponse.accessToken, key: "github_token")
                 } catch {
-                    print("🔐 Warning: Failed to save token to keychain: \(error)")
                     // Continue anyway as we can still function without persistent storage
                 }
                 GitHubAPIService.shared.setAccessToken(tokenResponse.accessToken)
                 
                 do {
-                    print("🔐 OAuth: Fetching user info")
                     let user = try await GitHubAPIService.shared.fetchCurrentUser()
                     
                     // Atomic state update on MainActor
                     await MainActor.run {
-                        print("🔐 OAuth: Setting user and authentication state")
                         self.currentUser = user
                         self.isAuthenticated = true
                         self.isAuthenticating = false
                     }
-                    print("🔐 OAuth: Authentication completed successfully!")
                 } catch {
-                    print("🔐 OAuth: ERROR - User fetch failed: \(error)")
-                    print("🔐 OAuth: ERROR - Error type: \(type(of: error))")
-                    if let afError = error as? AFError {
-                        print("🔐 OAuth: ERROR - AFError details: \(afError.localizedDescription)")
-                        if case .responseValidationFailed(let reason) = afError {
-                            print("🔐 OAuth: ERROR - Validation failed reason: \(reason)")
-                        }
-                    }
                     
                     // Clean up on user fetch failure
                     await MainActor.run {
@@ -289,14 +228,12 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
                     try? keychain.remove("github_token")
                 }
             } else {
-                print("🔐 OAuth: ERROR - Failed to decode token response")
                 await MainActor.run {
                     self.isAuthenticated = false
                     self.isAuthenticating = false
                 }
             }
         } catch {
-            print("🔐 OAuth: Token exchange error: \(error)")
             await MainActor.run {
                 self.isAuthenticated = false
                 self.isAuthenticating = false
