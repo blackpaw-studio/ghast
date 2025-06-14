@@ -80,18 +80,46 @@ struct WelcomeView: View {
                         VStack(spacing: 16) {
                             VStack(spacing: 8) {
                                 Text("Welcome to Ghast")
-                                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                                    .font(.system(size: 48, weight: .bold, design: .rounded))
                                     .foregroundColor(.primary)
                                     .multilineTextAlignment(.center)
                                 
-                                Text("GitHub Actions Self-Hosted Tool")
-                                    .font(.system(.title2, design: .rounded, weight: .medium))
-                                    .foregroundColor(.blue)
-                                    .multilineTextAlignment(.center)
+                                HStack(spacing: 0) {
+                                    Text("G")
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.blue)
+                                    Text("it")
+                                        .font(.system(size: 28, weight: .light, design: .rounded))
+                                        .foregroundColor(.blue.opacity(0.7))
+                                    Text("H")
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.blue)
+                                    Text("ub ")
+                                        .font(.system(size: 28, weight: .light, design: .rounded))
+                                        .foregroundColor(.blue.opacity(0.7))
+                                    Text("A")
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.blue)
+                                    Text("ctions ")
+                                        .font(.system(size: 28, weight: .light, design: .rounded))
+                                        .foregroundColor(.blue.opacity(0.7))
+                                    Text("S")
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.blue)
+                                    Text("elf-Hosted ")
+                                        .font(.system(size: 28, weight: .light, design: .rounded))
+                                        .foregroundColor(.blue.opacity(0.7))
+                                    Text("T")
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.blue)
+                                    Text("ool")
+                                        .font(.system(size: 28, weight: .light, design: .rounded))
+                                        .foregroundColor(.blue.opacity(0.7))
+                                }
                             }
                             
                             Text("Effortlessly manage your self-hosted GitHub Actions runners. Monitor status, view logs, and control your CI/CD infrastructure from one beautiful interface.")
-                                .font(.system(.body, design: .rounded, weight: .regular))
+                                .font(.system(size: 18, weight: .regular, design: .rounded))
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(4)
@@ -114,7 +142,7 @@ struct WelcomeView: View {
                                 }
                                 
                                 Text(isSigningIn ? "Signing In..." : "Sign In with GitHub")
-                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                                    .font(.system(size: 18, weight: .semibold, design: .rounded))
                             }
                             .foregroundColor(.white)
                             .frame(minWidth: 240)
@@ -141,26 +169,6 @@ struct WelcomeView: View {
                         .disabled(isSigningIn)
                         .animation(.easeInOut(duration: 0.2), value: isSigningIn)
                         
-                        // Debug button with subtle styling
-                        Button("DEBUG: Test OAuth Callback") {
-                            Task {
-                                await authService.debugTestOAuthCallback()
-                            }
-                        }
-                        .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                                )
-                        )
-                        .buttonStyle(.plain)
-                        
                         // Requirements note
                         VStack(spacing: 6) {
                             HStack(spacing: 6) {
@@ -168,12 +176,12 @@ struct WelcomeView: View {
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.blue)
                                 Text("Admin access to repositories required")
-                                    .font(.system(.caption, design: .rounded, weight: .medium))
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
                                     .foregroundColor(.secondary)
                             }
                             
                             Text("Ghast needs admin permissions to manage self-hosted runners")
-                                .font(.system(.caption2, design: .rounded, weight: .regular))
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
                                 .foregroundColor(.secondary.opacity(0.8))
                                 .multilineTextAlignment(.center)
                         }
