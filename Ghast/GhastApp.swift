@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Sparkle
 
 @main
 struct GhastApp: App {
@@ -28,6 +29,9 @@ struct GhastApp: App {
         .handlesExternalEvents(matching: Set(arrayLiteral: "ghast"))
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: appDelegate.updaterController.updater)
+            }
         }
     }
     
@@ -40,6 +44,13 @@ struct GhastApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    let updaterController: SPUStandardUpdaterController
+    
+    override init() {
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        super.init()
+    }
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         
         // Ensure single instance behavior

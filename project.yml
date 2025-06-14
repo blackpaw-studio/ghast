@@ -35,6 +35,8 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: net.evancoleman.ghast.oauth
             CFBundleURLSchemes: [ghast]
+        SUFeedURL: "https://evancoleman.net/ghast/appcast.xml"
+        SUPublicEDKey: "YOUR_PUBLIC_KEY_HERE"
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast
       CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
@@ -47,6 +49,7 @@ targets:
     dependencies:
       - package: KeychainAccess
       - package: Alamofire
+      - package: Sparkle
 
   GhastTests:
     type: bundle.unit-test
@@ -74,6 +77,9 @@ packages:
   SnapshotTesting:
     url: https://github.com/pointfreeco/swift-snapshot-testing
     from: "1.15.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.4"
 
 schemes:
   Ghast:

@@ -96,6 +96,34 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         }
     }
     
+    func simulateSuccessfulAuth(user: GitHubUser) {
+        self.currentUser = user
+        self.isAuthenticated = true
+        self.isLoading = false
+        self.isAuthenticating = false
+    }
+    
+    func debugTestOAuthCallback() async {
+        #if DEBUG
+        print("🔐 DEBUG: Starting debug OAuth test")
+        #endif
+        
+        isLoading = true
+        isAuthenticating = true
+        
+        let callbackURL = URL(string: "ghast://auth/callback?code=debug_test_code&state=debug_state")!
+        
+        #if DEBUG
+        print("🔐 DEBUG: Posting notification for URL: \(callbackURL.absoluteString)")
+        #endif
+        
+        NotificationCenter.default.post(name: .oauthCallback, object: callbackURL)
+        
+        #if DEBUG
+        print("🔐 DEBUG: Notification posted, OAuth flow should continue...")
+        #endif
+    }
+    
     private func checkExistingAuth() async {
         do {
             // Check if key exists before trying to get it

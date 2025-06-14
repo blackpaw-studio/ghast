@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>Ghast Updates</title>
+        <link>https://evancoleman.net/ghast/appcast.xml</link>
+        <description>Most recent changes with links to updates.</description>
+        <language>en</language>
+        <item>
+            <title>Version 1.0.1</title>
+            <pubDate>Mon, 14 Jun 2025 12:00:00 +0000</pubDate>
+            <sparkle:version>1.0.1</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>
+                https://evancoleman.net/ghast/releases/1.0.1.html
+            </sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://evancoleman.net/ghast/releases/Ghast-1.0.1.zip" 
+                type="application/octet-stream"
+                sparkle:edSignature="YOUR_SIGNATURE_HERE"
+                length="12345678"
+            />
+        </item>
+    </channel>
+</rss>
