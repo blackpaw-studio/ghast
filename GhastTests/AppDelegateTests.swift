@@ -5,7 +5,7 @@ final class AppDelegateTests: XCTestCase {
     
     func testAppDelegateURLHandling() {
         // Test that AppDelegate properly handles OAuth URLs
-        let appDelegate = AppDelegate()
+        let _ = AppDelegate()
         
         // Create a mock Apple Event Descriptor (this is tricky to test directly)
         // Instead, let's test the URL handling logic that gets called

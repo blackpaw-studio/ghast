@@ -1,0 +1,170 @@
+import XCTest
+import Combine
+@testable import Ghast
+
+@MainActor
+final class RunnerProcessLifecycleTests: XCTestCase {
+    var runnerService: RunnerService!
+    var cancellables: Set<AnyCancellable>!
+    
+    override func setUp() async throws {
+        try await super.setUp()
+        runnerService = RunnerService.shared
+        cancellables = Set<AnyCancellable>()
+        
+        // Clear any existing runners
+        runnerService.removeAllLocalRunners()
+    }
+    
+    override func tearDown() async throws {
+        cancellables.forEach { $0.cancel() }
+        cancellables = nil
+        
+        // Clean up any test runners
+        runnerService.removeAllLocalRunners()
+        
+        runnerService = nil
+        try await super.tearDown()
+    }
+    
+    func testLocalRunnerCreation() {
+        // Test that we can create a local runner
+        let _ = runnerService.localRunners.count
+        
+        // Create a runner using the initializer
+        let runner = LocalRunner(
+            name: "Test Runner",
+            repository: "user/repo",
+            path: "/tmp/test-runner",
+            labels: ["test", "macos"]
+        )
+        
+        XCTAssertEqual(runner.status, .stopped)
+        XCTAssertEqual(runner.name, "Test Runner")
+        XCTAssertEqual(runner.repository, "user/repo")
+        XCTAssertEqual(runner.path, "/tmp/test-runner")
+        XCTAssertEqual(runner.labels, ["test", "macos"])
+        XCTAssertNotNil(runner.id)
+    }
+    
+    func testRunnerStatusEnum() {
+        // Test all runner status cases
+        let statuses: [RunnerStatus] = [.stopped, .running, .error]
+        
+        for status in statuses {
+            XCTAssertNotNil(status.rawValue)
+        }
+        
+        // Test color property
+        XCTAssertEqual(RunnerStatus.stopped.color, "gray")
+        XCTAssertEqual(RunnerStatus.running.color, "green")
+        XCTAssertEqual(RunnerStatus.error.color, "red")
+    }
+    
+    func testRunnerServiceSharedInstance() {
+        // Test that shared instance is properly initialized
+        XCTAssertNotNil(runnerService)
+        XCTAssertNotNil(runnerService.localRunners)
+    }
+    
+    func testRunnerStateObservability() async throws {
+        // Test that runner state changes are observable
+        let expectation = XCTestExpectation(description: "Runner state change observed")
+        
+        let cancellable = runnerService.$localRunners.sink { runners in
+            expectation.fulfill()
+        }
+        
+        // Trigger a change by calling removeAllLocalRunners
+        runnerService.removeAllLocalRunners()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+        cancellable.cancel()
+    }
+    
+    func testLogPublisherCreation() {
+        // Test that we can get a log publisher for a runner
+        let testRunnerId = "test-runner-id"
+        let logPublisher = runnerService.getLogPublisher(for: testRunnerId)
+        
+        XCTAssertNotNil(logPublisher)
+        
+        // Test that we can subscribe to it
+        var receivedLogs: [String] = []
+        let cancellable = logPublisher.sink { log in
+            receivedLogs.append(log)
+        }
+        
+        // Cleanup
+        cancellable.cancel()
+    }
+    
+    func testRunnerEquality() {
+        // Test LocalRunner equality implementation
+        let runner1 = LocalRunner(
+            name: "Runner 1",
+            repository: "user/repo1",
+            path: "/tmp/runner1",
+            labels: ["label1"]
+        )
+        
+        var runner2 = LocalRunner(
+            name: "Runner 2",
+            repository: "user/repo2",
+            path: "/tmp/runner2",
+            labels: ["label2"]
+        )
+        
+        // Different runners should not be equal
+        XCTAssertNotEqual(runner1, runner2)
+        
+        // Same ID should be equal (even with different properties)
+        // Create a copy with same ID
+        let runner1Copy = runner1
+        XCTAssertEqual(runner1, runner1Copy)
+    }
+    
+    func testRunnerHashable() {
+        // Test LocalRunner hashable implementation
+        let runner = LocalRunner(
+            name: "Test Runner",
+            repository: "user/repo",
+            path: "/tmp/runner",
+            labels: []
+        )
+        
+        var hasher = Hasher()
+        runner.hash(into: &hasher)
+        let hash1 = hasher.finalize()
+        
+        // Same runner should produce same hash
+        hasher = Hasher()
+        runner.hash(into: &hasher)
+        let hash2 = hasher.finalize()
+        
+        XCTAssertEqual(hash1, hash2)
+    }
+    
+    func testRunnerPersistence() {
+        // Test that runners can be saved and loaded
+        let initialCount = runnerService.localRunners.count
+        
+        // Create a test runner
+        let runner = LocalRunner(
+            name: "Persistence Test",
+            repository: "user/repo",
+            path: "/tmp/persistence-test",
+            labels: ["test"]
+        )
+        
+        // Add to service
+        runnerService.localRunners.append(runner)
+        runnerService.saveRunners()
+        
+        // Verify it was added
+        XCTAssertEqual(runnerService.localRunners.count, initialCount + 1)
+        
+        // Clean up
+        runnerService.removeLocalRunner(id: runner.id)
+    }
+}
