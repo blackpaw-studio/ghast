@@ -27,8 +27,11 @@ targets:
       path: Ghast/Info.plist
       properties:
         CFBundleDisplayName: Ghast
-        CFBundleIconFile: ""
+        CFBundleIconFile: "AppIcon"
         LSMultipleInstancesProhibited: true
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: "Copyright © 2025 Blackpaw Studio, LLC. All rights reserved."
+        LSApplicationCategoryType: "public.app-category.developer-tools"
         CFBundleURLTypes:
           - CFBundleURLName: net.evancoleman.ghast.oauth
             CFBundleURLSchemes: [ghast]
