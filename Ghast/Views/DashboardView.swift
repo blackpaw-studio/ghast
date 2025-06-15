@@ -9,10 +9,18 @@ struct DashboardView: View {
     @State private var busyRunners = 0
     @State private var isLoadingStats = false
     @State private var showingNewRunnerFlow = false
+    @State private var loadError: Error?
+    @ObservedObject private var rateLimitManager = RateLimitManager.shared
     
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 24) {
+                // Rate limit warning if needed
+                if rateLimitManager.isRateLimited || rateLimitManager.rateLimitInfo?.isNearLimit == true {
+                    RateLimitView()
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                
                 // Hero Welcome Section
                 heroSection
                 
@@ -47,6 +55,18 @@ struct DashboardView: View {
         }
         .sheet(isPresented: $showingNewRunnerFlow) {
             NewRunnerFlowView(repositories: appState.repositories)
+        }
+        .errorAlert(error: $loadError) {
+            // Retry action
+            Task {
+                await loadRunnerStats()
+            }
+        } onReauthenticate: {
+            // Re-authenticate
+            authService.signOut()
+            Task {
+                await authService.signIn()
+            }
         }
     }
     
@@ -369,9 +389,13 @@ struct DashboardView: View {
         if appState.repositories.isEmpty { return }
         
         isLoadingStats = true
+        loadError = nil
+        
         var total = 0
         var active = 0
         var busy = 0
+        var encounteredError: Error?
+        var successfulLoads = 0
         
         // Load stats from first 10 repositories to avoid too many API calls
         for repository in appState.repositories.prefix(10) {
@@ -380,9 +404,22 @@ struct DashboardView: View {
                 total += runners.count
                 active += runners.filter { $0.isOnline }.count
                 busy += runners.filter { $0.busy }.count
+                successfulLoads += 1
             } catch {
-                // Silently continue with other repositories
-                continue
+                // Store the first error we encounter
+                if encounteredError == nil {
+                    encounteredError = error
+                }
+                
+                // If it's a rate limit or auth error, stop trying
+                if let apiError = error as? GitHubAPIError {
+                    switch apiError {
+                    case .rateLimitExceeded, .unauthorized:
+                        break
+                    default:
+                        continue
+                    }
+                }
             }
         }
         
@@ -391,6 +428,11 @@ struct DashboardView: View {
             activeRunners = active
             busyRunners = busy
             isLoadingStats = false
+            
+            // Only show error if we couldn't load any repositories
+            if successfulLoads == 0 && encounteredError != nil {
+                loadError = encounteredError
+            }
         }
     }
 }

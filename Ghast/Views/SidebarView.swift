@@ -122,6 +122,9 @@ struct SidebarView: View {
                 }
                 
                 Spacer()
+                
+                // Rate limit badge
+                RateLimitBadge()
             }
         }
         .padding(.horizontal, 16)
