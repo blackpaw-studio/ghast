@@ -1,13 +1,18 @@
 import Foundation
 import Alamofire
 
+@MainActor
 class GitHubAPIService: GitHubAPIServiceProtocol {
     static let shared = GitHubAPIService()
     
     private var accessToken: String?
     private let baseURL = "https://api.github.com"
+    private let rateLimitManager = RateLimitManager.shared
+    private let client: GitHubAPIClient
     
-    private init() {}
+    private init() {
+        self.client = GitHubAPIClient(rateLimitManager: rateLimitManager)
+    }
     
     func setAccessToken(_ token: String) {
         accessToken = token
@@ -32,24 +37,28 @@ class GitHubAPIService: GitHubAPIServiceProtocol {
         if let token = token {
             requestHeaders = [
                 "Authorization": "Bearer \(token)",
-                "Accept": "application/json"
+                "Accept": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28"
             ]
         } else {
             requestHeaders = headers
         }
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, headers: requestHeaders)
-                .validate(statusCode: 200..<300)
-                .validate(contentType: ["application/json", "application/vnd.github.v3+json"])
-                .responseDecodable(of: GitHubUser.self) { response in
-                    switch response.result {
-                    case .success(let user):
-                        continuation.resume(returning: user)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    }
+        do {
+            return try await client.request(url, headers: requestHeaders)
+        } catch {
+            // Handle specific error cases
+            if let apiError = error as? GitHubAPIError {
+                switch apiError {
+                case .unauthorized:
+                    // Clear invalid token
+                    self.accessToken = nil
+                    throw apiError
+                default:
+                    throw apiError
                 }
+            }
+            throw error
         }
     }
     
@@ -61,8 +70,15 @@ class GitHubAPIService: GitHubAPIServiceProtocol {
         let perPage = 100 // Maximum allowed by GitHub API
         
         while true {
+            // Check if we're rate limited before making requests
+            if rateLimitManager.isRateLimited {
+                if let timeUntilReset = rateLimitManager.timeUntilReset() {
+                    throw GitHubAPIError.rateLimitExceeded(resetDate: rateLimitManager.nextResetDate)
+                }
+            }
+            
             let url = "\(baseURL)/user/repos"
-            let parameters: [String: Any] = [
+            let parameters: Parameters = [
                 "type": "all",
                 "sort": "updated",
                 "direction": "desc",
@@ -70,32 +86,42 @@ class GitHubAPIService: GitHubAPIServiceProtocol {
                 "per_page": perPage
             ]
             
-            let repositories = try await withCheckedThrowingContinuation { continuation in
-                AF.request(url, parameters: parameters, headers: headers)
-                    .validate()
-                    .responseDecodable(of: [GitHubRepository].self) { response in
-                        switch response.result {
-                        case .success(let repositories):
-                            continuation.resume(returning: repositories)
-                        case .failure(let error):
-                            continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                        }
-                    }
-            }
-            
-            // If we got fewer than perPage results, we've reached the end
-            if repositories.count < perPage {
+            do {
+                let repositories: [GitHubRepository] = try await client.request(
+                    url,
+                    method: .get,
+                    parameters: parameters,
+                    encoding: URLEncoding.default,
+                    headers: headers
+                )
+                
+                // If we got fewer than perPage results, we've reached the end
+                if repositories.count < perPage {
+                    allRepositories.append(contentsOf: repositories)
+                    break
+                }
+                
                 allRepositories.append(contentsOf: repositories)
-                break
-            }
-            
-            allRepositories.append(contentsOf: repositories)
-            page += 1
-            
-            // Safety limit to prevent infinite loops
-            if page > 50 { // Max 5000 repositories
-                print("⚠️ Repository pagination limit reached (5000 repos)")
-                break
+                page += 1
+                
+                // Safety limit to prevent infinite loops
+                if page > 50 { // Max 5000 repositories
+                    print("⚠️ Repository pagination limit reached (5000 repos)")
+                    break
+                }
+                
+                // Add small delay between pages to be respectful of API
+                if repositories.count == perPage {
+                    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                }
+                
+            } catch {
+                // If we've already fetched some repositories, return what we have
+                if !allRepositories.isEmpty {
+                    print("⚠️ Partial repository fetch: \(allRepositories.count) repositories")
+                    return allRepositories
+                }
+                throw error
             }
         }
         
@@ -108,125 +134,47 @@ class GitHubAPIService: GitHubAPIServiceProtocol {
     func fetchRunners(for repository: GitHubRepository) async throws -> [GitHubRunner] {
         let url = "\(baseURL)/repos/\(repository.fullName)/actions/runners"
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, headers: headers)
-                .validate()
-                .responseDecodable(of: RunnersResponse.self) { response in
-                    switch response.result {
-                    case .success(let runnersResponse):
-                        continuation.resume(returning: runnersResponse.runners)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    }
-                }
-        }
+        let response: RunnersResponse = try await client.request(url, headers: headers)
+        return response.runners
     }
     
     func fetchOrganizationRunners(org: String) async throws -> [GitHubRunner] {
         let url = "\(baseURL)/orgs/\(org)/actions/runners"
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, headers: headers)
-                .validate()
-                .responseDecodable(of: RunnersResponse.self) { response in
-                    switch response.result {
-                    case .success(let runnersResponse):
-                        continuation.resume(returning: runnersResponse.runners)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    }
-                }
-        }
+        let response: RunnersResponse = try await client.request(url, headers: headers)
+        return response.runners
     }
     
     func createRegistrationToken(for repository: GitHubRepository) async throws -> GitHubRunnerRegistrationToken {
         let url = "\(baseURL)/repos/\(repository.fullName)/actions/runners/registration-token"
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, method: .post, headers: headers)
-                .validate()
-                .responseDecodable(of: GitHubRunnerRegistrationToken.self) { response in
-                    switch response.result {
-                    case .success(let token):
-                        continuation.resume(returning: token)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    }
-                }
-        }
+        return try await client.request(url, method: .post, headers: headers)
     }
     
     func createRemoveToken(for repository: GitHubRepository) async throws -> GitHubRunnerRemoveToken {
         let url = "\(baseURL)/repos/\(repository.fullName)/actions/runners/remove-token"
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, method: .post, headers: headers)
-                .validate()
-                .responseDecodable(of: GitHubRunnerRemoveToken.self) { response in
-                    switch response.result {
-                    case .success(let token):
-                        continuation.resume(returning: token)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    }
-                }
-        }
+        return try await client.request(url, method: .post, headers: headers)
     }
     
     func deleteRunner(runnerId: Int, from repository: GitHubRepository) async throws {
         let url = "\(baseURL)/repos/\(repository.fullName)/actions/runners/\(runnerId)"
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, method: .delete, headers: headers)
-                .validate()
-                .response { response in
-                    if let error = response.error {
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    } else {
-                        continuation.resume()
-                    }
-                }
-        }
+        // For DELETE requests that return no content, we use a different approach
+        _ = try await client.request(url, method: .delete, headers: headers) as EmptyResponse
     }
     
     func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication] {
         let url = "\(baseURL)/repos/\(repository.fullName)/actions/runners/downloads"
         
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url, headers: headers)
-                .validate()
-                .responseDecodable(of: [GitHubRunnerApplication].self) { response in
-                    switch response.result {
-                    case .success(let applications):
-                        continuation.resume(returning: applications)
-                    case .failure(let error):
-                        continuation.resume(throwing: self.mapAFError(error, response: response.response))
-                    }
-                }
-        }
+        return try await client.request(url, headers: headers)
     }
     
-    // MARK: - Error Mapping
+    // MARK: - Cache Management
     
-    private func mapAFError(_ error: AFError, response: HTTPURLResponse?) -> GitHubAPIError {
-        if let statusCode = response?.statusCode {
-            switch statusCode {
-            case 401:
-                return .unauthorized
-            case 404:
-                return .notFound
-            case 500...599:
-                return .serverError(statusCode)
-            default:
-                break
-            }
-        }
-        
-        if let underlyingError = error.underlyingError {
-            return .networkError(underlyingError)
-        }
-        
-        return .networkError(error)
+    func clearCache() {
+        // Clear any cached data when user signs out or on error
+        // This can be extended to implement proper caching strategy
     }
 }
 
@@ -239,3 +187,5 @@ private struct RunnersResponse: Codable {
         case runners
     }
 }
+
+private struct EmptyResponse: Codable {}

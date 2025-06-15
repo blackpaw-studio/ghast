@@ -15,6 +15,7 @@ protocol GitHubAPIServiceProtocol {
 }
 
 /// Environment key for injecting API service
+@MainActor
 struct GitHubAPIServiceKey: EnvironmentKey {
     static let defaultValue: GitHubAPIServiceProtocol = GitHubAPIService.shared
 }

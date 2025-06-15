@@ -97,10 +97,15 @@ enum GitHubAPIError: Error, LocalizedError {
     case noAccessToken
     case invalidResponse
     case unauthorized
+    case forbidden(String?) // With optional message about missing permissions
     case notFound
+    case rateLimitExceeded(resetDate: Date?)
+    case validationError([String: String]) // Field-specific errors
     case serverError(Int)
     case networkError(Error)
     case decodingError(Error)
+    case timeout
+    case offline
     
     var errorDescription: String? {
         switch self {
@@ -111,15 +116,51 @@ enum GitHubAPIError: Error, LocalizedError {
         case .invalidResponse:
             return "Invalid response from GitHub API"
         case .unauthorized:
-            return "Unauthorized. Please check your GitHub token permissions."
+            return "Your session has expired. Please sign in again."
+        case .forbidden(let message):
+            if let message = message {
+                return "Access denied: \(message)"
+            }
+            return "You don't have permission to perform this action."
         case .notFound:
-            return "Resource not found"
+            return "The requested resource was not found."
+        case .rateLimitExceeded(let resetDate):
+            if let reset = resetDate {
+                let formatter = RelativeDateTimeFormatter()
+                return "API rate limit exceeded. Try again \(formatter.localizedString(for: reset, relativeTo: Date()))."
+            }
+            return "API rate limit exceeded. Please try again later."
+        case .validationError(let errors):
+            let errorMessages = errors.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+            return "Validation error: \(errorMessages)"
         case .serverError(let code):
-            return "Server error: \(code)"
+            return "GitHub server error (\(code)). Please try again later."
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .decodingError(let error):
-            return "Failed to decode response: \(error.localizedDescription)"
+            return "Failed to process server response: \(error.localizedDescription)"
+        case .timeout:
+            return "Request timed out. Please check your connection and try again."
+        case .offline:
+            return "No internet connection. Please check your network settings."
+        }
+    }
+    
+    var isRetryable: Bool {
+        switch self {
+        case .rateLimitExceeded, .serverError, .networkError, .timeout:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    var requiresReauthentication: Bool {
+        switch self {
+        case .unauthorized:
+            return true
+        default:
+            return false
         }
     }
 }
