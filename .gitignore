@@ -21,3 +21,13 @@ Package.resolved
 
 # Claude
 .claude/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+
+# OAuth credentials (safety net)
+*client_secret*
+*CLIENT_SECRET*

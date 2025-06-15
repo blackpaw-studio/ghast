@@ -3,6 +3,7 @@ import SwiftUI
 import AuthenticationServices
 import KeychainAccess
 import Alamofire
+import os.log
 
 @MainActor
 class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
@@ -23,8 +24,10 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         return Keychain(service: "net.evancoleman.ghast", accessGroup: accessGroup)
             .accessibility(.afterFirstUnlock)
     }
-    private let clientId = "Ov23liLVIllxzZoRYwAN"
-    private let redirectURI = "ghast://auth/callback"
+    private var clientId: String {
+        AppConfig.githubClientId
+    }
+    private let redirectURI = AppConfig.githubRedirectURI
     
     private var authSession: ASWebAuthenticationSession?
     
@@ -181,7 +184,15 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
                 }
                 
                 Task {
-                    await self?.exchangeCodeForToken(code)
+                    do {
+                        try await self?.exchangeCodeForToken(code)
+                    } catch {
+                        os_log("🔐 OAuth: Failed to exchange code for token: %{public}@", log: .default, type: .error, error.localizedDescription)
+                        await MainActor.run {
+                            self?.isAuthenticated = false
+                            self?.isAuthenticating = false
+                        }
+                    }
                     continuation.resume()
                 }
             }
@@ -209,7 +220,7 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         return queryItems.first { $0.name == "code" }?.value
     }
     
-    private func exchangeCodeForToken(_ code: String) async {
+    private func exchangeCodeForToken(_ code: String) async throws {
         
         let tokenURL = URL(string: "https://github.com/login/oauth/access_token")!
         var request = URLRequest(url: tokenURL)
@@ -217,9 +228,21 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
+        // Check if we should use device flow
+        if AppConfig.useDeviceFlow {
+            // TODO: Implement device flow
+            os_log("🔐 OAuth: Device flow not yet implemented. Client secret required for web flow.", log: .default, type: .error)
+            throw AuthError.missingCredentials
+        }
+        
+        guard let clientSecret = AppConfig.githubClientSecret else {
+            os_log("🔐 OAuth: Client secret not configured", log: .default, type: .error) 
+            throw AuthError.missingCredentials
+        }
+        
         let body = [
             "client_id": clientId,
-            "client_secret": "0d2d7ddfe0cbc94c9f28a53cf02a09f4d0d3b48b",
+            "client_secret": clientSecret,
             "code": code
         ]
         
@@ -274,6 +297,13 @@ extension GitHubAuthService: ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         return NSApplication.shared.windows.first ?? ASPresentationAnchor()
     }
+}
+
+enum AuthError: Error {
+    case missingCredentials
+    case invalidResponse
+    case networkError(Error)
+    case tokenExchangeFailed(String)
 }
 
 private struct TokenResponse: Codable {
