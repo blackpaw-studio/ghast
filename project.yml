@@ -36,7 +36,7 @@ targets:
           - CFBundleURLName: net.evancoleman.ghast.oauth
             CFBundleURLSchemes: [ghast]
         SUFeedURL: "https://evancoleman.net/ghast/appcast.xml"
-        SUPublicEDKey: "YOUR_PUBLIC_KEY_HERE"
+        SUPublicEDKey: "XiAxrGMH7g3mTu9QpwrqXkUCfqyQkuqT7lB2LgJUnjE="
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast
@@ -47,10 +47,9 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         # Local builds/tests: ad-hoc signed (as leoterm's Debug config), no team or
-        # profile needed. Debug entitlements drop keychain-access-groups, which
-        # requires a provisioning profile.
+        # profile needed.
         Debug:
-          CODE_SIGN_ENTITLEMENTS: Ghast/GhastDebug.entitlements
+          CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "-"
           DEVELOPMENT_TEAM: ""

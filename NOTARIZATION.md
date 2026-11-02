@@ -6,19 +6,16 @@ This guide explains how to notarize Ghast for distribution outside the Mac App S
 
 1. **Apple Developer Account** (paid - $99/year)
 2. **Xcode** installed and configured
-3. **App-specific password** from Apple ID
+3. **App Store Connect API key** (.p8, Key ID, Issuer ID) for team 52M9C6892K
 4. **Code signing certificate** (automatically managed)
 
 ## Initial Setup
 
-### 1. Create App-Specific Password
+### 1. Get the App Store Connect API Key
 
-1. Go to https://appleid.apple.com
-2. Sign in with your Apple ID
-3. Navigate to Security → App-Specific Passwords
-4. Click "Generate password"
-5. Name it "Ghast Notarization"
-6. Save the password securely
+Use the key in 1Password (Blackpaw Studio / "App Store Connect Blackpaw Studio Admin"):
+the `AuthKey_*.p8` attachment, `key id`, and `issuer id`. It must belong to the same
+team as the Developer ID certificate (52M9C6892K).
 
 ### 2. Store Notarization Credentials
 
@@ -29,8 +26,9 @@ Run the setup script:
 ```
 
 This will prompt you for:
-- Your Apple ID email
-- Your app-specific password
+- Path to the `.p8` key
+- Key ID
+- Issuer ID
 
 ## Manual Notarization
 
@@ -62,10 +60,15 @@ The repository includes a GitHub Actions workflow that automatically notarizes r
 ### Setup GitHub Secrets
 
 Add these secrets to your repository:
-- `APPLE_ID`: Your Apple ID email
-- `APPLE_ID_PASSWORD`: Your app-specific password
+- `APPLE_NOTARIZATION_KEY`: contents of the App Store Connect API `.p8` (written to a temp file for `notarytool --key`)
+- `APPLE_NOTARIZATION_KEY_ID`: its Key ID
+- `APPLE_NOTARIZATION_ISSUER`: its Issuer ID
+- `MACOS_CERTIFICATE`: base64 Developer ID Application .p12 (imported into a per-job temp keychain by `.github/scripts/keychain.sh`, deleted at job end)
+- `MACOS_CERTIFICATE_PWD`: password for that .p12
 - `APPLE_TEAM_ID`: Your team ID (52M9C6892K)
-- `SPARKLE_PRIVATE_KEY`: (Optional) Your Sparkle EdDSA private key
+- `SPARKLE_PRIVATE_KEY`: **Required.** Sparkle EdDSA private key (1Password: Olympus / "Ghast Sparkle EdDSA Private Key"). The workflow fails without it.
+
+The workflow runs on `macos-26` with Xcode 26.6. The appcast is hosted manually at https://evancoleman.net/ghast/appcast.xml: after a release, paste the `sparkle:edSignature`/`length` from the release notes into the appcast item and upload it.
 
 ### Triggering a Release
 
