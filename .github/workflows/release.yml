@@ -13,16 +13,16 @@ on:
 jobs:
   build-and-notarize:
     name: Build, Notarize, and Release
-    runs-on: macos-14
+    runs-on: macos-26
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
     
     - name: Set up Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: latest-stable
+        xcode-version: '26.6'
     
     - name: Install dependencies
       run: |
@@ -79,24 +79,27 @@ jobs:
         cd ../..
     
     - name: Generate Sparkle signature
-      if: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       env:
         SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        SPARKLE_VERSION: '2.9.6'
       run: |
-        # Download Sparkle tools
-        git clone https://github.com/sparkle-project/Sparkle.git
-        cd Sparkle
-        make build
-        cd ..
-        
-        # Sign the update
-        echo "$SPARKLE_PRIVATE_KEY" > sparkle_key
-        SIGNATURE=$(./Sparkle/bin/sign_update build/Ghast-notarized.zip -f sparkle_key)
-        echo "SPARKLE_SIGNATURE=$SIGNATURE" >> $GITHUB_ENV
-        rm sparkle_key
-    
+        if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+          echo "::error::SPARKLE_PRIVATE_KEY secret is not set; cannot sign the update"
+          exit 1
+        fi
+
+        # Download prebuilt Sparkle tools (sign_update) for a pinned release
+        mkdir -p sparkle-tools
+        curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+          | tar -xJ -C sparkle-tools
+
+        # Sign the update; the key is read from stdin so it never touches disk.
+        # Output: sparkle:edSignature="..." length="..."
+        SIGNATURE=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | ./sparkle-tools/bin/sign_update --ed-key-file - build/Ghast-notarized.zip)
+        echo "SPARKLE_SIGNATURE=$SIGNATURE" >> "$GITHUB_ENV"
+
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         files: build/Ghast-notarized.zip
         draft: true
@@ -121,7 +124,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v7
       with:
         name: ghast-release
         path: |

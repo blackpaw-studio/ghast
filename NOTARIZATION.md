@@ -65,7 +65,11 @@ Add these secrets to your repository:
 - `APPLE_ID`: Your Apple ID email
 - `APPLE_ID_PASSWORD`: Your app-specific password
 - `APPLE_TEAM_ID`: Your team ID (52M9C6892K)
-- `SPARKLE_PRIVATE_KEY`: (Optional) Your Sparkle EdDSA private key
+- `SPARKLE_PRIVATE_KEY`: **Required.** Sparkle EdDSA private key (1Password: Olympus / "Ghast Sparkle EdDSA Private Key"). The workflow fails without it.
+
+Notarization uses the Apple ID + app-specific password path. (App Store Connect API key auth is not wired up.)
+
+The workflow runs on `macos-26` with Xcode 26.6. The appcast is hosted manually at https://evancoleman.net/ghast/appcast.xml: after a release, paste the `sparkle:edSignature`/`length` from the release notes into the appcast item and upload it.
 
 ### Triggering a Release
 
