@@ -22,8 +22,8 @@ echo "This script will help you set up notarization credentials."
 echo ""
 echo -e "${YELLOW}Prerequisites:${NC}"
 echo "1. An Apple Developer account"
-echo "2. An app-specific password from https://appleid.apple.com"
-echo "   (Sign in → Security → App-Specific Passwords → Generate)"
+echo "2. An App Store Connect API key (.p8) for team $TEAM_ID, plus its Key ID and Issuer ID"
+echo "   (1Password: Blackpaw Studio / App Store Connect Blackpaw Studio Admin)"
 echo ""
 echo "Press Enter to continue..."
 read
@@ -39,19 +39,22 @@ if xcrun notarytool store-credentials --list 2>/dev/null | grep -q "$PROFILE_NAM
     fi
 fi
 
-# Get Apple ID
-echo -e "${BLUE}Enter your Apple ID email:${NC}"
-read -r APPLE_ID
+# Get API key details
+echo -e "${BLUE}Path to the AuthKey_XXXX.p8 file:${NC}"
+read -r KEY_PATH
+echo -e "${BLUE}Key ID:${NC}"
+read -r KEY_ID
+echo -e "${BLUE}Issuer ID:${NC}"
+read -r ISSUER_ID
 
 # Store credentials
 echo ""
 echo -e "${BLUE}Setting up notarization credentials...${NC}"
-echo "You will be prompted for your app-specific password."
-echo ""
 
 xcrun notarytool store-credentials "$PROFILE_NAME" \
-    --apple-id "$APPLE_ID" \
-    --team-id "$TEAM_ID"
+    --key "$KEY_PATH" \
+    --key-id "$KEY_ID" \
+    --issuer "$ISSUER_ID"
 
 # Verify credentials
 echo ""

@@ -132,12 +132,10 @@ if ! xcrun notarytool store-credentials --list 2>/dev/null | grep -q "ghast-nota
     print_error "Notarization credentials not found!"
     echo ""
     echo "Please run the following command to store your credentials:"
-    echo "xcrun notarytool store-credentials ghast-notarization --apple-id YOUR_APPLE_ID --team-id $TEAM_ID"
+    echo "./setup-notarization.sh"
     echo ""
-    echo "You'll need:"
-    echo "1. Your Apple ID email"
-    echo "2. An app-specific password from https://appleid.apple.com"
-    echo "3. Your team ID: $TEAM_ID"
+    echo "You'll need an App Store Connect API key (.p8), its Key ID and Issuer ID"
+    echo "(team $TEAM_ID)."
     exit 1
 fi
 
