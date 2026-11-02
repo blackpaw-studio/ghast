@@ -63,8 +63,36 @@ struct DeviceFlowClient: DeviceFlowClienting {
         )
     }
 
+    /// Polls until the user approves. Elapsed time is the sum of the waits, so the
+    /// loop needs no clock. Cancellation surfaces as `CancellationError`.
     func pollForToken(_ code: DeviceCode) async throws -> String {
-        throw DeviceFlowError.unexpected("not implemented")
+        var interval = code.interval
+        var elapsed = 0
+        let fields = [
+            "client_id": clientID,
+            "device_code": code.deviceCode,
+            "grant_type": Self.grantType,
+        ]
+
+        while true {
+            try await sleeper(.seconds(interval))
+            try Task.checkCancellation()
+            elapsed += interval
+            if elapsed > code.expiresIn { throw DeviceFlowError.expired }
+
+            let reply: TokenResponse = try await post(Endpoint.accessToken, fields: fields)
+            if let token = reply.accessToken { return token }
+            switch reply.error {
+            case "authorization_pending":
+                continue
+            case "slow_down":
+                interval = reply.interval ?? interval + Self.slowDownIncrement
+            case let error?:
+                throw Self.map(errorCode: error)
+            case nil:
+                throw DeviceFlowError.unexpected("Malformed token response")
+            }
+        }
     }
 }
 
@@ -75,6 +103,7 @@ extension DeviceFlowClient {
     }
 
     static let defaultInterval = 5
+    static let slowDownIncrement = 5
     static let grantType = "urn:ietf:params:oauth:grant-type:device_code"
 
     struct CodeResponse: Decodable {
@@ -91,6 +120,17 @@ extension DeviceFlowClient {
             case verificationURI = "verification_uri"
             case expiresIn = "expires_in"
             case interval, error
+        }
+    }
+
+    struct TokenResponse: Decodable {
+        let accessToken: String?
+        let error: String?
+        let interval: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case error, interval
         }
     }
 
