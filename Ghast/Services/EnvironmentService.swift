@@ -1,10 +1,12 @@
 import Foundation
+import Observation
 
 @MainActor
-class EnvironmentService: ObservableObject {
-    @Published var environments: [RunnerEnvironment] = []
+@Observable
+class EnvironmentService {
+    var environments: [RunnerEnvironment] = []
     
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
     
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
