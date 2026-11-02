@@ -2,6 +2,7 @@ import XCTest
 import SwiftUI
 import AppKit
 import SnapshotTesting
+@testable import Ghast
 
 /// Helper functions for snapshot testing SwiftUI views on macOS
 @MainActor
@@ -18,6 +19,7 @@ enum SnapshotTestHelpers {
         of view: V,
         width: CGFloat,
         height: CGFloat,
+        runnerService: RunnerService? = nil,
         record: Bool? = nil,
         file: StaticString = #file,
         testName: String = #function,
@@ -25,6 +27,8 @@ enum SnapshotTestHelpers {
     ) {
         // Create a container view that provides the sizing context without hard framing
         let containerView = view
+            .environmentObject(runnerService ?? makeTestRunnerService())
+            .environment(\.gitHubAPIService, MockGitHubAPIService())
             .frame(maxWidth: width, maxHeight: height)
             .background(Color.clear)
         
@@ -69,6 +73,7 @@ enum SnapshotTestHelpers {
         of view: V,
         containerWidth: CGFloat = 1200,
         containerHeight: CGFloat = 800,
+        runnerService: RunnerService? = nil,
         record: Bool? = nil,
         file: StaticString = #file,
         testName: String = #function,
@@ -76,6 +81,8 @@ enum SnapshotTestHelpers {
     ) {
         // Create a container that allows the view to size naturally within bounds
         let containerView = view
+            .environmentObject(runnerService ?? makeTestRunnerService())
+            .environment(\.gitHubAPIService, MockGitHubAPIService())
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(width: containerWidth, height: containerHeight)
             .background(Color.clear)

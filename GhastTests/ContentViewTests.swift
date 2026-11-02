@@ -23,7 +23,7 @@ final class ContentViewTests: XCTestCase {
     // MARK: - ContentView Tests
     
     func testContentViewInitialState() {
-        let contentView = ContentView()
+        let contentView = ContentView(authService: authService)
         
         // Can't easily inspect SwiftUI views directly, but we can verify it creates successfully
         XCTAssertNotNil(contentView)

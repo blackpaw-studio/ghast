@@ -2,6 +2,7 @@ import XCTest
 import SwiftUI
 @testable import Ghast
 
+@MainActor
 final class GhastAppTests: XCTestCase {
     
     var app: GhastApp!
@@ -100,23 +101,28 @@ final class GhastAppTests: XCTestCase {
     
     // MARK: - Cleanup Tests
     
-    @MainActor
-    func testPerformRunnerCleanup() {
-        let appDelegate = AppDelegate()
+    func testPerformRunnerCleanup() async throws {
+        let runnerService = makeTestRunnerService()
+        let appDelegate = AppDelegate(dependencies: AppDependencies(
+            runnerService: runnerService,
+            apiService: GitHubAPIService(),
+            authService: GitHubAuthService(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
+        ))
         
-        // Add a test runner
-        let runner = LocalRunner(
-            name: "Test Runner",
-            repository: "user/repo",
-            path: "/tmp/test-runner"
-        )
-        RunnerService.shared.addLocalRunner(runner)
+        // A runner whose run.sh sleeps, so there is a real process to stop
+        let runnerDir = makeTemporaryDirectory()
+        let script = runnerDir.appendingPathComponent("run.sh")
+        try "#!/bin/bash\nexec sleep 60\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let runner = LocalRunner(name: "Test Runner", repository: "user/repo", path: runnerDir.path)
+        runnerService.addLocalRunner(runner)
+        try await runnerService.startRunner(id: runner.id)
+        XCTAssertEqual(runnerService.localRunners.first?.status, .running)
         
         // Perform cleanup (would normally be called during termination)
         appDelegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
         
-        // Can't easily verify stopAllRunners was called, but ensure no crash
-        XCTAssertNotNil(appDelegate)
+        XCTAssertEqual(runnerService.localRunners.first?.status, .stopped)
     }
     
     func testApplicationDidFinishLaunching() {

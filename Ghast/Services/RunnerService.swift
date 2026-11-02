@@ -4,8 +4,6 @@ import Combine
 /// Service for managing local GitHub Actions runners
 @MainActor
 class RunnerService: ObservableObject {
-    static let shared = RunnerService()
-    
     static let defaultRunnersDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".ghast")
         .appendingPathComponent("runners")

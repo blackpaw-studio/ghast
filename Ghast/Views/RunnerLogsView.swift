@@ -4,7 +4,7 @@ import Foundation
 
 struct RunnerLogsView: View {
     let runner: LocalRunner
-    @StateObject private var runnerService = RunnerService.shared
+    @EnvironmentObject private var runnerService: RunnerService
     @State private var logText: String = ""
     @State private var refreshTimer: Timer?
     @State private var isAutoScrollEnabled: Bool = true

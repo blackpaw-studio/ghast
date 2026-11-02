@@ -30,6 +30,9 @@ final class SidebarViewSnapshotTests: XCTestCase {
     // MARK: - Empty State Tests
     
     func testSidebarViewEmpty() {
+        // The reference shows the in-flight repository load, so hold the request pending.
+        mockAPIService.holdsRepositoriesPending = true
+        defer { mockAPIService.releasePendingRequests() }
         let view = SidebarView()
             .environmentObject(authService)
             .environmentObject(appState)

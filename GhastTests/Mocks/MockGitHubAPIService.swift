@@ -10,6 +10,18 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     var mockRepositories: [GitHubRepository] = []
     var mockRunners: [GitHubRunner] = []
     
+    /// When true, `fetchRepositories` suspends until `releasePendingRequests()`, so a test can
+    /// capture the in-flight (loading) state deterministically.
+    var holdsRepositoriesPending = false
+    private var pendingRepositoryRequests: [CheckedContinuation<Void, Error>] = []
+    
+    /// Resumes every held request; call before the mock goes away so no continuation is dropped.
+    func releasePendingRequests() {
+        let pending = pendingRepositoryRequests
+        pendingRepositoryRequests = []
+        pending.forEach { $0.resume() }
+    }
+    
     func setAccessToken(_ token: String) {
         accessTokens.append(token)
     }
@@ -29,6 +41,9 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     }
     
     func fetchRepositories() async throws -> [GitHubRepository] {
+        if holdsRepositoriesPending {
+            try await withCheckedThrowingContinuation { pendingRepositoryRequests.append($0) }
+        }
         if shouldThrowError {
             throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
         }

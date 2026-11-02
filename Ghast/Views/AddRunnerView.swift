@@ -13,7 +13,7 @@ struct AddRunnerView: View {
     @State private var runnerName = ""
     @State private var runnerLabels = ""
     @State private var errorMessage: String?
-    @StateObject private var runnerService = RunnerService.shared
+    @EnvironmentObject private var runnerService: RunnerService
     @Environment(\.gitHubAPIService) private var apiService
     
     // Filtered applications for macOS only

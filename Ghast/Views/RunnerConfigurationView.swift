@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RunnerConfigurationView: View {
     let runner: LocalRunner
-    @StateObject private var runnerService = RunnerService.shared
+    @EnvironmentObject private var runnerService: RunnerService
     @Environment(\.dismiss) private var dismiss
     
     @State private var environmentVariables: [String: String]
