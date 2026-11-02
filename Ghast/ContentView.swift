@@ -208,6 +208,6 @@ class AppState {
 #Preview {
     let apiService = GitHubAPIService()
     ContentView(authService: GitHubAuthService(apiService: apiService))
-        .environmentObject(RunnerService())
+        .environment(RunnerService())
         .environment(\.gitHubAPIService, apiService)
 }

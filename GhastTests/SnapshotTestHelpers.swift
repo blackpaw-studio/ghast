@@ -27,7 +27,7 @@ enum SnapshotTestHelpers {
     ) {
         // Create a container view that provides the sizing context without hard framing
         let containerView = view
-            .environmentObject(runnerService ?? makeTestRunnerService())
+            .environment(runnerService ?? makeTestRunnerService())
             .environment(\.gitHubAPIService, MockGitHubAPIService())
             .frame(maxWidth: width, maxHeight: height)
             .background(Color.clear)
@@ -81,7 +81,7 @@ enum SnapshotTestHelpers {
     ) {
         // Create a container that allows the view to size naturally within bounds
         let containerView = view
-            .environmentObject(runnerService ?? makeTestRunnerService())
+            .environment(runnerService ?? makeTestRunnerService())
             .environment(\.gitHubAPIService, MockGitHubAPIService())
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(width: containerWidth, height: containerHeight)

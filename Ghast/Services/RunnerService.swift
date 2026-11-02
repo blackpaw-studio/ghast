@@ -1,21 +1,23 @@
 import Foundation
+import Observation
 
 /// Service for managing local GitHub Actions runners
 @MainActor
-class RunnerService: ObservableObject {
+@Observable
+class RunnerService {
     static let defaultRunnersDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".ghast")
         .appendingPathComponent("runners")
     
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
     
-    @Published var localRunners: [LocalRunner] = []
+    var localRunners: [LocalRunner] = []
     
-    private var runningProcesses: [String: Process] = [:]
-    private var processGroupIDs: [String: pid_t] = [:]
+    @ObservationIgnored private var runningProcesses: [String: Process] = [:]
+    @ObservationIgnored private var processGroupIDs: [String: pid_t] = [:]
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
-    private let runnersBaseDirectory: URL
+    @ObservationIgnored private let runnersBaseDirectory: URL
     
     init(defaults: UserDefaults = .standard, runnersDirectory: URL = RunnerService.defaultRunnersDirectory) {
         self.defaults = defaults

@@ -3,7 +3,7 @@ import Foundation
 
 struct RunnerLogsView: View {
     let runner: LocalRunner
-    @EnvironmentObject private var runnerService: RunnerService
+    @Environment(RunnerService.self) private var runnerService
     @State private var tailer: LogTailer?
     @State private var startError: String?
     @State private var isAutoScrollEnabled: Bool = true
@@ -320,5 +320,5 @@ struct RunnerLogsView: View {
         repository: "user/sample-repo",
         path: "/Users/user/actions-runner"
     ))
-    .environmentObject(RunnerService())
+    .environment(RunnerService())
 }

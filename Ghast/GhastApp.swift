@@ -28,7 +28,7 @@ struct GhastApp: App {
             if !isRunningTests() {
                 let dependencies = appDelegate.dependencies
                 ContentView(authService: dependencies.authService)
-                    .environmentObject(dependencies.runnerService)
+                    .environment(dependencies.runnerService)
                     .environment(\.gitHubAPIService, dependencies.apiService)
             } else {
                 EmptyView()

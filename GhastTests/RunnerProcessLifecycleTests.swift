@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 import Combine
 @testable import Ghast
 
@@ -63,15 +64,15 @@ final class RunnerProcessLifecycleTests: XCTestCase {
         // Test that runner state changes are observable
         let expectation = XCTestExpectation(description: "Runner state change observed")
         
-        let cancellable = runnerService.$localRunners.sink { runners in
+        withObservationTracking {
+            _ = runnerService.localRunners
+        } onChange: {
             expectation.fulfill()
         }
         
-        // Trigger a change by calling removeAllLocalRunners
-        runnerService.removeAllLocalRunners()
+        runnerService.addLocalRunner(LocalRunner(name: "Observed", repository: "user/repo", path: "/tmp/observed"))
         
         await fulfillment(of: [expectation], timeout: 1.0)
-        cancellable.cancel()
     }
     
     func testLogFileIsNilForUnknownRunner() {

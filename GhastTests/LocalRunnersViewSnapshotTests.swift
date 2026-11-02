@@ -39,7 +39,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         let view = LocalRunnersView()
             .environment(appState)
-            .environmentObject(runnerService)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
@@ -74,7 +74,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         let view = LocalRunnersView()
             .environment(appState)
-            .environmentObject(runnerService)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
@@ -106,7 +106,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Create a wrapper view that pre-selects a runner
         struct TestWrapper: View {
-            @EnvironmentObject var runnerService: RunnerService
+            @Environment(RunnerService.self) var runnerService
             @Environment(AppState.self) var appState
             @State private var selectedRunner: LocalRunner?
             
@@ -187,7 +187,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         let view = TestWrapper()
             .environment(appState)
-            .environmentObject(runnerService)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
@@ -216,7 +216,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         let view = LocalRunnersView()
             .environment(appState)
-            .environmentObject(runnerService)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
     }
@@ -251,7 +251,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         let view = LocalRunnersView()
             .environment(appState)
-            .environmentObject(runnerService)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
     }

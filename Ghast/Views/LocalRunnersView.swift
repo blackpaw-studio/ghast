@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LocalRunnersView: View {
-    @EnvironmentObject private var runnerService: RunnerService
+    @Environment(RunnerService.self) private var runnerService
     @Environment(AppState.self) private var appState
     @State private var selectedRunner: LocalRunner?
     @State private var showingNewRunnerFlow = false
@@ -231,7 +231,7 @@ struct ModernRunnerCard: View {
     let isSelected: Bool
     let onTap: () -> Void
     
-    @EnvironmentObject private var runnerService: RunnerService
+    @Environment(RunnerService.self) private var runnerService
     @State private var showingDeleteAlert = false
     @State private var showingConfiguration = false
     @State private var isHovered = false
@@ -477,7 +477,7 @@ struct ModernRunnerCard: View {
 
 struct LocalRunnerRowView: View {
     let runner: LocalRunner
-    @EnvironmentObject private var runnerService: RunnerService
+    @Environment(RunnerService.self) private var runnerService
     @State private var showingDeleteAlert = false
     
     // Find the current runner from the service to get live status updates

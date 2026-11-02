@@ -119,7 +119,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
             .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
-            .environmentObject(runnerService)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }

@@ -6,7 +6,7 @@ struct RepositoryDetailView: View {
     @State private var isLoadingRunners = false
     @State private var showingAddRunner = false
     @State private var errorMessage: String?
-    @EnvironmentObject private var runnerService: RunnerService
+    @Environment(RunnerService.self) private var runnerService
     @Environment(\.gitHubAPIService) private var apiService
     
     // Local runners for this repository
@@ -426,7 +426,7 @@ struct RepositoryDetailView: View {
 
 struct ModernLocalRunnerCard: View {
     let runner: LocalRunner
-    @EnvironmentObject private var runnerService: RunnerService
+    @Environment(RunnerService.self) private var runnerService
     @State private var isHovered = false
     
     // Find the current runner from the service to get live status updates
