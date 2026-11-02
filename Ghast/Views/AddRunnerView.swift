@@ -14,6 +14,7 @@ struct AddRunnerView: View {
     @State private var runnerLabels = ""
     @State private var errorMessage: String?
     @StateObject private var runnerService = RunnerService.shared
+    @Environment(\.gitHubAPIService) private var apiService
     
     // Filtered applications for macOS only
     private var macOSApplications: [GitHubRunnerApplication] {
@@ -807,7 +808,7 @@ struct AddRunnerView: View {
             }
             
             // Generate registration token
-            let token = try await GitHubAPIService.shared.createRegistrationToken(for: repository)
+            let token = try await apiService.createRegistrationToken(for: repository)
             
             // Extract labels
             let labels = runnerLabels.components(separatedBy: ",")
@@ -840,7 +841,7 @@ struct AddRunnerView: View {
     
     private func loadRunnerApplications() async {
         do {
-            let applications = try await GitHubAPIService.shared.fetchRunnerApplications(for: repository)
+            let applications = try await apiService.fetchRunnerApplications(for: repository)
             await MainActor.run {
                 self.runnerApplications = applications
                 

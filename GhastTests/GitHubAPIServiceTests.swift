@@ -1,13 +1,14 @@
 import XCTest
 @testable import Ghast
 
+@MainActor
 final class GitHubAPIServiceTests: XCTestCase {
     
     var service: GitHubAPIService!
     
     override func setUp() {
         super.setUp()
-        service = GitHubAPIService.shared
+        service = GitHubAPIService()
     }
     
     override func tearDown() {
@@ -17,12 +18,6 @@ final class GitHubAPIServiceTests: XCTestCase {
     }
     
     // MARK: - Basic Tests
-    
-    func testSingletonInstance() {
-        let instance1 = GitHubAPIService.shared
-        let instance2 = GitHubAPIService.shared
-        XCTAssertTrue(instance1 === instance2, "GitHubAPIService should be a singleton")
-    }
     
     func testSetAccessToken() {
         // Test that setAccessToken doesn't crash

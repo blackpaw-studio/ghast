@@ -2,14 +2,16 @@ import Foundation
 @testable import Ghast
 
 /// Mock GitHub API Service that returns fake data without making network calls
+@MainActor
 class MockGitHubAPIService: GitHubAPIServiceProtocol {
     
+    private(set) var accessTokens: [String] = []
     var shouldThrowError = false
     var mockRepositories: [GitHubRepository] = []
     var mockRunners: [GitHubRunner] = []
     
     func setAccessToken(_ token: String) {
-        // Do nothing
+        accessTokens.append(token)
     }
     
     func fetchCurrentUser(token: String? = nil) async throws -> GitHubUser {

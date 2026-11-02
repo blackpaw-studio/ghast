@@ -338,6 +338,6 @@ struct SidebarView: View {
 
 #Preview {
     SidebarView()
-        .environmentObject(GitHubAuthService())
+        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
         .environmentObject(AppState())
 }

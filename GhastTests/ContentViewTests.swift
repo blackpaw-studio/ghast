@@ -10,7 +10,7 @@ final class ContentViewTests: XCTestCase {
     
     override func setUp() async throws {
         try await super.setUp()
-        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
+        authService = GitHubAuthService(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
         appState = AppState()
     }
     

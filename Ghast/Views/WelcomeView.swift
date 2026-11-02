@@ -231,5 +231,5 @@ struct WelcomeView: View {
 
 #Preview {
     WelcomeView()
-        .environmentObject(GitHubAuthService())
+        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
 }

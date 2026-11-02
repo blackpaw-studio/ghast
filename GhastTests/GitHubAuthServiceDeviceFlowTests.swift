@@ -112,7 +112,7 @@ final class StateLog {
         fetchUser: @escaping @MainActor (String) async throws -> GitHubUser = { _ in GitHubAuthServiceDeviceFlowTests.user }
     ) -> GitHubAuthService {
         let used = used ?? TokenUseLog()
-        return GitHubAuthService(deviceFlow: client, tokenStore: store, fetchUser: fetchUser, useToken: { used.use($0) })
+        return GitHubAuthService(apiService: MockGitHubAPIService(), deviceFlow: client, tokenStore: store, fetchUser: fetchUser, useToken: { used.use($0) })
     }
 
     /// Yields until the condition holds; bounded so a broken test fails instead of hanging.

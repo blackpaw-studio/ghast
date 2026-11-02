@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import Ghast
 
-@Suite struct GitHubAPIServiceRequestTests {
+@MainActor @Suite struct GitHubAPIServiceRequestTests {
     static let userJSON = #"{"id":1,"login":"octocat","avatar_url":"https://a/1","name":null,"email":null}"#
     static let repoJSON = """
     {"id":7,"name":"ghast","full_name":"octo/ghast","description":null,"private":false,"owner":\(userJSON),"html_url":"https://github.com/octo/ghast"}

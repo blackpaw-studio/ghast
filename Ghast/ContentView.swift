@@ -2,8 +2,16 @@ import SwiftUI
 import Foundation
 
 struct ContentView: View {
-    @StateObject private var authService = GitHubAuthService()
+    // Transitional until the composition root in GhastApp (next commit).
+    private let apiService: GitHubAPIService
+    @StateObject private var authService: GitHubAuthService
     @StateObject private var appState = AppState()
+    
+    init() {
+        let apiService = GitHubAPIService()
+        self.apiService = apiService
+        _authService = StateObject(wrappedValue: GitHubAuthService(apiService: apiService))
+    }
     
     var body: some View {
         Group {
@@ -33,6 +41,7 @@ struct ContentView: View {
                     }
             }
         }
+        .environment(\.gitHubAPIService, apiService)
         .frame(minWidth: 1200, maxWidth: .infinity, minHeight: 650, maxHeight: .infinity)
         .onAppear {
             // Check for stored authentication when app starts

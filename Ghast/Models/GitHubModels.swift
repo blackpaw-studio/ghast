@@ -102,6 +102,8 @@ enum GitHubAPIError: Error, LocalizedError {
     case httpStatus(Int)
     case networkError(Error)
     case decodingError(Error)
+    /// The API service was never injected (see `UnconfiguredGitHubAPIService`).
+    case notConfigured
     
     var errorDescription: String? {
         switch self {
@@ -123,6 +125,8 @@ enum GitHubAPIError: Error, LocalizedError {
             return "Network error: \(error.localizedDescription)"
         case .decodingError(let error):
             return "Failed to decode response: \(error.localizedDescription)"
+        case .notConfigured:
+            return "GitHub API service is not configured"
         }
     }
 

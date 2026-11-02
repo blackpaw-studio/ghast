@@ -604,6 +604,6 @@ struct DashboardRepositoryCard: View {
 
 #Preview {
     DashboardView()
-        .environmentObject(GitHubAuthService())
+        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
         .environmentObject(AppState())
 }

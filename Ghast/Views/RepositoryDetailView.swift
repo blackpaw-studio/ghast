@@ -7,6 +7,7 @@ struct RepositoryDetailView: View {
     @State private var showingAddRunner = false
     @State private var errorMessage: String?
     @StateObject private var runnerService = RunnerService.shared
+    @Environment(\.gitHubAPIService) private var apiService
     
     // Local runners for this repository
     private var localRunners: [LocalRunner] {
@@ -405,7 +406,7 @@ struct RepositoryDetailView: View {
     private func loadRunners() async {
         isLoadingRunners = true
         do {
-            let fetchedRunners = try await GitHubAPIService.shared.fetchRunners(for: repository)
+            let fetchedRunners = try await apiService.fetchRunners(for: repository)
             await MainActor.run {
                 self.runners = fetchedRunners
                 self.isLoadingRunners = false
@@ -630,6 +631,7 @@ struct ModernRemoteRunnerCard: View {
     @State private var isHovered = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
+    @Environment(\.gitHubAPIService) private var apiService
     
     var body: some View {
         HStack(spacing: 16) {
@@ -812,7 +814,7 @@ struct ModernRemoteRunnerCard: View {
     private func deleteRunner() async {
         isDeleting = true
         do {
-            try await GitHubAPIService.shared.deleteRunner(runnerId: runner.id, from: repository)
+            try await apiService.deleteRunner(runnerId: runner.id, from: repository)
             await MainActor.run {
                 onRunnerDeleted()
                 isDeleting = false

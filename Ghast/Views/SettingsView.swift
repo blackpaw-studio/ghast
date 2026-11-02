@@ -304,5 +304,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
-        .environmentObject(GitHubAuthService())
+        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
 }
