@@ -14,6 +14,8 @@ jobs:
   build-and-notarize:
     name: Build, Notarize, and Release
     runs-on: macos-26
+    permissions:
+      contents: write
     
     steps:
     - name: Checkout code
@@ -97,6 +99,7 @@ jobs:
       env:
         SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         SPARKLE_VERSION: '2.9.6'
+        SPARKLE_SHA256: 52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192
       run: |
         if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
           echo "::error::SPARKLE_PRIVATE_KEY secret is not set; cannot sign the update"
@@ -105,8 +108,11 @@ jobs:
 
         # Download prebuilt Sparkle tools (sign_update) for a pinned release
         mkdir -p sparkle-tools
-        curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
-          | tar -xJ -C sparkle-tools
+        curl -fsSL -o sparkle-tools/Sparkle.tar.xz \
+          "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+        # sign_update receives the private key: refuse an unverified binary
+        echo "${SPARKLE_SHA256}  sparkle-tools/Sparkle.tar.xz" | shasum -a 256 -c -
+        tar -xJf sparkle-tools/Sparkle.tar.xz -C sparkle-tools
 
         # Sign the update; the key is read from stdin so it never touches disk.
         # Output: sparkle:edSignature="..." length="..."
