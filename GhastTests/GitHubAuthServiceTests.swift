@@ -1,27 +1,17 @@
 import XCTest
-import KeychainAccess
 @testable import Ghast
 
 @MainActor
 final class GitHubAuthServiceTests: XCTestCase {
     
     var authService: GitHubAuthService!
-    var mockKeychain: Keychain!
     
     override func setUp() async throws {
-        authService = GitHubAuthService()
-        // Use a test-specific keychain to avoid conflicts
-        mockKeychain = Keychain(service: "net.evancoleman.ghast.test")
-            .accessibility(.afterFirstUnlock)
-        
-        // Clean up any existing test data
-        try? mockKeychain.removeAll()
+        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
     }
-    
+
     override func tearDown() async throws {
         authService = nil
-        try? mockKeychain.removeAll()
-        mockKeychain = nil
     }
     
     // MARK: - Initialization Tests

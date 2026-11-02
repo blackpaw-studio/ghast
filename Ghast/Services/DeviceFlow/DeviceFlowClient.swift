@@ -14,6 +14,7 @@ enum DeviceFlowError: Error, Sendable, Equatable {
     case disabled
     case network(String)
     case unexpected(String)
+    case storage(String)
 }
 
 typealias Sleeper = @Sendable (Duration) async throws -> Void

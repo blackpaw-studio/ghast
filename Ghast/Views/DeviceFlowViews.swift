@@ -15,6 +15,8 @@ extension DeviceFlowError {
             return "Device Flow is turned off for Ghast's OAuth app. Enable it under \"Enable Device Flow\" in the app's settings on GitHub."
         case .unexpected(let detail):
             return "GitHub sent an unexpected response (\(detail)). Try again."
+        case .storage(let detail):
+            return "Couldn't save your sign-in to the Keychain (\(detail)). Try again."
         }
     }
 }
