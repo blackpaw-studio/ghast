@@ -53,7 +53,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = MainAppView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -74,7 +74,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = MainAppView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -116,7 +116,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         }
         
         let view = MainAppView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .environmentObject(runnerService)
@@ -136,7 +136,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = MainAppView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -155,7 +155,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = MainAppView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -174,7 +174,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = MainAppView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         

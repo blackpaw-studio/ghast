@@ -52,7 +52,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = DashboardView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -71,7 +71,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = DashboardView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -90,7 +90,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = DashboardView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -109,7 +109,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = DashboardView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
@@ -128,7 +128,7 @@ final class DashboardViewSnapshotTests: XCTestCase {
         mockAPIService.mockRunners = []
         
         let view = DashboardView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         

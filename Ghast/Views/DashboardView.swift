@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DashboardView: View {
-    @EnvironmentObject var authService: GitHubAuthService
+    @Environment(GitHubAuthService.self) private var authService
     @Environment(AppState.self) private var appState
     @Environment(\.gitHubAPIService) var apiService
     @State private var totalRunners = 0
@@ -604,6 +604,6 @@ struct DashboardRepositoryCard: View {
 
 #Preview {
     DashboardView()
-        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
         .environment(AppState())
 }

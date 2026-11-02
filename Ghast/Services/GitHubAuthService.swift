@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Observation
 import os
 
 enum SignInState: Equatable {
@@ -10,19 +11,20 @@ enum SignInState: Equatable {
 }
 
 @MainActor
+@Observable
 class GitHubAuthService: GitHubAuthServiceProtocol {
     static let scopes = ["repo", "user:email"]
 
-    @Published var isAuthenticated = false {
+    var isAuthenticated = false {
         didSet {
             #if DEBUG
             print("🔐 OAuth: isAuthenticated changed to \(isAuthenticated)")
             #endif
         }
     }
-    @Published var currentUser: GitHubUser?
-    @Published var signInState: SignInState = .idle
-    @Published var isCheckingStoredAuth = true // Start with true to prevent login screen flash
+    var currentUser: GitHubUser?
+    var signInState: SignInState = .idle
+    var isCheckingStoredAuth = true // Start with true to prevent login screen flash
 
     /// Derived from `signInState` for views that only need "is a sign-in in flight".
     var isLoading: Bool { isAuthenticating }

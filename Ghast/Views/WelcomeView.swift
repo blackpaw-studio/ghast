@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct WelcomeView: View {
-    @EnvironmentObject var authService: GitHubAuthService
+    @Environment(GitHubAuthService.self) private var authService
     @Environment(\.openURL) private var openURL
     @State private var animationOffset: CGFloat = 0
 
@@ -231,5 +231,5 @@ struct WelcomeView: View {
 
 #Preview {
     WelcomeView()
-        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
 }

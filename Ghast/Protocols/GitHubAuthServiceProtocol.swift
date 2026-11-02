@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Protocol for GitHub authentication operations to enable testing
 @MainActor
-protocol GitHubAuthServiceProtocol: ObservableObject {
+protocol GitHubAuthServiceProtocol: AnyObject, Observable {
     var isAuthenticated: Bool { get set }
     var currentUser: GitHubUser? { get set }
     var signInState: SignInState { get }

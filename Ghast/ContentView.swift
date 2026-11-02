@@ -2,7 +2,7 @@ import SwiftUI
 import Foundation
 
 struct ContentView: View {
-    @ObservedObject var authService: GitHubAuthService
+    let authService: GitHubAuthService
     @State private var appState = AppState()
     
     var body: some View {
@@ -20,14 +20,14 @@ struct ContentView: View {
                 .background(Color(NSColor.windowBackgroundColor))
             } else if authService.isAuthenticated {
                 MainAppView()
-                    .environmentObject(authService)
+                    .environment(authService)
                     .environment(appState)
                     .onAppear {
                         print("🔐 UI: MainAppView appeared")
                     }
             } else {
                 WelcomeView()
-                    .environmentObject(authService)
+                    .environment(authService)
                     .onAppear {
                         print("🔐 UI: WelcomeView appeared")
                     }
@@ -47,7 +47,7 @@ struct ContentView: View {
 }
 
 struct MainAppView: View {
-    @EnvironmentObject var authService: GitHubAuthService
+    @Environment(GitHubAuthService.self) private var authService
     @Environment(AppState.self) private var appState
     
     var body: some View {

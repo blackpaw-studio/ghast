@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @EnvironmentObject var authService: GitHubAuthService
+    @Environment(GitHubAuthService.self) private var authService
     @Environment(AppState.self) private var appState
     @Environment(\.gitHubAPIService) var apiService
     @State private var searchText = ""
@@ -338,6 +338,6 @@ struct SidebarView: View {
 
 #Preview {
     SidebarView()
-        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
         .environment(AppState())
 }

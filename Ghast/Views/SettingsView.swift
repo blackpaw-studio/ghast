@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject var authService: GitHubAuthService
+    @Environment(GitHubAuthService.self) private var authService
     
     var body: some View {
         ScrollView {
@@ -304,5 +304,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
-        .environmentObject(GitHubAuthService(apiService: GitHubAPIService()))
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
 }

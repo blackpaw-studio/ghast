@@ -1,5 +1,5 @@
 import Testing
-import Combine
+import Observation
 import Foundation
 @testable import Ghast
 
@@ -91,13 +91,35 @@ final class TokenUseLog {
     func use(_ token: String) { tokens.append(token) }
 }
 
+/// Records every `signInState` the service publishes, via a re-arming observation.
 @MainActor
 final class StateLog {
-    private(set) var states: [SignInState] = []
-    private var cancellable: AnyCancellable?
+    private(set) var states: [SignInState]
+    private let service: GitHubAuthService
 
     init(_ service: GitHubAuthService) {
-        cancellable = service.$signInState.sink { [weak self] in self?.states.append($0) }
+        self.service = service
+        states = [service.signInState]
+        track()
+    }
+
+    private func track() {
+        withObservationTracking {
+            _ = service.signInState
+        } onChange: { [weak self] in
+            // onChange runs before the new value lands; read it after the mutation completes.
+            Task { @MainActor [weak self] in self?.record() }
+        }
+    }
+
+    private func record() {
+        states.append(service.signInState)
+        track()
+    }
+
+    /// Lets queued recordings run, so `states` reflects every change made so far.
+    func flush() async {
+        await Task.yield()
     }
 }
 
@@ -136,6 +158,7 @@ final class StateLog {
         let log = StateLog(service)
 
         await service.signIn()
+        await log.flush()
 
         #expect(log.states == [.idle, .awaitingUser(FakeDeviceFlowClient.code), .signedIn])
         #expect(service.isAuthenticated)
