@@ -3,7 +3,7 @@ import SwiftUI
 import Observation
 import os
 
-enum SignInState: Equatable {
+enum SignInState: Equatable, Sendable {
     case idle
     case awaitingUser(DeviceCode)
     case failed(DeviceFlowError)

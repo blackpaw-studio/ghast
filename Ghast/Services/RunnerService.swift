@@ -457,11 +457,14 @@ class RunnerService {
             try? initialMessage.write(to: logFileURL, atomically: false, encoding: .utf8)
         }
         
-        // Setup termination handler
+        // Setup termination handler. It runs on a background queue, so it only uses value
+        // snapshots; the state update hops to the main actor.
+        let runnerName = runner.name
+        let runnerDirectory = runner.path
         process.terminationHandler = { [weak self] terminatedProcess in
             let exitCode = terminatedProcess.terminationStatus
             #if DEBUG
-            print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+            print("🏃 Runner '\(runnerName)' terminated with exit code: \(exitCode)")
             #endif
             
             // Log termination to file
@@ -483,7 +486,7 @@ class RunnerService {
             case 127:
                 errorMessage = "❌ Error: Command not found (./run.sh missing or not executable)\n"
                 #if DEBUG
-                print("❌ Error: ./run.sh not found or not executable in \(runner.path)")
+                print("❌ Error: ./run.sh not found or not executable in \(runnerDirectory)")
                 #endif
             case 126:
                 errorMessage = "❌ Error: Permission denied (./run.sh not executable)\n"
@@ -506,17 +509,8 @@ class RunnerService {
             }
             
             // Schedule cleanup on main actor
-            DispatchQueue.main.async {
-                guard let strongSelf = self else { return }
-                
-                // Remove from tracking - this prevents reuse of the Process instance
-                strongSelf.runningProcesses.removeValue(forKey: id)
-                strongSelf.processGroupIDs.removeValue(forKey: id)
-                
-                if let index = strongSelf.localRunners.firstIndex(where: { $0.id == id }) {
-                    strongSelf.localRunners[index].status = .stopped
-                    strongSelf.saveRunners()
-                }
+            Task { @MainActor [weak self] in
+                self?.didTerminate(id: id)
             }
         }
         
@@ -543,6 +537,18 @@ class RunnerService {
         #endif
     }
     
+    /// Drops the finished process from tracking and marks the runner stopped.
+    private func didTerminate(id: String) {
+        // Remove from tracking - this prevents reuse of the Process instance
+        runningProcesses.removeValue(forKey: id)
+        processGroupIDs.removeValue(forKey: id)
+        
+        if let index = localRunners.firstIndex(where: { $0.id == id }) {
+            localRunners[index].status = .stopped
+            saveRunners()
+        }
+    }
+    
     func stopRunner(id: String) {
         guard let process = runningProcesses[id] else { 
             #if DEBUG
@@ -567,70 +573,54 @@ class RunnerService {
         // First try graceful termination of the process group
         kill(-pgid, SIGTERM)
         
+        // Read the path while still on the main actor; only value snapshots cross to the background queue.
+        let runnerPath = localRunners.first(where: { $0.id == id })?.path
+        let pid = process.processIdentifier
+        
         // Also kill any related processes by pattern for this specific runner (async)
-        if let runner = localRunners.first(where: { $0.id == id }) {
-            let runnerPath = runner.path
+        if let runnerPath {
             DispatchQueue.global(qos: .utility).async {
-                let cleanupScript = """
-                # Fast kill processes in this specific runner directory
-                pkill -f "\(runnerPath)" 2>/dev/null || true
-                """
-                
-                let cleanupProcess = Process()
-                cleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-                cleanupProcess.arguments = ["-c", cleanupScript]
-                
-                do {
-                    try cleanupProcess.run()
-                    cleanupProcess.waitUntilExit()
-                } catch {
-                    #if DEBUG
-                    print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
-                    #endif
-                }
+                Self.killProcesses(matching: runnerPath, signal: nil)
             }
         }
         
         // Give it a moment to terminate gracefully (reduced timeout)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            if process.isRunning {
-                #if DEBUG
-                print("🏃 Force killing runner process group (PGID: \(pgid))")
-                #endif
-                kill(-pgid, SIGKILL)
-                kill(process.processIdentifier, SIGKILL)
-                
-                // Force kill any remaining processes for this runner (async)
-                Task { @MainActor in
-                    if let runner = self?.localRunners.first(where: { $0.id == id }) {
-                        let runnerPath = runner.path
-                        DispatchQueue.global(qos: .utility).async {
-                            let forceCleanupScript = """
-                            # Fast force kill processes in this specific runner directory
-                            pkill -9 -f "\(runnerPath)" 2>/dev/null || true
-                            """
-                            
-                            let forceCleanupProcess = Process()
-                            forceCleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-                            forceCleanupProcess.arguments = ["-c", forceCleanupScript]
-                            
-                            do {
-                                try forceCleanupProcess.run()
-                                forceCleanupProcess.waitUntilExit()
-                            } catch {
-                                #if DEBUG
-                                print("🏃 Warning: Could not run force cleanup: \(error)")
-                                #endif
-                            }
-                        }
-                    }
-                }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            // Liveness by pid: the Process object itself must not cross isolation boundaries.
+            guard kill(pid, 0) == 0 else { return }
+            #if DEBUG
+            print("🏃 Force killing runner process group (PGID: \(pgid))")
+            #endif
+            kill(-pgid, SIGKILL)
+            kill(pid, SIGKILL)
+            
+            // Force kill any remaining processes for this runner
+            if let runnerPath {
+                Self.killProcesses(matching: runnerPath, signal: "-9")
             }
         }
         
         if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
             localRunners[runnerIndex].status = .stopped
             saveRunners()
+        }
+    }
+    
+    /// Runs `pkill -f <path>` (optionally with a signal flag) to catch stragglers in a runner directory.
+    /// Blocks until `pkill` exits, so call it off the main actor.
+    nonisolated private static func killProcesses(matching runnerPath: String, signal: String?) {
+        let flag = signal.map { "\($0) " } ?? ""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", "pkill \(flag)-f \"\(runnerPath)\" 2>/dev/null || true"]
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            #if DEBUG
+            print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
+            #endif
         }
     }
     
@@ -1100,7 +1090,7 @@ class RunnerService {
         
         // Read existing .env content
         if FileManager.default.fileExists(atPath: envFilePath) {
-            currentEnvContent = (try? String(contentsOfFile: envFilePath)) ?? ""
+            currentEnvContent = (try? String(contentsOfFile: envFilePath, encoding: .utf8)) ?? ""
         }
         
         // Remove existing hook variable if present
@@ -1128,7 +1118,7 @@ class RunnerService {
         
         guard FileManager.default.fileExists(atPath: envFilePath) else { return }
         
-        let currentEnvContent = (try? String(contentsOfFile: envFilePath)) ?? ""
+        let currentEnvContent = (try? String(contentsOfFile: envFilePath, encoding: .utf8)) ?? ""
         let lines = currentEnvContent.components(separatedBy: .newlines)
         let filteredLines = lines.filter { !$0.hasPrefix("\(hook)=") }
         
@@ -1154,7 +1144,7 @@ class RunnerService {
 
 // MARK: - Data Models
 
-struct LocalRunner: Codable, Identifiable, Hashable {
+struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let repository: String
@@ -1190,7 +1180,7 @@ struct LocalRunner: Codable, Identifiable, Hashable {
     }
 }
 
-enum RunnerStatus: String, Codable, CaseIterable {
+enum RunnerStatus: String, Codable, CaseIterable, Sendable {
     case stopped = "stopped"
     case running = "running"
     case error = "error"
