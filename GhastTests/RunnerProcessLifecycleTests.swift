@@ -1,25 +1,19 @@
 import XCTest
 import Observation
-import Combine
 @testable import Ghast
 
 @MainActor
 final class RunnerProcessLifecycleTests: XCTestCase {
     var runnerService: RunnerService!
     var isolatedDefaults: IsolatedDefaults!
-    var cancellables: Set<AnyCancellable>!
     
     override func setUp() async throws {
         try await super.setUp()
         isolatedDefaults = makeIsolatedDefaults()
         runnerService = makeTestRunnerService(defaults: isolatedDefaults.defaults)
-        cancellables = Set<AnyCancellable>()
     }
     
     override func tearDown() async throws {
-        cancellables.forEach { $0.cancel() }
-        cancellables = nil
-        
         isolatedDefaults.cleanup()
         
         runnerService = nil

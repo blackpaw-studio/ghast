@@ -1,5 +1,4 @@
 import XCTest
-import Combine
 @testable import Ghast
 
 @MainActor
@@ -8,14 +7,12 @@ final class RunnerServiceTests: XCTestCase {
     var runnerService: RunnerService!
     var tempDirectory: URL!
     var isolatedDefaults: IsolatedDefaults!
-    var cancellables: Set<AnyCancellable>!
     
     override func setUp() async throws {
         try await super.setUp()
         
         isolatedDefaults = makeIsolatedDefaults()
         runnerService = RunnerService(defaults: isolatedDefaults.defaults, runnersDirectory: makeTemporaryDirectory())
-        cancellables = Set<AnyCancellable>()
         
         // Create a temporary directory for testing
         tempDirectory = makeTemporaryDirectory()
@@ -26,8 +23,6 @@ final class RunnerServiceTests: XCTestCase {
         
         // Clean up temporary directory
         try? FileManager.default.removeItem(at: tempDirectory)
-        
-        cancellables.removeAll()
         
         try await super.tearDown()
     }
