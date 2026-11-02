@@ -38,7 +38,7 @@ enum SnapshotTestHelpers {
         hostingController.view.layoutSubtreeIfNeeded()
         
         // Use environment variable if record parameter is not explicitly set
-        let shouldRecord = record ?? isRecordingSnapshots
+        let shouldRecord = isRecordingSnapshots || (record ?? false)
         
         // Use record parameter or withSnapshotTesting to record snapshots
         if shouldRecord {
@@ -90,7 +90,7 @@ enum SnapshotTestHelpers {
         hostingController.view.layoutSubtreeIfNeeded()
         
         // Use environment variable if record parameter is not explicitly set
-        let shouldRecord = record ?? isRecordingSnapshots
+        let shouldRecord = isRecordingSnapshots || (record ?? false)
         
         // Use record parameter or withSnapshotTesting to record snapshots
         if shouldRecord {
