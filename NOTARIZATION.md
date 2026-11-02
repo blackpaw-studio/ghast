@@ -64,6 +64,8 @@ The repository includes a GitHub Actions workflow that automatically notarizes r
 Add these secrets to your repository:
 - `APPLE_ID`: Your Apple ID email
 - `APPLE_ID_PASSWORD`: Your app-specific password
+- `MACOS_CERTIFICATE`: base64 Developer ID Application .p12 (imported into a per-job temp keychain by `.github/scripts/keychain.sh`, deleted at job end)
+- `MACOS_CERTIFICATE_PWD`: password for that .p12
 - `APPLE_TEAM_ID`: Your team ID (52M9C6892K)
 - `SPARKLE_PRIVATE_KEY`: **Required.** Sparkle EdDSA private key (1Password: Olympus / "Ghast Sparkle EdDSA Private Key"). The workflow fails without it.
 
