@@ -47,7 +47,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController: SPUStandardUpdaterController
     
     override init() {
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        // Sparkle shows a modal alert when the feed/key is invalid, which blocks the
+        // XCTest host's main thread. Don't start the updater under test.
+        let isUnderTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
     }
     

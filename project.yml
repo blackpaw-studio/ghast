@@ -38,28 +38,29 @@ targets:
         SUFeedURL: "https://evancoleman.net/ghast/appcast.xml"
         SUPublicEDKey: "YOUR_PUBLIC_KEY_HERE"
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast
-      ENABLE_HARDENED_RUNTIME: YES
-      OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
-    configs:
-      # Local builds/tests: ad-hoc signed (same approach as leoterm's Debug config),
-      # no team/profile needed. Entitlements drop keychain-access-groups, which
-      # requires a provisioning profile.
-      Debug:
-        CODE_SIGN_ENTITLEMENTS: Ghast/GhastDebug.entitlements
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
-        DEVELOPMENT_TEAM: ""
-        OTHER_CODE_SIGN_FLAGS: ""
-      # Release (archive/notarize): unchanged Automatic + team signing.
-      Release:
-        CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "Apple Development"
-        DEVELOPMENT_TEAM: 52M9C6892K
-      COMBINE_HIDPI_IMAGES: YES
-      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-      ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast
+        ENABLE_HARDENED_RUNTIME: YES
+        OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
+        COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        # Local builds/tests: ad-hoc signed (as leoterm's Debug config), no team or
+        # profile needed. Debug entitlements drop keychain-access-groups, which
+        # requires a provisioning profile.
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Ghast/GhastDebug.entitlements
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
+          DEVELOPMENT_TEAM: ""
+          OTHER_CODE_SIGN_FLAGS: ""
+        # Release (archive/notarize): unchanged Automatic + team signing.
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: 52M9C6892K
     dependencies:
       - package: KeychainAccess
       - package: Alamofire
@@ -74,18 +75,19 @@ targets:
       - target: Ghast
       - package: SnapshotTesting
     settings:
-      BUNDLE_LOADER: $(BUILT_PRODUCTS_DIR)/Ghast.app/Contents/MacOS/Ghast
-      TEST_HOST: $(BUNDLE_LOADER)
-      GENERATE_INFOPLIST_FILE: YES
-      PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast.tests
-    configs:
-      Debug:
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
-        DEVELOPMENT_TEAM: ""
-      Release:
-        CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 52M9C6892K
+      base:
+        BUNDLE_LOADER: $(BUILT_PRODUCTS_DIR)/Ghast.app/Contents/MacOS/Ghast
+        TEST_HOST: $(BUNDLE_LOADER)
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast.tests
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
+          DEVELOPMENT_TEAM: ""
+        Release:
+          CODE_SIGN_STYLE: Automatic
+          DEVELOPMENT_TEAM: 52M9C6892K
 
 packages:
   KeychainAccess:
