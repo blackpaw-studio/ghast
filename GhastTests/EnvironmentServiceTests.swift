@@ -11,37 +11,25 @@ final class EnvironmentServiceTests: XCTestCase {
     }
     
     var environmentService: EnvironmentService!
+    var isolatedDefaults: IsolatedDefaults!
     let testUserDefaultsKey = "runnerEnvironments"
     
     override func setUp() async throws {
         try await super.setUp()
         
-        // Clear UserDefaults before each test
-        UserDefaults.standard.removeObject(forKey: testUserDefaultsKey)
-        
-        // Create a fresh instance (note: it's a singleton, so we work with the shared instance)
-        environmentService = EnvironmentService.shared
-        
-        // Clear any existing environments
-        environmentService.environments.removeAll()
+        isolatedDefaults = makeIsolatedDefaults()
+        environmentService = EnvironmentService(defaults: isolatedDefaults.defaults)
     }
     
     override func tearDown() async throws {
-        // Clean up UserDefaults
-        UserDefaults.standard.removeObject(forKey: testUserDefaultsKey)
-        
+        isolatedDefaults.cleanup()
+        isolatedDefaults = nil
         environmentService = nil
         
         try await super.tearDown()
     }
     
     // MARK: - Initialization Tests
-    
-    func testSingletonInstance() {
-        let instance1 = EnvironmentService.shared
-        let instance2 = EnvironmentService.shared
-        XCTAssertTrue(instance1 === instance2, "EnvironmentService should be a singleton")
-    }
     
     func testInitialState() {
         // After clearing in setUp, should have no environments
@@ -162,16 +150,12 @@ final class EnvironmentServiceTests: XCTestCase {
         environmentService.addEnvironment(env1)
         environmentService.addEnvironment(env2)
         
-        // Simulate app restart by creating new instance
-        // (Note: Since it's a singleton, we'll directly test persistence)
-        
         // Verify data was saved to UserDefaults
-        let savedData = UserDefaults.standard.data(forKey: testUserDefaultsKey)
+        let savedData = isolatedDefaults.defaults.data(forKey: testUserDefaultsKey)
         XCTAssertNotNil(savedData)
         
-        // Clear current environments and reload
-        environmentService.environments.removeAll()
-        environmentService = EnvironmentService.shared // This will trigger loadEnvironments
+        // Simulate app restart: a second instance on the same suite loads the saved data
+        environmentService = EnvironmentService(defaults: isolatedDefaults.defaults)
         
         // Verify environments were loaded
         XCTAssertEqual(environmentService.environments.count, 2)

@@ -5,23 +5,21 @@ import Combine
 @MainActor
 final class RunnerProcessLifecycleTests: XCTestCase {
     var runnerService: RunnerService!
+    var isolatedDefaults: IsolatedDefaults!
     var cancellables: Set<AnyCancellable>!
     
     override func setUp() async throws {
         try await super.setUp()
-        runnerService = RunnerService.shared
+        isolatedDefaults = makeIsolatedDefaults()
+        runnerService = makeTestRunnerService(defaults: isolatedDefaults.defaults)
         cancellables = Set<AnyCancellable>()
-        
-        // Clear any existing runners
-        runnerService.removeAllLocalRunners()
     }
     
     override func tearDown() async throws {
         cancellables.forEach { $0.cancel() }
         cancellables = nil
         
-        // Clean up any test runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults.cleanup()
         
         runnerService = nil
         try await super.tearDown()
@@ -59,12 +57,6 @@ final class RunnerProcessLifecycleTests: XCTestCase {
         XCTAssertEqual(RunnerStatus.stopped.color, "gray")
         XCTAssertEqual(RunnerStatus.running.color, "green")
         XCTAssertEqual(RunnerStatus.error.color, "red")
-    }
-    
-    func testRunnerServiceSharedInstance() {
-        // Test that shared instance is properly initialized
-        XCTAssertNotNil(runnerService)
-        XCTAssertNotNil(runnerService.localRunners)
     }
     
     func testRunnerStateObservability() async throws {

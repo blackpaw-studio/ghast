@@ -6,20 +6,24 @@ import Combine
 class RunnerService: ObservableObject {
     static let shared = RunnerService()
     
+    static let defaultRunnersDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".ghast")
+        .appendingPathComponent("runners")
+    
+    private let defaults: UserDefaults
+    
     @Published var localRunners: [LocalRunner] = []
     
     private var runningProcesses: [String: Process] = [:]
     private var processGroupIDs: [String: pid_t] = [:]
     private var logStreams: [String: PassthroughSubject<String, Never>] = [:]
     
-    /// Base directory for all managed runners
-    private var runnersBaseDirectory: URL {
-        // Use user's home directory instead of sandboxed Application Support
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        return homeDir.appendingPathComponent(".ghast").appendingPathComponent("runners")
-    }
+    /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
+    private let runnersBaseDirectory: URL
     
-    private init() {
+    init(defaults: UserDefaults = .standard, runnersDirectory: URL = RunnerService.defaultRunnersDirectory) {
+        self.defaults = defaults
+        self.runnersBaseDirectory = runnersDirectory
         createRunnersDirectoryIfNeeded()
         loadRunners()
         // Discover any existing runners not in our database
@@ -851,7 +855,7 @@ class RunnerService: ObservableObject {
     private func saveRunners() {
         do {
             let data = try JSONEncoder().encode(localRunners)
-            UserDefaults.standard.set(data, forKey: "localRunners")
+            defaults.set(data, forKey: "localRunners")
         } catch {
             #if DEBUG
             print("Failed to save runners: \(error)")
@@ -860,7 +864,7 @@ class RunnerService: ObservableObject {
     }
     
     func loadRunners() {
-        guard let data = UserDefaults.standard.data(forKey: "localRunners") else { return }
+        guard let data = defaults.data(forKey: "localRunners") else { return }
         
         do {
             localRunners = try JSONDecoder().decode([LocalRunner].self, from: data)

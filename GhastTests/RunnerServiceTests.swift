@@ -7,26 +7,22 @@ final class RunnerServiceTests: XCTestCase {
     
     var runnerService: RunnerService!
     var tempDirectory: URL!
+    var isolatedDefaults: IsolatedDefaults!
     var cancellables: Set<AnyCancellable>!
     
     override func setUp() async throws {
         try await super.setUp()
         
-        runnerService = RunnerService.shared
+        isolatedDefaults = makeIsolatedDefaults()
+        runnerService = RunnerService(defaults: isolatedDefaults.defaults, runnersDirectory: makeTemporaryDirectory())
         cancellables = Set<AnyCancellable>()
         
         // Create a temporary directory for testing
-        tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ghast-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        
-        // Clean up any existing runners to ensure clean state
-        runnerService.removeAllLocalRunners()
+        tempDirectory = makeTemporaryDirectory()
     }
     
     override func tearDown() async throws {
-        // Clean up test runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults.cleanup()
         
         // Clean up temporary directory
         try? FileManager.default.removeItem(at: tempDirectory)
@@ -37,12 +33,6 @@ final class RunnerServiceTests: XCTestCase {
     }
     
     // MARK: - Initialization Tests
-    
-    func testSingletonInstance() {
-        let instance1 = RunnerService.shared
-        let instance2 = RunnerService.shared
-        XCTAssertTrue(instance1 === instance2, "RunnerService should be a singleton")
-    }
     
     func testInitialState() {
         // After clearing in setUp, should have no runners
@@ -267,7 +257,7 @@ final class RunnerServiceTests: XCTestCase {
         
         // Manually save to UserDefaults
         let data = try! JSONEncoder().encode([runner])
-        UserDefaults.standard.set(data, forKey: "localRunners")
+        isolatedDefaults.defaults.set(data, forKey: "localRunners")
         
         // Load runners
         runnerService.loadRunners()
