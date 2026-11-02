@@ -3,7 +3,7 @@ import Foundation
 
 struct ContentView: View {
     @ObservedObject var authService: GitHubAuthService
-    @StateObject private var appState = AppState()
+    @State private var appState = AppState()
     
     var body: some View {
         Group {
@@ -21,7 +21,7 @@ struct ContentView: View {
             } else if authService.isAuthenticated {
                 MainAppView()
                     .environmentObject(authService)
-                    .environmentObject(appState)
+                    .environment(appState)
                     .onAppear {
                         print("🔐 UI: MainAppView appeared")
                     }
@@ -48,7 +48,7 @@ struct ContentView: View {
 
 struct MainAppView: View {
     @EnvironmentObject var authService: GitHubAuthService
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) private var appState
     
     var body: some View {
         NavigationSplitView {
@@ -190,11 +190,12 @@ struct ToolbarProfileImage: View {
 }
 
 @MainActor
-class AppState: ObservableObject {
-    @Published var selectedView: SelectedView = .dashboard
-    @Published var repositories: [GitHubRepository] = []
-    @Published var isLoadingRepositories = false
-    @Published var selectedRepository: GitHubRepository?
+@Observable
+class AppState {
+    var selectedView: SelectedView = .dashboard
+    var repositories: [GitHubRepository] = []
+    var isLoadingRepositories = false
+    var selectedRepository: GitHubRepository?
     
     enum SelectedView: Equatable {
         case dashboard

@@ -54,7 +54,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
-            .environmentObject(appState)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
@@ -75,7 +75,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
-            .environmentObject(appState)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
@@ -117,7 +117,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
-            .environmentObject(appState)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .environmentObject(runnerService)
         
@@ -137,7 +137,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
-            .environmentObject(appState)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
@@ -156,7 +156,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
-            .environmentObject(appState)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
@@ -175,7 +175,7 @@ final class MainAppViewSnapshotTests: XCTestCase {
         
         let view = MainAppView()
             .environmentObject(authService as GitHubAuthService)
-            .environmentObject(appState)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)

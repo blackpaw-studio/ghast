@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LocalRunnersView: View {
     @EnvironmentObject private var runnerService: RunnerService
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var selectedRunner: LocalRunner?
     @State private var showingNewRunnerFlow = false
     
