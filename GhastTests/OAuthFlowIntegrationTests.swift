@@ -1,5 +1,4 @@
 import XCTest
-import AuthenticationServices
 @testable import Ghast
 
 @MainActor
@@ -41,55 +40,6 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         // Verify state is cleared
         XCTAssertFalse(authService.isAuthenticated)
         XCTAssertNil(authService.currentUser)
-    }
-    
-    func testOAuthURLConstruction() {
-        // Test that OAuth URL is properly constructed
-        let url = authService.buildAuthURL()
-        
-        XCTAssertEqual(url.host, "github.com")
-        XCTAssertEqual(url.path, "/login/oauth/authorize")
-        
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let queryItems = components?.queryItems ?? []
-        
-        XCTAssertTrue(queryItems.contains { $0.name == "client_id" && $0.value == "Ov23liLVIllxzZoRYwAN" })
-        XCTAssertTrue(queryItems.contains { $0.name == "redirect_uri" && $0.value == "ghast://auth/callback" })
-        XCTAssertTrue(queryItems.contains { $0.name == "scope" && $0.value == "repo user:email" })
-    }
-    
-    func testOAuthCallbackNotificationHandling() async throws {
-        // Test that the service responds to OAuth callback notifications
-        let expectation = XCTestExpectation(description: "OAuth callback handled")
-        
-        // Subscribe to auth state changes
-        let cancellable = authService.$isAuthenticated.sink { isAuthenticated in
-            if isAuthenticated {
-                expectation.fulfill()
-            }
-        }
-        
-        // Simulate OAuth callback with mock response
-        let callbackURL = URL(string: "ghast://auth/callback?code=mock_auth_code")!
-        
-        // Post notification as AppDelegate would
-        NotificationCenter.default.post(
-            name: .oauthCallback,
-            object: callbackURL
-        )
-        
-        // Wait briefly for processing
-        try await Task.sleep(nanoseconds: 100_000_000)
-        
-        // In a real scenario, this would authenticate if the backend was mocked
-        // For now, we'll use the mock method
-        authService.simulateSuccessfulAuth(user: GitHubUser(
-            id: 1, login: "mockuser", avatarURL: "", name: nil, email: nil))
-        
-        await fulfillment(of: [expectation], timeout: 1.0)
-        
-        XCTAssertTrue(authService.isAuthenticated)
-        cancellable.cancel()
     }
     
     func testCheckStoredAuthenticationInTestMode() async {

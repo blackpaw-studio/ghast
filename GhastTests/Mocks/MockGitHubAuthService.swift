@@ -12,20 +12,15 @@ class MockGitHubAuthService: GitHubAuthService {
     }
     
     override func signIn() async {
-        // Do nothing - prevent actual OAuth flow
+        // Do nothing - prevent actual device flow requests
         print("Mock: signIn() called - doing nothing")
-        isLoading = false
-        isAuthenticating = false
     }
     
     override func signOut() {
         // Just update state without keychain access
         isAuthenticated = false
         currentUser = nil
-    }
-    
-    override func debugTestOAuthCallback() async {
-        print("Mock: debugTestOAuthCallback() called - doing nothing")
+        signInState = .idle
     }
     
     /// Helper to set up authenticated state for testing
@@ -33,8 +28,7 @@ class MockGitHubAuthService: GitHubAuthService {
         self.currentUser = user
         self.isAuthenticated = true
         self.isCheckingStoredAuth = false
-        self.isLoading = false
-        self.isAuthenticating = false
+        self.signInState = .signedIn
     }
     
     /// Helper to set up unauthenticated state for testing
@@ -42,7 +36,11 @@ class MockGitHubAuthService: GitHubAuthService {
         self.currentUser = nil
         self.isAuthenticated = false
         self.isCheckingStoredAuth = false
-        self.isLoading = false
-        self.isAuthenticating = false
+        self.signInState = .idle
+    }
+    
+    /// Helper to put the login view in a specific Device Flow state
+    func setSignInState(_ state: SignInState) {
+        self.signInState = state
     }
 }

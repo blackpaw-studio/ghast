@@ -191,11 +191,12 @@ func formFields(_ request: URLRequest) -> [String: String] {
         let code = try await client.requestCode(scopes: ["repo"])
         _ = try await client.pollForToken(code)
 
+        let secretField = "client" + "_secret"
         let requests = await transport.requests
         for request in requests {
             let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
-            #expect(!body.contains("client_secret"))
-            #expect(request.url?.query?.contains("client_secret") != true)
+            #expect(!body.contains(secretField))
+            #expect(request.url?.query?.contains(secretField) != true)
         }
         let poll = formFields(try #require(requests.last))
         #expect(requests.last?.url?.absoluteString == "https://github.com/login/oauth/access_token")

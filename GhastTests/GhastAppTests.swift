@@ -42,66 +42,6 @@ final class GhastAppTests: XCTestCase {
         XCTAssertNotNil(appDelegate)
     }
     
-    func testHandleGetURLEvent() {
-        let appDelegate = AppDelegate()
-        
-        // Create mock event descriptors
-        let event = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass),
-                                         eventID: AEEventID(kAEGetURL),
-                                         targetDescriptor: nil,
-                                         returnID: AEReturnID(kAutoGenerateReturnID),
-                                         transactionID: AETransactionID(kAnyTransactionID))
-        
-        // Create a URL descriptor
-        let urlString = "ghast://auth/callback?code=test123"
-        let urlDescriptor = NSAppleEventDescriptor(string: urlString)
-        event.setParam(urlDescriptor, forKeyword: keyDirectObject)
-        
-        let replyEvent = NSAppleEventDescriptor.null()
-        
-        // Set up expectation for notification
-        let expectation = XCTestExpectation(description: "OAuth callback notification")
-        var receivedURL: URL?
-        
-        let observer = NotificationCenter.default.addObserver(
-            forName: .oauthCallback,
-            object: nil,
-            queue: .main
-        ) { notification in
-            receivedURL = notification.object as? URL
-            expectation.fulfill()
-        }
-        
-        // Call the handler
-        appDelegate.handleGetURLEvent(event, withReplyEvent: replyEvent)
-        
-        wait(for: [expectation], timeout: 1.0)
-        
-        // Verify notification was sent with correct URL
-        XCTAssertNotNil(receivedURL)
-        XCTAssertEqual(receivedURL?.absoluteString, urlString)
-        
-        NotificationCenter.default.removeObserver(observer)
-    }
-    
-    func testHandleGetURLEventInvalidURL() {
-        let appDelegate = AppDelegate()
-        
-        // Create event without URL
-        let event = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass),
-                                         eventID: AEEventID(kAEGetURL),
-                                         targetDescriptor: nil,
-                                         returnID: AEReturnID(kAutoGenerateReturnID),
-                                         transactionID: AETransactionID(kAnyTransactionID))
-        
-        let replyEvent = NSAppleEventDescriptor.null()
-        
-        // Should not crash
-        appDelegate.handleGetURLEvent(event, withReplyEvent: replyEvent)
-        
-        // No assertion needed - just verifying no crash
-    }
-    
     func testApplicationShouldHandleReopenWithVisibleWindows() {
         let appDelegate = AppDelegate()
         
@@ -146,13 +86,6 @@ final class GhastAppTests: XCTestCase {
         // No assertion needed - just verifying no crash
     }
     
-    // MARK: - Notification Name Extension Tests
-    
-    func testOAuthCallbackNotificationName() {
-        let notificationName = Notification.Name.oauthCallback
-        XCTAssertEqual(notificationName.rawValue, "oauthCallback")
-    }
-    
     // MARK: - Signal Handler Tests
     
     func testSignalHandlerInstallation() {
@@ -194,9 +127,6 @@ final class GhastAppTests: XCTestCase {
         
         // Should not crash
         appDelegate.applicationDidFinishLaunching(notification)
-        
-        // Verify event handler was set (indirectly)
-        XCTAssertNotNil(NSAppleEventManager.shared())
     }
     
     // MARK: - Window Configuration Tests
