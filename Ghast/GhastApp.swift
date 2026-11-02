@@ -10,15 +10,6 @@ struct GhastApp: App {
         WindowGroup {
             if !isRunningTests() {
                 ContentView()
-                    .onOpenURL { url in
-                        print("🔗 SwiftUI onOpenURL: \(url.absoluteString)")
-
-                        // Bring app to front
-                        NSApp.activate(ignoringOtherApps: true)
-
-                        // Post notification for OAuth callback
-                        NotificationCenter.default.post(name: .oauthCallback, object: url)
-                    }
             } else {
                 EmptyView()
             }
@@ -26,7 +17,6 @@ struct GhastApp: App {
         .windowStyle(.titleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 1000, height: 700)
-        .handlesExternalEvents(matching: Set(arrayLiteral: "ghast"))
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .appInfo) {
@@ -66,14 +56,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
-        // Configure app to handle URL events
-        NSAppleEventManager.shared().setEventHandler(
-            self,
-            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
-        
         // Set activation policy to ensure we can become active
         NSApp.setActivationPolicy(.regular)
         
@@ -90,29 +72,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Disable sudden termination to ensure cleanup
         ProcessInfo.processInfo.disableSuddenTermination()
-    }
-    
-    @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
-        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-              let url = URL(string: urlString) else {
-            return
-        }
-        
-        print("🔗 App Delegate Received URL callback: \(url.absoluteString)")
-        
-        // Bring app to front and focus window
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Make sure the main window is visible and focused
-        if let window = NSApp.mainWindow ?? NSApp.windows.first {
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-        }
-        
-        // Post notification for OAuth callback
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .oauthCallback, object: url)
-        }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -203,8 +162,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         print("🏃 Signal handlers installed for runner cleanup")
     }
-}
-
-extension Notification.Name {
-    static let oauthCallback = Notification.Name("oauthCallback")
 }
