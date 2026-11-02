@@ -24,18 +24,18 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 ## Architecture Overview
 
 ### Core App Structure
-- **Single-instance macOS app** with custom URL scheme handling (`ghast://`)
+- **Single-instance macOS app**
 - **SwiftUI + Combine** architecture with `@MainActor` services
-- **OAuth flow** using both AppDelegate and SwiftUI URL handlers for maximum compatibility
+- **GitHub Device Flow** sign-in (no client secret, no URL scheme)
 - **Local process management** for GitHub Actions runners via `Foundation.Process`
 
 ### Key Components
 
 **Authentication Flow**:
-- `GitHubAuthService`: Manages OAuth with GitHub, uses Keychain for token storage
-- Dual URL handling: `AppDelegate.handleGetURLEvent` + SwiftUI `onOpenURL`
-- NotificationCenter bridges URL callbacks to auth service
-- OAuth credentials: Client ID `Ov23liLVIllxzZoRYwAN`, redirect URI `ghast://auth/callback`
+- `DeviceFlowClient`: RFC 8628 Device Flow against github.com; HTTP transport and sleeper are injected, so tests never touch the network or sleep
+- `GitHubAuthService`: drives the flow and publishes `signInState` (`idle`, `awaitingUser(code)`, `failed(error)`, `signedIn`); uses Keychain for token storage
+- `WelcomeView` shows the user code, copies it and opens GitHub once per attempt
+- OAuth app: Client ID `Ov23liLVIllxzZoRYwAN` with **Enable Device Flow** ticked; there is no client secret in the app
 
 **Runner Management**:
 - `RunnerService`: Singleton managing local GitHub Actions runners
@@ -51,16 +51,15 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 
 ### Project Configuration
 - **Bundle ID**: `net.evancoleman.ghast`
-- **URL Scheme**: `ghast://auth/callback` (OAuth redirect)
 - **Single Instance**: `LSMultipleInstancesProhibited: true`
 - **Dependencies**: Alamofire (networking), KeychainAccess (secure storage), SnapshotTesting (UI testing)
 - **Target**: macOS 15.0+, SwiftUI lifecycle
 
 ### Testing Strategy
-- **Unit Tests**: Comprehensive OAuth flow testing without manual intervention
-- **Integration Tests**: NotificationCenter-based OAuth bridge and runner service management
+- **Unit Tests**: Device Flow polling rules and auth state transitions, with fake transport and sleeper (Swift Testing)
+- **Integration Tests**: runner service management
 - **Snapshot Tests**: UI layout verification using swift-snapshot-testing
-- **Mock Testing**: GitHub API responses and URL callback simulation
+- **Mock Testing**: GitHub API responses and Device Flow responses
 
 #### Snapshot Testing
 UI components are tested with visual snapshots to prevent layout regressions:
@@ -73,10 +72,12 @@ UI components are tested with visual snapshots to prevent layout regressions:
 2. Run tests: `xcodebuild test -project Ghast.xcodeproj -scheme Ghast` or use MCP XcodeBuildMCP `test_macos_proj`
 3. Reset flag to `false` and commit snapshots in `GhastTests/__Snapshots__/`
 
+Alternatively record without editing files: `TEST_RUNNER_SNAPSHOT_RECORD_MODE=true xcodebuild test ...` (the `TEST_RUNNER_` prefix is what forwards the variable to the test host).
+
 **Running snapshot tests**: Always run after UI changes to verify layouts
 
 ### OAuth Debug Logging
-Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authentication issues. The flow includes detailed logging at each step: URL generation, callback reception, code extraction, token exchange, and user fetch.
+Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authentication issues.
 
 ### Local Runner Workflow
 1. User creates runner via GitHub API (gets registration token)
@@ -107,7 +108,6 @@ mcp__XcodeBuildMCP__test_macos_proj(projectPath: "/path/to/Ghast.xcodeproj", sch
 - **Git commits**: Always include emoji prefixes and Claude Code attribution in commit messages
 - **Commit frequency**: Make logical, atomic commits frequently during development sessions - don't wait until the end to commit all changes at once
 - **Commit organization**: Group related changes together (e.g., API fixes, UI improvements, new features) rather than mixing unrelated changes
-- **URL scheme testing**: Use `open "ghast://auth/callback?code=test"` to simulate OAuth callbacks
 - **Process debugging**: Runner logs stream to Console.app with detailed error messages
 - **SwiftUI compatibility**: App targets macOS-specific modifiers (avoid iOS-only APIs)
 - **UI testing**: Run snapshot tests after any UI changes to verify layout integrity
