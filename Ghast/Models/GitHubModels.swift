@@ -99,6 +99,7 @@ enum GitHubAPIError: Error, LocalizedError {
     case unauthorized
     case notFound
     case serverError(Int)
+    case httpStatus(Int)
     case networkError(Error)
     case decodingError(Error)
     
@@ -116,10 +117,22 @@ enum GitHubAPIError: Error, LocalizedError {
             return "Resource not found"
         case .serverError(let code):
             return "Server error: \(code)"
+        case .httpStatus(let code):
+            return "GitHub returned HTTP \(code)"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .decodingError(let error):
             return "Failed to decode response: \(error.localizedDescription)"
+        }
+    }
+
+    /// HTTP status behind this error, when it came from a response.
+    var statusCode: Int? {
+        switch self {
+        case .unauthorized: 401
+        case .notFound: 404
+        case .serverError(let code), .httpStatus(let code): code
+        default: nil
         }
     }
 }
