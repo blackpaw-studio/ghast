@@ -33,8 +33,7 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     }
 
     private var keychain: Keychain {
-        let accessGroup = "net.evancoleman.ghast"
-        return Keychain(service: "net.evancoleman.ghast", accessGroup: accessGroup)
+        return Keychain(service: "net.evancoleman.ghast")
             .accessibility(.afterFirstUnlock)
     }
 
