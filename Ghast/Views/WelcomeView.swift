@@ -2,7 +2,7 @@ import SwiftUI
 
 struct WelcomeView: View {
     @EnvironmentObject var authService: GitHubAuthService
-    @State private var isSigningIn = false
+    @Environment(\.openURL) private var openURL
     @State private var animationOffset: CGFloat = 0
     
     var body: some View {
@@ -127,67 +127,31 @@ struct WelcomeView: View {
                         }
                     }
                     
-                    // Action section with modern buttons
+                    // Action section: sign-in button, Device Flow code, or failure
                     VStack(spacing: 24) {
-                        // Primary sign-in button
-                        Button(action: signInWithGitHub) {
-                            HStack(spacing: 12) {
-                                if isSigningIn {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .scaleEffect(0.9)
-                                } else {
-                                    Image(systemName: "person.crop.circle.fill")
-                                        .font(.system(size: 18, weight: .semibold))
-                                }
-                                
-                                Text(isSigningIn ? "Signing In..." : "Sign In with GitHub")
-                                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                            }
-                            .foregroundColor(.white)
-                            .frame(minWidth: 240)
-                            .padding(.vertical, 14)
-                            .background(
-                                LinearGradient(
-                                    colors: isSigningIn ? 
-                                        [Color.gray, Color.gray.opacity(0.8)] :
-                                        [Color.blue, Color.purple],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                        switch authService.signInState {
+                        case .idle, .signedIn:
+                            signInButton
+                        case .awaitingUser(let code):
+                            DeviceCodePanel(
+                                code: code,
+                                onOpenGitHub: { openURL(code.verificationURI) },
+                                onCopy: { copyToPasteboard(code.userCode) },
+                                onCancel: { authService.cancelSignIn() }
                             )
-                            .clipShape(Capsule())
-                            .shadow(
-                                color: isSigningIn ? Color.clear : Color.blue.opacity(0.4),
-                                radius: 12,
-                                x: 0,
-                                y: 6
-                            )
-                            .scaleEffect(isSigningIn ? 0.98 : 1.0)
+                        case .failed(let error):
+                            SignInFailurePanel(error: error, onTryAgain: startSignIn)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isSigningIn)
-                        .animation(.easeInOut(duration: 0.2), value: isSigningIn)
-                        
-                        // Requirements note
-                        VStack(spacing: 6) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "info.circle.fill")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.blue)
-                                Text("Admin access to repositories required")
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Text("Ghast needs admin permissions to manage self-hosted runners")
-                                .font(.system(size: 13, weight: .regular, design: .rounded))
-                                .foregroundColor(.secondary.opacity(0.8))
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.horizontal, 32)
+
+                        requirementsNote
                     }
-                    
+                    .onChange(of: authService.signInState) { _, state in
+                        // Once per attempt: put the code on the clipboard and open GitHub.
+                        guard case .awaitingUser(let code) = state else { return }
+                        copyToPasteboard(code.userCode)
+                        openURL(code.verificationURI)
+                    }
+
                     Spacer()
                 }
                 .padding(.horizontal, 40)
@@ -200,25 +164,56 @@ struct WelcomeView: View {
         }
     }
     
-    private func signInWithGitHub() {
-        print("🔐 UI: signInWithGitHub() called - setting isSigningIn = true")
-        isSigningIn = true
-        Task {
-            defer { 
-                print("🔐 UI: signInWithGitHub() defer block - setting isSigningIn = false")
-                isSigningIn = false 
+    private var signInButton: some View {
+        Button(action: startSignIn) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                Text("Sign In with GitHub")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
             }
-            
-            do {
-                print("🔐 UI: About to call authService.signIn()")
-                await authService.signIn()
-                print("🔐 UI: authService.signIn() completed")
-                print("🔐 UI: Auth state - isAuthenticated: \(authService.isAuthenticated), isLoading: \(authService.isLoading)")
-            } catch {
-                print("🔐 UI: Sign in failed: \(error)")
-                // The defer block will still execute to reset isSigningIn
-            }
+            .foregroundColor(.white)
+            .frame(minWidth: 240)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [Color.blue, Color.purple],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(Capsule())
+            .shadow(color: Color.blue.opacity(0.4), radius: 12, x: 0, y: 6)
         }
+        .buttonStyle(.plain)
+    }
+
+    private var requirementsNote: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.blue)
+                Text("Admin access to repositories required")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+
+            Text("Ghast needs admin permissions to manage self-hosted runners")
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundColor(.secondary.opacity(0.8))
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    private func startSignIn() {
+        Task { await authService.signIn() }
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 
