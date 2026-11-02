@@ -189,23 +189,26 @@ final class RunnerServiceTests: XCTestCase {
         XCTAssertEqual(clearedContent, "")
     }
     
-    // MARK: - Log Stream Tests
+    // MARK: - Log File Tests
     
-    func testGetLogStream() {
+    func testReadAndClearRunnerLogs() throws {
         let runner = LocalRunner(
             name: "Test Runner",
             repository: "user/repo",
             path: tempDirectory.path
         )
-        
         runnerService.addLocalRunner(runner)
+        let placeholder = "No logs available. Start the runner to see output."
         
-        // Initially no log stream
-        let stream1 = runnerService.getLogStream(for: runner.id)
-        XCTAssertNil(stream1)
+        XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), placeholder)
         
-        // Note: Cannot fully test log streaming without starting a runner,
-        // which requires actual runner files
+        let logFile = try XCTUnwrap(runnerService.getRunnerLogFile(for: runner.id))
+        try "line one\n".write(to: logFile, atomically: true, encoding: .utf8)
+        XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), "line one\n")
+        
+        runnerService.clearRunnerLogs(for: runner.id)
+        XCTAssertEqual(try String(contentsOf: logFile, encoding: .utf8), "")
+        XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), placeholder)
     }
     
     // MARK: - Persistence Tests

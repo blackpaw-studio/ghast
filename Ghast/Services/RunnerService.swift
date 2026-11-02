@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 
 /// Service for managing local GitHub Actions runners
 @MainActor
@@ -14,7 +13,6 @@ class RunnerService: ObservableObject {
     
     private var runningProcesses: [String: Process] = [:]
     private var processGroupIDs: [String: pid_t] = [:]
-    private var logStreams: [String: PassthroughSubject<String, Never>] = [:]
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     private let runnersBaseDirectory: URL
@@ -360,10 +358,6 @@ class RunnerService: ObservableObject {
                 #endif
                 runningProcesses.removeValue(forKey: id)
                 processGroupIDs.removeValue(forKey: id)
-                if let stream = logStreams[id] {
-                    stream.send(completion: .finished)
-                    logStreams.removeValue(forKey: id)
-                }
             }
         }
         
@@ -444,10 +438,6 @@ class RunnerService: ObservableObject {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
-        // Create log stream
-        let logSubject = PassthroughSubject<String, Never>()
-        logStreams[id] = logSubject
-        
         // Send initial log message to file
         let logFileURL = URL(fileURLWithPath: logFile)
         let initialMessage = "\(Date().formatted(date: .omitted, time: .standard)) 🏃 Starting runner '\(runner.name)' at \(runner.path)\n"
@@ -521,10 +511,6 @@ class RunnerService: ObservableObject {
                 strongSelf.runningProcesses.removeValue(forKey: id)
                 strongSelf.processGroupIDs.removeValue(forKey: id)
                 
-                // Close log stream
-                strongSelf.logStreams[id]?.send(completion: .finished)
-                strongSelf.logStreams[id] = nil
-                
                 if let index = strongSelf.localRunners.firstIndex(where: { $0.id == id }) {
                     strongSelf.localRunners[index].status = .stopped
                     strongSelf.saveRunners()
@@ -550,8 +536,6 @@ class RunnerService: ObservableObject {
         localRunners[runnerIndex].status = .running
         saveRunners()
         
-        // Send process started confirmation
-        logSubject.send("🏃 Runner process started (PID: \(process.processIdentifier))\n")
         #if DEBUG
         print("🏃 Started runner '\(runner.name)' with PID: \(process.processIdentifier)")
         #endif
@@ -565,12 +549,11 @@ class RunnerService: ObservableObject {
             return 
         }
         
+        #if DEBUG
         if let runner = localRunners.first(where: { $0.id == id }) {
-            logStreams[id]?.send("🏃 Stopping runner '\(runner.name)'...\n")
-            #if DEBUG
             print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
-            #endif
         }
+        #endif
         
         // Use stored process group ID if available, otherwise fall back to process PID
         let pgid = processGroupIDs[id] ?? process.processIdentifier
@@ -658,12 +641,11 @@ class RunnerService: ObservableObject {
         let processesToStop = Array(runningProcesses)
         
         for (id, process) in processesToStop {
+            #if DEBUG
             if let runner = localRunners.first(where: { $0.id == id }) {
-                #if DEBUG
                 print("🏃 Terminating runner '\(runner.name)' (PID: \(process.processIdentifier))")
-                #endif
-                logStreams[id]?.send("🏃 App terminating - stopping runner '\(runner.name)'...\n")
             }
+            #endif
             
             // Use stored process group ID if available, otherwise fall back to process PID
             let pgid = processGroupIDs[id] ?? process.processIdentifier
@@ -712,12 +694,6 @@ class RunnerService: ObservableObject {
         // Clear all running processes and process group IDs
         runningProcesses.removeAll()
         processGroupIDs.removeAll()
-        
-        // Close all log streams
-        for (_, stream) in logStreams {
-            stream.send(completion: .finished)
-        }
-        logStreams.removeAll()
         
         // Save updated runner states
         saveRunners()
@@ -778,9 +754,6 @@ class RunnerService: ObservableObject {
         }
     }
     
-    func getLogStream(for runnerId: String) -> AnyPublisher<String, Never>? {
-        return logStreams[runnerId]?.eraseToAnyPublisher()
-    }
     
     func getRunnerLogFile(for runnerId: String) -> URL? {
         guard let runner = localRunners.first(where: { $0.id == runnerId }) else { return nil }

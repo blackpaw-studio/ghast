@@ -74,9 +74,8 @@ final class RunnerProcessLifecycleTests: XCTestCase {
         cancellable.cancel()
     }
     
-    func testLogStreamIsNilForUnknownRunner() {
-        // No process has been started, so there is no log stream to subscribe to
-        XCTAssertNil(runnerService.getLogStream(for: "test-runner-id"))
+    func testLogFileIsNilForUnknownRunner() {
+        XCTAssertNil(runnerService.getRunnerLogFile(for: "unknown"))
     }
     
     func testRunnerEquality() {

@@ -63,26 +63,18 @@ final class ConcurrentRunnerOperationsTests: XCTestCase {
         XCTAssertEqual(uniquePaths.count, runnerCount)
     }
     
-    func testConcurrentLogPublisherAccess() async throws {
-        // Test concurrent access to log publishers
-        let testRunnerId = "test-runner-concurrent-logs"
-        var receivedLogs: [String] = []
-        let logsLock = NSLock()
-        
-        // Create multiple subscribers
-        let subscriberCount = 5
-        for i in 0..<subscriberCount {
-            // No process running, so there is no stream to subscribe to
-            XCTAssertNil(runnerService.getLogStream(for: testRunnerId))
-            cancellables.insert(AnyCancellable {})
-            _ = i
+    func testLogFilesAreDistinctPerRunner() {
+        let runners = (0..<5).map {
+            LocalRunner(name: "Log Runner \($0)", repository: "user/repo", path: "/tmp/log-runner-\($0)")
         }
+        runners.forEach { runnerService.addLocalRunner($0) }
         
-        // No actual log emission in this test, just verifying publisher creation
-        // In a real scenario, logs would be emitted through the runner process
+        let logFiles = runners.compactMap { runnerService.getRunnerLogFile(for: $0.id) }
         
-        // Verify all publishers were created successfully
-        XCTAssertEqual(cancellables.count, subscriberCount)
+        XCTAssertEqual(Set(logFiles).count, runners.count)
+        for (runner, logFile) in zip(runners, logFiles) {
+            XCTAssertEqual(logFile.path, "\(runner.path)/ghast-runner.log")
+        }
     }
     
     func testConcurrentStateObservation() async throws {
