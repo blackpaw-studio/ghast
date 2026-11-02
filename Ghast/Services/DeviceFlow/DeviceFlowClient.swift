@@ -16,10 +16,6 @@ enum DeviceFlowError: Error, Sendable, Equatable {
     case unexpected(String)
 }
 
-protocol HTTPTransport: Sendable {
-    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
-}
-
 typealias Sleeper = @Sendable (Duration) async throws -> Void
 
 protocol DeviceFlowClienting: Sendable {
@@ -177,13 +173,5 @@ extension DeviceFlowClient {
                 return "\(key)=\(encoded)"
             }
             .joined(separator: "&")
-    }
-}
-
-struct URLSessionTransport: HTTPTransport {
-    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        return (data, http)
     }
 }
