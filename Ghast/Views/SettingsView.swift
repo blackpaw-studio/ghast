@@ -24,17 +24,17 @@ struct SettingsView: View {
                             
                             Image(systemName: "gearshape.fill")
                                 .font(.system(size: 36, weight: .medium))
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                         }
                         
                         VStack(spacing: 6) {
                             Text("Settings")
                                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                             
                             Text("Manage your account and preferences")
                                 .font(.system(.body, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -45,10 +45,10 @@ struct SettingsView: View {
                     HStack {
                         Image(systemName: "person.circle.fill")
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                         Text("Account")
                             .font(.system(.title2, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         Spacer()
                     }
                     
@@ -72,7 +72,7 @@ struct SettingsView: View {
                                     .overlay(
                                         Image(systemName: "person.fill")
                                             .font(.system(size: 24, weight: .medium))
-                                            .foregroundColor(.white)
+                                            .foregroundStyle(.white)
                                     )
                             }
                             .frame(width: 64, height: 64)
@@ -86,25 +86,25 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(user.name ?? user.login)
                                     .font(.system(.headline, design: .rounded, weight: .semibold))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                                 
                                 HStack(spacing: 6) {
                                     Image(systemName: "at")
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                     Text(user.login)
                                         .font(.system(.body, design: .rounded, weight: .medium))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                                 
                                 if let email = user.email {
                                     HStack(spacing: 6) {
                                         Image(systemName: "envelope")
                                             .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                         Text(email)
                                             .font(.system(.caption, design: .rounded, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -132,7 +132,7 @@ struct SettingsView: View {
                                 Text("Sign Out")
                                     .font(.system(.body, design: .rounded, weight: .semibold))
                             }
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(
@@ -164,10 +164,10 @@ struct SettingsView: View {
                     HStack {
                         Image(systemName: "info.circle.fill")
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                         Text("About Ghast")
                             .font(.system(.title2, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         Spacer()
                     }
                     
@@ -193,17 +193,17 @@ struct SettingsView: View {
                                     .frame(width: 32, height: 32)
                                 Image(systemName: "link")
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.purple)
+                                    .foregroundStyle(.purple)
                             }
                             
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Source Code")
                                     .font(.system(.body, design: .rounded, weight: .medium))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                                 
                                 Text("View on GitHub")
                                     .font(.system(.caption, design: .rounded, weight: .medium))
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             
                             Spacer()
@@ -215,7 +215,7 @@ struct SettingsView: View {
                                     Image(systemName: "arrow.up.right")
                                         .font(.system(size: 10, weight: .semibold))
                                 }
-                                .foregroundColor(.purple)
+                                .foregroundStyle(.purple)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(
@@ -269,24 +269,24 @@ struct SettingsView: View {
                     .frame(width: 32, height: 32)
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(color)
+                    .foregroundStyle(color)
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(.body, design: .rounded, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("App \(title.lowercased())")
                     .font(.system(.caption, design: .rounded, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             
             Spacer()
             
             Text(value)
                 .font(.system(.body, design: .rounded, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(

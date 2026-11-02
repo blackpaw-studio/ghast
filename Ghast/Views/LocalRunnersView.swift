@@ -16,11 +16,11 @@ struct LocalRunnersView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Local Runners")
                                 .font(.system(.title2, design: .rounded, weight: .semibold))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                             
                             Text("Manage your self-hosted runners")
                                 .font(.system(.caption, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         
                         Spacer()
@@ -33,10 +33,10 @@ struct LocalRunnersView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "arrow.clockwise.circle.fill")
                                         .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                     Text("Refresh")
                                         .font(.system(.caption, design: .rounded, weight: .medium))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -52,10 +52,10 @@ struct LocalRunnersView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "server.rack")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
                                 Text("\(runnerService.localRunners.count)")
                                     .font(.system(.caption, design: .rounded, weight: .bold))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -76,7 +76,7 @@ struct LocalRunnersView: View {
                             Text("New Runner")
                                 .font(.system(.body, design: .rounded, weight: .semibold))
                         }
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(
@@ -161,17 +161,17 @@ struct LocalRunnersView: View {
                 
                 Image(systemName: "server.rack")
                     .font(.system(size: 36, weight: .light))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
             }
             
             VStack(spacing: 12) {
                 Text("No Local Runners")
                     .font(.system(.title2, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Create runners from repository detail views to manage them here. Runners let you execute GitHub Actions workflows on your own hardware.")
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(4)
             }
@@ -196,17 +196,17 @@ struct LocalRunnersView: View {
                 
                 Image(systemName: "doc.text.magnifyingglass")
                     .font(.system(size: 36, weight: .light))
-                    .foregroundColor(.purple)
+                    .foregroundStyle(.purple)
             }
             
             VStack(spacing: 12) {
                 Text("Select a Runner")
                     .font(.system(.title2, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Choose a local runner from the sidebar to view its logs, monitor status, and manage its lifecycle.")
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
             }
@@ -268,17 +268,17 @@ struct ModernRunnerCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(runner.name)
                             .font(.system(.headline, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         
                         HStack(spacing: 6) {
                             Image(systemName: "building.2")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(runner.repository)
                                 .font(.system(.caption, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     }
@@ -299,7 +299,7 @@ struct ModernRunnerCard: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .opacity(isHovered || isSelected ? 1 : 0.6)
@@ -314,7 +314,7 @@ struct ModernRunnerCard: View {
                             .frame(width: 6, height: 6)
                         Text(currentRunner?.status.displayName ?? runner.status.displayName)
                             .font(.system(.caption, design: .rounded, weight: .semibold))
-                            .foregroundColor(statusColor)
+                            .foregroundStyle(statusColor)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -340,7 +340,7 @@ struct ModernRunnerCard: View {
                                 Text("Stop")
                                     .font(.system(.caption2, design: .rounded, weight: .semibold))
                             }
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(Color.red)
@@ -363,7 +363,7 @@ struct ModernRunnerCard: View {
                                 Text("Start")
                                     .font(.system(.caption2, design: .rounded, weight: .semibold))
                             }
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(Color.green)
@@ -382,7 +382,7 @@ struct ModernRunnerCard: View {
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                                 .clipShape(Capsule())
                                 .overlay(
                                     Capsule()
@@ -393,7 +393,7 @@ struct ModernRunnerCard: View {
                         if runner.labels.count > 3 {
                             Text("+\(runner.labels.count - 3)")
                                 .font(.system(.caption2, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         
                         Spacer()

@@ -61,15 +61,15 @@ struct RunnerLogsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(runner.name)
                             .font(.system(.title2, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         
                         HStack(spacing: 6) {
                             Image(systemName: "building.2")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(runner.repository)
                                 .font(.system(.caption, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -107,10 +107,10 @@ struct RunnerLogsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("\(logText.components(separatedBy: .newlines).count) lines")
                             .font(.system(.caption, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -132,7 +132,7 @@ struct RunnerLogsView: View {
                 .frame(width: 6, height: 6)
             Text(currentRunner?.status.displayName ?? runner.status.displayName)
                 .font(.system(.caption, design: .rounded, weight: .semibold))
-                .foregroundColor(statusColor)
+                .foregroundStyle(statusColor)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -154,7 +154,7 @@ struct RunnerLogsView: View {
                         Text("Stop")
                             .font(.system(.caption, design: .rounded, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -181,7 +181,7 @@ struct RunnerLogsView: View {
                         Text("Start")
                             .font(.system(.caption, design: .rounded, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -203,7 +203,7 @@ struct RunnerLogsView: View {
                     Text("Clear")
                         .font(.system(.caption, design: .rounded, weight: .semibold))
                 }
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
@@ -225,16 +225,16 @@ struct RunnerLogsView: View {
                             VStack(spacing: 16) {
                                 Image(systemName: "terminal")
                                     .font(.system(size: 48, weight: .light))
-                                    .foregroundColor(.secondary.opacity(0.5))
+                                    .foregroundStyle(.secondary.opacity(0.5))
                                 
                                 VStack(spacing: 8) {
                                     Text("No logs yet")
                                         .font(.system(.title3, design: .rounded, weight: .semibold))
-                                        .foregroundColor(.primary)
+                                        .foregroundStyle(.primary)
                                     
                                     Text("Start the runner to see live output")
                                         .font(.system(.body, design: .rounded))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.center)
                                 }
                             }
@@ -245,7 +245,7 @@ struct RunnerLogsView: View {
                             // Terminal-style log display
                             Text(logText)
                                 .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                                 .textSelection(.enabled)
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)

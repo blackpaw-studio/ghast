@@ -113,21 +113,21 @@ struct AddRunnerView: View {
                     
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 28, weight: .medium))
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.blue)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("New Self-Hosted Runner")
                         .font(.system(.title, design: .rounded, weight: .bold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     HStack(spacing: 6) {
                         Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(repository.isPrivate ? .orange : .green)
+                            .foregroundStyle(repository.isPrivate ? .orange : .green)
                         Text(repository.fullName)
                             .font(.system(.body, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
@@ -147,22 +147,22 @@ struct AddRunnerView: View {
                             if step.rawValue < currentStep.rawValue {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.white)
                             } else {
                                 Text("\(index + 1)")
                                     .font(.system(.caption, design: .rounded, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.white)
                             }
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text(step.title)
                                 .font(.system(.body, design: .rounded, weight: .semibold))
-                                .foregroundColor(step == currentStep ? stepColor(for: step) : .secondary)
+                                .foregroundStyle(step == currentStep ? stepColor(for: step) : .secondary)
                             
                             Text(stepDescription(for: step))
                                 .font(.system(.caption2, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                         
@@ -202,11 +202,11 @@ struct AddRunnerView: View {
             VStack(spacing: 12) {
                 Text("Choose Platform")
                     .font(.system(.title2, design: .rounded, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Select the macOS architecture for your local runner. We've detected your current system architecture and highlighted the recommended option.")
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
             }
@@ -230,17 +230,17 @@ struct AddRunnerView: View {
                             
                             Image(systemName: "cpu")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.green)
+                                .foregroundStyle(.green)
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Detected Architecture")
                                 .font(.system(.body, design: .rounded, weight: .semibold))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                             
                             Text("\(currentArchitecture) - We'll highlight the best match")
                                 .font(.system(.caption, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         
                         Spacer()
@@ -283,7 +283,7 @@ struct AddRunnerView: View {
             
             Text(message)
                 .font(.system(.body, design: .rounded, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
@@ -307,17 +307,17 @@ struct AddRunnerView: View {
                 
                 Image(systemName: icon)
                     .font(.system(size: 28, weight: .medium))
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
             }
             
             VStack(spacing: 8) {
                 Text(title)
                     .font(.system(.title3, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text(message)
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(4)
             }
@@ -341,11 +341,11 @@ struct AddRunnerView: View {
             VStack(spacing: 12) {
                 Text("Configure Runner")
                     .font(.system(.title2, design: .rounded, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Set up your runner with a unique name and optional labels to help target specific workflows.")
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
             }
@@ -356,11 +356,11 @@ struct AddRunnerView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "tag.fill")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                         
                         Text("Runner Name")
                             .font(.system(.headline, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                     }
                     
                     TextField("Enter a unique name for your runner", text: $runnerName)
@@ -379,7 +379,7 @@ struct AddRunnerView: View {
                     
                     Text("Choose a descriptive name to easily identify this runner in your workflows.")
                         .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(20)
                 .background(
@@ -397,11 +397,11 @@ struct AddRunnerView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "tag.circle.fill")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.purple)
+                            .foregroundStyle(.purple)
                         
                         Text("Labels (Optional)")
                             .font(.system(.headline, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                     }
                     
                     TextField("e.g., gpu, large-memory, macos", text: $runnerLabels)
@@ -420,7 +420,7 @@ struct AddRunnerView: View {
                     
                     Text("Comma-separated labels to help target specific runners in your GitHub Actions workflows.")
                         .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(20)
                 .background(
@@ -439,11 +439,11 @@ struct AddRunnerView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.green)
+                                .foregroundStyle(.green)
                             
                             Text("Selected Platform")
                                 .font(.system(.headline, design: .rounded, weight: .semibold))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                         }
                         
                         HStack(spacing: 12) {
@@ -454,17 +454,17 @@ struct AddRunnerView: View {
                                 
                                 Image(systemName: platformIcon(for: app.os))
                                     .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(app.os.capitalized)")
                                     .font(.system(.body, design: .rounded, weight: .semibold))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                                 
                                 Text("Architecture: \(app.architecture)")
                                     .font(.system(.caption, design: .rounded))
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             
                             Spacer()
@@ -511,17 +511,17 @@ struct AddRunnerView: View {
                         
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 32, weight: .medium))
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                     }
                     
                     VStack(spacing: 12) {
                         Text("Creating Your Runner")
                             .font(.system(.title2, design: .rounded, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         
                         Text("Please wait while we download, extract, and configure your GitHub Actions runner. This process may take a few minutes depending on your internet connection.")
                             .font(.system(.body, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .lineLimit(4)
                     }
@@ -568,17 +568,17 @@ struct AddRunnerView: View {
                         
                         Image(systemName: "checkmark")
                             .font(.system(size: 32, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                     }
                     
                     VStack(spacing: 16) {
                         Text("Runner Created Successfully!")
                             .font(.system(.title, design: .rounded, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         
                         Text("Your GitHub Actions runner '\(runnerName)' has been automatically downloaded, configured, and is ready to use.")
                             .font(.system(.body, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .lineLimit(3)
                     }
@@ -588,11 +588,11 @@ struct AddRunnerView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "lightbulb.fill")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             
                             Text("What's Next?")
                                 .font(.system(.headline, design: .rounded, weight: .semibold))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                         }
                         
                         VStack(alignment: .leading, spacing: 10) {
@@ -627,7 +627,7 @@ struct AddRunnerView: View {
                 if isCompleted {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 } else {
                     Circle()
                         .fill(Color.blue)
@@ -639,7 +639,7 @@ struct AddRunnerView: View {
             
             Text(title)
                 .font(.system(.body, design: .rounded, weight: .medium))
-                .foregroundColor(isCompleted ? .primary : .secondary)
+                .foregroundStyle(isCompleted ? .primary : .secondary)
             
             Spacer()
         }
@@ -649,12 +649,12 @@ struct AddRunnerView: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.blue)
+                .foregroundStyle(.blue)
                 .frame(width: 20)
             
             Text(text)
                 .font(.system(.body, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
             
             Spacer()
         }
@@ -666,7 +666,7 @@ struct AddRunnerView: View {
                 dismiss()
             }
             .font(.system(.body, design: .rounded, weight: .semibold))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
             .background(
@@ -688,7 +688,7 @@ struct AddRunnerView: View {
                     }
                 }
                 .font(.system(.body, design: .rounded, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
                 .background(
@@ -713,7 +713,7 @@ struct AddRunnerView: View {
                 }
             }
             .font(.system(.body, design: .rounded, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
             .background(
@@ -890,26 +890,26 @@ struct ModernPlatformCard: View {
                     
                     Image(systemName: platformIcon)
                         .font(.system(size: 28, weight: .medium))
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .foregroundStyle(isSelected ? .white : .primary)
                 }
                 
                 VStack(spacing: 6) {
                     Text(application.os.capitalized)
                         .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     Text(application.architecture)
                         .font(.system(.body, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     if isRecommended {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             Text("Recommended")
                                 .font(.system(.caption2, design: .rounded, weight: .semibold))
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)

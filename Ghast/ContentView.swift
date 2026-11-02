@@ -14,7 +14,7 @@ struct ContentView: View {
                         .scaleEffect(1.2)
                     Text("Loading...")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(NSColor.windowBackgroundColor))
@@ -90,7 +90,7 @@ struct MainAppView: View {
                                 Text("?")
                                     .font(.caption2)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                             )
                     }
                 }
@@ -120,7 +120,7 @@ struct ToolbarProfileImage: View {
                         Text(fallback)
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                     )
             }
         }
