@@ -82,21 +82,9 @@ final class RunnerProcessLifecycleTests: XCTestCase {
         cancellable.cancel()
     }
     
-    func testLogPublisherCreation() {
-        // Test that we can get a log publisher for a runner
-        let testRunnerId = "test-runner-id"
-        let logPublisher = runnerService.getLogPublisher(for: testRunnerId)
-        
-        XCTAssertNotNil(logPublisher)
-        
-        // Test that we can subscribe to it
-        var receivedLogs: [String] = []
-        let cancellable = logPublisher.sink { log in
-            receivedLogs.append(log)
-        }
-        
-        // Cleanup
-        cancellable.cancel()
+    func testLogStreamIsNilForUnknownRunner() {
+        // No process has been started, so there is no log stream to subscribe to
+        XCTAssertNil(runnerService.getLogStream(for: "test-runner-id"))
     }
     
     func testRunnerEquality() {
@@ -158,8 +146,7 @@ final class RunnerProcessLifecycleTests: XCTestCase {
         )
         
         // Add to service
-        runnerService.localRunners.append(runner)
-        runnerService.saveRunners()
+        runnerService.addLocalRunner(runner)
         
         // Verify it was added
         XCTAssertEqual(runnerService.localRunners.count, initialCount + 1)
