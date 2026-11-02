@@ -4,6 +4,14 @@ struct WelcomeView: View {
     @EnvironmentObject var authService: GitHubAuthService
     @Environment(\.openURL) private var openURL
     @State private var animationOffset: CGFloat = 0
+
+    /// Sign-in in progress or failed: the action panel is taller, so the hero shrinks to fit.
+    private var isCompact: Bool {
+        switch authService.signInState {
+        case .awaitingUser, .failed: return true
+        case .idle, .signedIn: return false
+        }
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -47,11 +55,11 @@ struct WelcomeView: View {
                 }
                 
                 // Main content
-                VStack(spacing: 48) {
-                    Spacer()
+                VStack(spacing: isCompact ? 20 : 28) {
+                    Spacer(minLength: 0)
                     
                     // Hero section with modern design
-                    VStack(spacing: 32) {
+                    VStack(spacing: isCompact ? 12 : 16) {
                         // App icon with glow effect
                         ZStack {
                             Circle()
@@ -67,20 +75,20 @@ struct WelcomeView: View {
                                         endRadius: 80
                                     )
                                 )
-                                .frame(width: 160, height: 160)
+                                .frame(width: iconSize * 4 / 3, height: iconSize * 4 / 3)
                                 .blur(radius: 20)
                             
                             Image(nsImage: NSApp.applicationIconImage)
                                 .resizable()
-                                .frame(width: 120, height: 120)
+                                .frame(width: iconSize, height: iconSize)
                                 .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
                         }
                         
                         // Title and description
-                        VStack(spacing: 16) {
-                            VStack(spacing: 8) {
+                        VStack(spacing: isCompact ? 8 : 12) {
+                            VStack(spacing: 4) {
                                 Text("Welcome to Ghast")
-                                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                                    .font(.system(size: isCompact ? 36 : 40, weight: .bold, design: .rounded))
                                     .foregroundColor(.primary)
                                     .multilineTextAlignment(.center)
                                 
@@ -119,16 +127,17 @@ struct WelcomeView: View {
                             }
                             
                             Text("Effortlessly manage your self-hosted GitHub Actions runners. Monitor status, view logs, and control your CI/CD infrastructure from one beautiful interface.")
-                                .font(.system(size: 18, weight: .regular, design: .rounded))
+                                .font(.system(size: 16, weight: .regular, design: .rounded))
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
-                                .lineLimit(4)
-                                .padding(.horizontal, 32)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 560)
                         }
                     }
                     
                     // Action section: sign-in button, Device Flow code, or failure
-                    VStack(spacing: 24) {
+                    VStack(spacing: isCompact ? 14 : 24) {
                         switch authService.signInState {
                         case .idle, .signedIn:
                             signInButton
@@ -152,9 +161,10 @@ struct WelcomeView: View {
                         openURL(code.verificationURI)
                     }
 
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 40)
+                .padding(.vertical, 24)
             }
         }
         .onAppear {
@@ -164,6 +174,8 @@ struct WelcomeView: View {
         }
     }
     
+    private var iconSize: CGFloat { isCompact ? 72 : 96 }
+
     private var signInButton: some View {
         Button(action: startSignIn) {
             HStack(spacing: 12) {

@@ -27,16 +27,16 @@ struct DeviceCodePanel: View {
     let onCancel: () -> Void
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 12) {
             Text("Enter this code on GitHub")
                 .font(.system(size: 16, weight: .medium, design: .rounded))
                 .foregroundColor(.secondary)
 
             Text(code.userCode)
-                .font(.system(size: 44, weight: .bold, design: .monospaced))
+                .font(.system(size: 40, weight: .bold, design: .monospaced))
                 .textSelection(.enabled)
                 .padding(.horizontal, 28)
-                .padding(.vertical, 12)
+                .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color.blue.opacity(0.08))
