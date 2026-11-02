@@ -858,6 +858,8 @@ struct AddRunnerView: View {
                 }
             }
         } catch {
+            // A view that disappears mid-fetch cancels the request; that isn't a failure.
+            guard !error.isCancellation else { return }
             await MainActor.run {
                 self.errorMessage = "Failed to load runner applications for \(repository.fullName): \(error.localizedDescription)"
                 print("🏃 Runner Applications Error: \(error)")

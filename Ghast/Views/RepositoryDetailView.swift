@@ -412,9 +412,11 @@ struct RepositoryDetailView: View {
                 self.errorMessage = nil
             }
         } catch {
+            // A view that disappears mid-fetch cancels the request; that isn't a failure.
+            let message = error.isCancellation ? nil : error.localizedDescription
             await MainActor.run {
                 self.isLoadingRunners = false
-                self.errorMessage = error.localizedDescription
+                if let message { self.errorMessage = message }
             }
         }
     }

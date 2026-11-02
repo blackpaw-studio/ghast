@@ -58,8 +58,6 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: 52M9C6892K
     dependencies:
-      - package: KeychainAccess
-      - package: Alamofire
       - package: Sparkle
 
   GhastTests:
@@ -86,18 +84,12 @@ targets:
           DEVELOPMENT_TEAM: 52M9C6892K
 
 packages:
-  KeychainAccess:
-    url: https://github.com/kishikawakatsumi/KeychainAccess
-    from: "4.2.2"
-  Alamofire:
-    url: https://github.com/Alamofire/Alamofire
-    from: "5.8.1"
   SnapshotTesting:
     url: https://github.com/pointfreeco/swift-snapshot-testing
-    from: "1.15.0"
+    from: "1.19.7"
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.6.4"
+    from: "2.10.1"
 
 schemes:
   Ghast:

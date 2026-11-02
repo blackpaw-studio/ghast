@@ -86,9 +86,9 @@ actor Gate {
 }
 
 @MainActor
-final class CommitLog {
+final class TokenUseLog {
     private(set) var tokens: [String] = []
-    func commit(_ token: String) { tokens.append(token) }
+    func use(_ token: String) { tokens.append(token) }
 }
 
 @MainActor
@@ -107,11 +107,12 @@ final class StateLog {
 
     func makeService(
         _ client: any DeviceFlowClienting,
-        commits: CommitLog? = nil,
+        store: InMemoryTokenStore = InMemoryTokenStore(),
+        used: TokenUseLog? = nil,
         fetchUser: @escaping @MainActor (String) async throws -> GitHubUser = { _ in GitHubAuthServiceDeviceFlowTests.user }
     ) -> GitHubAuthService {
-        let log = commits ?? CommitLog()
-        return GitHubAuthService(deviceFlow: client, fetchUser: fetchUser, commitToken: { log.commit($0) })
+        let used = used ?? TokenUseLog()
+        return GitHubAuthService(deviceFlow: client, tokenStore: store, fetchUser: fetchUser, useToken: { used.use($0) })
     }
 
     /// Yields until the condition holds; bounded so a broken test fails instead of hanging.
@@ -140,6 +141,44 @@ final class StateLog {
         #expect(service.isAuthenticated)
         #expect(service.currentUser?.login == "octocat")
         #expect(await client.requestedScopes == [["repo", "user:email"]])
+    }
+
+    @Test func signInPersistsTokenAndHandsItToAPI() async {
+        let store = InMemoryTokenStore()
+        let used = TokenUseLog()
+        let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")]), store: store, used: used)
+
+        await service.signIn()
+
+        #expect(store.writes == ["gho_abc"])
+        #expect(used.tokens == ["gho_abc"])
+    }
+
+    @Test func storeWriteFailureBecomesFailedStorageState() async {
+        let store = InMemoryTokenStore()
+        store.writeError = TokenStoreError.keychain(errSecInteractionNotAllowed)
+        let used = TokenUseLog()
+        let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")]), store: store, used: used)
+
+        await service.signIn()
+
+        guard case .failed(.storage) = service.signInState else {
+            Issue.record("expected failed(.storage), got \(service.signInState)")
+            return
+        }
+        #expect(!service.isAuthenticated)
+        #expect(service.currentUser == nil)
+        #expect(used.tokens.isEmpty)
+    }
+
+    @Test func signOutDeletesStoredToken() async {
+        let store = InMemoryTokenStore(token: "gho_abc")
+        let service = makeService(FakeDeviceFlowClient(polls: []), store: store)
+
+        service.signOut()
+
+        #expect(store.deleteCount == 1)
+        #expect(store.token == nil)
     }
 
     @Test func tokenIsHandedToCompletionStep() async {
@@ -220,10 +259,10 @@ final class StateLog {
         #expect(service.signInState == .signedIn)
     }
 
-    @Test func cancelDuringUserFetchCommitsNoToken() async {
+    @Test func cancelDuringUserFetchStoresNoToken() async {
         let gate = Gate()
-        let commits = CommitLog()
-        let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")]), commits: commits) { _ in
+        let store = InMemoryTokenStore()
+        let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")]), store: store) { _ in
             await gate.wait()
             return Self.user
         }
@@ -234,7 +273,7 @@ final class StateLog {
         await gate.open()
         await signIn.value
 
-        #expect(commits.tokens.isEmpty)
+        #expect(store.writes.isEmpty)
         #expect(service.signInState == .idle)
         #expect(!service.isAuthenticated)
         #expect(service.currentUser == nil)
@@ -242,10 +281,10 @@ final class StateLog {
 
     @Test func abandonedAttemptFailingInUserFetchLeavesNewerSignInIntact() async {
         let gate = Gate()
-        let commits = CommitLog()
+        let store = InMemoryTokenStore()
         let service = makeService(
             FakeDeviceFlowClient(polls: [.token("old"), .token("new")]),
-            commits: commits
+            store: store
         ) { token in
             if token == "old" {
                 await gate.wait()
@@ -264,7 +303,7 @@ final class StateLog {
         await first.value
 
         #expect(service.signInState == .signedIn)
-        #expect(commits.tokens == ["new"])
+        #expect(store.writes == ["new"])
         #expect(service.isAuthenticated)
     }
 

@@ -12,7 +12,7 @@ final class SidebarViewSnapshotTests: XCTestCase {
     
     override func setUp() async throws {
         try await super.setUp()
-        authService = GitHubAuthService()
+        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
         appState = AppState()
         mockAPIService = MockGitHubAPIService()
         

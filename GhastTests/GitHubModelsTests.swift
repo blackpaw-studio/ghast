@@ -390,4 +390,10 @@ final class GitHubModelsTests: XCTestCase {
         let error: LocalizedError = GitHubAPIError.unauthorized
         XCTAssertEqual(error.errorDescription, "Unauthorized. Please check your GitHub token permissions.")
     }
+
+    func testHTTPStatusErrorDescriptionAndStatusCode() {
+        let error = GitHubAPIError.httpStatus(422)
+        XCTAssertEqual(error.errorDescription, "GitHub returned HTTP 422")
+        XCTAssertEqual(error.statusCode, 422)
+    }
 }

@@ -7,7 +7,7 @@ final class OAuthFlowIntegrationTests: XCTestCase {
     
     override func setUp() async throws {
         try await super.setUp()
-        authService = GitHubAuthService()
+        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
     }
     
     override func tearDown() async throws {

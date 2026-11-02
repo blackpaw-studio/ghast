@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
-import KeychainAccess
-import Alamofire
+import os
 
 enum SignInState: Equatable {
     case idle
@@ -32,16 +31,12 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         return false
     }
 
-    private var keychain: Keychain { Self.makeKeychain() }
-
-    private static func makeKeychain() -> Keychain {
-        Keychain(service: "net.evancoleman.ghast")
-            .accessibility(.afterFirstUnlock)
-    }
+    private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "auth")
 
     private let deviceFlow: any DeviceFlowClienting
+    private let tokenStore: any TokenStore
     private let fetchUser: @MainActor (String) async throws -> GitHubUser
-    private let commitToken: @MainActor (String) -> Void
+    private let useToken: @MainActor (String) -> Void
     private var signInTask: Task<Void, Never>?
     /// Identity of the sign-in attempt allowed to touch state, Keychain and the API
     /// service. Cleared on cancel, replaced on each `signIn()`, so an abandoned attempt
@@ -52,19 +47,20 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     ///   - deviceFlow: Device Flow transport; production default talks to github.com.
     ///   - fetchUser: Loads the user for a fresh token. Must have no side effects; the
     ///     default calls the GitHub API with the token explicitly.
-    ///   - commitToken: Persists a verified token. Only runs for the current attempt.
-    ///     The default stores it in Keychain and hands it to the API service.
+    ///   - tokenStore: Persists the verified token; the default uses the Keychain.
+    ///   - useToken: Hands a stored token to the API client. Only runs for the current
+    ///     attempt, after the token was persisted. The default configures
+    ///     `GitHubAPIService.shared`.
     init(
         deviceFlow: any DeviceFlowClienting = DeviceFlowClient(),
+        tokenStore: any TokenStore = KeychainTokenStore(),
         fetchUser: (@MainActor (String) async throws -> GitHubUser)? = nil,
-        commitToken: (@MainActor (String) -> Void)? = nil
+        useToken: (@MainActor (String) -> Void)? = nil
     ) {
         self.deviceFlow = deviceFlow
+        self.tokenStore = tokenStore
         self.fetchUser = fetchUser ?? { try await GitHubAPIService.shared.fetchCurrentUser(token: $0) }
-        self.commitToken = commitToken ?? { token in
-            try? Self.makeKeychain().set(token, key: "github_token") // still works without persistent storage
-            GitHubAPIService.shared.setAccessToken(token)
-        }
+        self.useToken = useToken ?? { GitHubAPIService.shared.setAccessToken($0) }
         // isCheckingStoredAuth is already true from the property declaration
         // This prevents the login screen flash without triggering keychain access
     }
@@ -126,12 +122,16 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
             let user = try await fetchUser(token)
             guard isCurrent(attempt) else { return }
 
-            commitToken(token)
+            try tokenStore.write(token)
+            useToken(token)
             currentUser = user
             isAuthenticated = true
             signInState = .signedIn
         } catch {
             guard isCurrent(attempt) else { return }
+            if error is TokenStoreError {
+                Self.logger.error("Failed to store token: \(String(describing: error), privacy: .public)")
+            }
             signInState = Self.isCancellation(error) ? .idle : .failed(Self.failure(for: error))
         }
     }
@@ -141,7 +141,9 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     }
 
     private static func failure(for error: Error) -> DeviceFlowError {
-        (error as? DeviceFlowError) ?? .network(error.localizedDescription)
+        if let error = error as? DeviceFlowError { return error }
+        if let error = error as? TokenStoreError { return .storage(error.description) }
+        return .network(error.localizedDescription)
     }
 
     func signOut() {
@@ -150,11 +152,9 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         currentUser = nil
         signInState = .idle
         do {
-            try keychain.remove("github_token")
+            try tokenStore.delete()
         } catch {
-            #if DEBUG
-            print("🔐 Warning: Failed to remove token from keychain: \(error)")
-            #endif
+            Self.logger.error("Failed to delete stored token: \(String(describing: error), privacy: .public)")
         }
     }
     
@@ -166,15 +166,8 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     
     private func checkExistingAuth() async {
         do {
-            // Check if key exists before trying to get it
-            guard try keychain.contains("github_token") else {
-                return
-            }
-            
-            guard let token = try keychain.get("github_token") else {
-                return
-            }
-            
+            guard let token = try tokenStore.read() else { return }
+
             let user = try await GitHubAPIService.shared.fetchCurrentUser(token: token)
             await MainActor.run {
                 self.currentUser = user
@@ -183,7 +176,7 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
             }
         } catch {
             // Token is invalid or keychain access failed, remove it silently
-            try? keychain.remove("github_token")
+            try? tokenStore.delete()
         }
     }
 }

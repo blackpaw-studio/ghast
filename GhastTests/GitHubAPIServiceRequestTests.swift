@@ -1,0 +1,221 @@
+import Testing
+import Foundation
+@testable import Ghast
+
+@Suite struct GitHubAPIServiceRequestTests {
+    static let userJSON = #"{"id":1,"login":"octocat","avatar_url":"https://a/1","name":null,"email":null}"#
+    static let repoJSON = """
+    {"id":7,"name":"ghast","full_name":"octo/ghast","description":null,"private":false,"owner":\(userJSON),"html_url":"https://github.com/octo/ghast"}
+    """
+    static let runnerJSON = #"{"id":42,"name":"r1","os":"macOS","status":"online","busy":false,"labels":[{"id":1,"name":"self-hosted","type":"read-only"}]}"#
+    static let tokenJSON = #"{"token":"AAA","expires_at":"2026-01-01T00:00:00Z"}"#
+
+    let repository = try! JSONDecoder().decode(GitHubRepository.self, from: Data(Self.repoJSON.utf8))
+
+    func makeService(_ replies: [FakeTransport.Reply], token: String? = "tok") -> (GitHubAPIService, FakeTransport) {
+        let transport = FakeTransport(replies)
+        let service = GitHubAPIService(transport: transport)
+        if let token { service.setAccessToken(token) }
+        return (service, transport)
+    }
+
+    func query(_ request: URLRequest) -> [String: String] {
+        let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+    }
+
+    func expectStandardHeaders(_ request: URLRequest, token: String = "tok") {
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(token)")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+        #expect(request.value(forHTTPHeaderField: "X-GitHub-Api-Version") == "2022-11-28")
+    }
+
+    // MARK: Endpoints
+
+    @Test func fetchCurrentUserUsesStoredToken() async throws {
+        let (service, transport) = makeService([.json(Self.userJSON)])
+
+        let user = try await service.fetchCurrentUser(token: nil)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.github.com/user")
+        expectStandardHeaders(request)
+        #expect(user.login == "octocat")
+    }
+
+    @Test func fetchCurrentUserWithExplicitTokenSendsThatToken() async throws {
+        let (service, transport) = makeService([.json(Self.userJSON)], token: nil)
+
+        _ = try await service.fetchCurrentUser(token: "x")
+
+        expectStandardHeaders(try #require(await transport.requests.first), token: "x")
+    }
+
+    @Test func fetchRepositoriesSendsListQuery() async throws {
+        let (service, transport) = makeService([.json("[\(Self.repoJSON)]")])
+
+        let repos = try await service.fetchRepositories()
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.path == "/user/repos")
+        #expect(query(request) == ["type": "all", "sort": "updated", "direction": "desc", "page": "1", "per_page": "100"])
+        expectStandardHeaders(request)
+        #expect(repos.map(\.fullName) == ["octo/ghast"])
+    }
+
+    @Test func fetchRepositoriesPaginatesUntilShortPage() async throws {
+        let fullPage = "[" + Array(repeating: Self.repoJSON, count: 100).joined(separator: ",") + "]"
+        let (service, transport) = makeService([.json(fullPage), .json("[\(Self.repoJSON)]")])
+
+        let repos = try await service.fetchRepositories()
+
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        #expect(query(requests[1])["page"] == "2")
+        #expect(repos.count == 101)
+    }
+
+    @Test func fetchRunnersUnwrapsRunnersList() async throws {
+        let (service, transport) = makeService([.json(#"{"total_count":1,"runners":[\#(Self.runnerJSON)]}"#)])
+
+        let runners = try await service.fetchRunners(for: repository)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners")
+        expectStandardHeaders(request)
+        #expect(runners.map(\.id) == [42])
+    }
+
+    @Test func fetchOrganizationRunnersUsesOrgPath() async throws {
+        let (service, transport) = makeService([.json(#"{"total_count":1,"runners":[\#(Self.runnerJSON)]}"#)])
+
+        let runners = try await service.fetchOrganizationRunners(org: "acme")
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.github.com/orgs/acme/actions/runners")
+        expectStandardHeaders(request)
+        #expect(runners.count == 1)
+    }
+
+    @Test func createRegistrationTokenPosts() async throws {
+        let (service, transport) = makeService([.json(Self.tokenJSON, status: 201)])
+
+        let token = try await service.createRegistrationToken(for: repository)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/registration-token")
+        expectStandardHeaders(request)
+        #expect(token.token == "AAA")
+    }
+
+    @Test func createRemoveTokenPosts() async throws {
+        let (service, transport) = makeService([.json(Self.tokenJSON, status: 201)])
+
+        let token = try await service.createRemoveToken(for: repository)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/remove-token")
+        expectStandardHeaders(request)
+        #expect(token.token == "AAA")
+    }
+
+    @Test func deleteRunnerSendsDeleteAndAcceptsEmptyBody() async throws {
+        let (service, transport) = makeService([.json("", status: 204)])
+
+        try await service.deleteRunner(runnerId: 42, from: repository)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "DELETE")
+        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/42")
+        expectStandardHeaders(request)
+    }
+
+    @Test func fetchRunnerApplicationsDecodesList() async throws {
+        let body = #"[{"os":"osx","architecture":"arm64","download_url":"https://d/x.tar.gz","filename":"x.tar.gz"}]"#
+        let (service, transport) = makeService([.json(body)])
+
+        let apps = try await service.fetchRunnerApplications(for: repository)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/downloads")
+        expectStandardHeaders(request)
+        #expect(apps.map(\.architecture) == ["arm64"])
+    }
+
+    @Test func requestWithoutTokenOmitsAuthorizationButKeepsOtherHeaders() async throws {
+        let (service, transport) = makeService([.json(Self.userJSON)], token: nil)
+
+        _ = try await service.fetchCurrentUser(token: nil)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+        #expect(request.value(forHTTPHeaderField: "X-GitHub-Api-Version") == "2022-11-28")
+    }
+
+    // MARK: Errors
+
+    @Test(arguments: [401, 404, 503, 403, 422])
+    func non2xxStatusMapsToTypedErrorCarryingCode(status: Int) async {
+        let (service, _) = makeService([.json("{}", status: status)])
+
+        await #expect {
+            try await service.fetchCurrentUser(token: nil)
+        } throws: { error in
+            guard let error = error as? GitHubAPIError, error.statusCode == status else { return false }
+            switch (status, error) {
+            case (401, .unauthorized), (404, .notFound), (503, .serverError(503)): return true
+            case (403, .httpStatus(403)), (422, .httpStatus(422)): return true
+            default: return false
+            }
+        }
+    }
+
+    @Test func undecodableSuccessBodyIsDecodingError() async {
+        let (service, _) = makeService([.json("not json")])
+
+        await #expect {
+            try await service.fetchCurrentUser(token: nil)
+        } throws: { error in
+            guard case .decodingError = error as? GitHubAPIError else { return false }
+            return true
+        }
+    }
+
+    @Test func transportFailureIsNetworkError() async {
+        let (service, _) = makeService([.failure(URLError(.notConnectedToInternet))])
+
+        await #expect {
+            try await service.fetchRepositories()
+        } throws: { error in
+            guard case .networkError = error as? GitHubAPIError else { return false }
+            return true
+        }
+    }
+
+    @Test func cancelledTransportPropagatesCancellation() async {
+        let (service, _) = makeService([.failure(URLError(.cancelled))])
+
+        await #expect {
+            try await service.fetchRepositories()
+        } throws: { error in
+            error.isCancellation
+        }
+    }
+
+    // MARK: Cancellation mapping (views must not surface these)
+
+    @Test func cancellationErrorsAreRecognised() {
+        #expect(CancellationError().isCancellation)
+        #expect(URLError(.cancelled).isCancellation)
+        #expect(!URLError(.timedOut).isCancellation)
+        #expect(!GitHubAPIError.unauthorized.isCancellation)
+    }
+}
