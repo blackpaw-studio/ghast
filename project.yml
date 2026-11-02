@@ -39,12 +39,24 @@ targets:
         SUPublicEDKey: "YOUR_PUBLIC_KEY_HERE"
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast
-      CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
-      CODE_SIGN_STYLE: Automatic
-      DEVELOPMENT_TEAM: 52M9C6892K
       ENABLE_HARDENED_RUNTIME: YES
-      CODE_SIGN_IDENTITY: "Apple Development"
       OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
+    configs:
+      # Local builds/tests: ad-hoc signed (same approach as leoterm's Debug config),
+      # no team/profile needed. Entitlements drop keychain-access-groups, which
+      # requires a provisioning profile.
+      Debug:
+        CODE_SIGN_ENTITLEMENTS: Ghast/GhastDebug.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        OTHER_CODE_SIGN_FLAGS: ""
+      # Release (archive/notarize): unchanged Automatic + team signing.
+      Release:
+        CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: 52M9C6892K
       COMBINE_HIDPI_IMAGES: YES
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
@@ -66,9 +78,15 @@ targets:
       TEST_HOST: $(BUNDLE_LOADER)
       GENERATE_INFOPLIST_FILE: YES
       PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast.tests
-      CODE_SIGN_STYLE: Automatic
-      DEVELOPMENT_TEAM: 52M9C6892K
-    
+    configs:
+      Debug:
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+      Release:
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 52M9C6892K
+
 packages:
   KeychainAccess:
     url: https://github.com/kishikawakatsumi/KeychainAccess
