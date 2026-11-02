@@ -36,7 +36,7 @@ targets:
           - CFBundleURLName: net.evancoleman.ghast.oauth
             CFBundleURLSchemes: [ghast]
         SUFeedURL: "https://evancoleman.net/ghast/appcast.xml"
-        SUPublicEDKey: "YOUR_PUBLIC_KEY_HERE"
+        SUPublicEDKey: "XiAxrGMH7g3mTu9QpwrqXkUCfqyQkuqT7lB2LgJUnjE="
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.evancoleman.ghast
