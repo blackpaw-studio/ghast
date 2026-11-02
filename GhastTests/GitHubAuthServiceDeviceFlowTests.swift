@@ -51,6 +51,46 @@ actor FakeDeviceFlowClient: DeviceFlowClienting {
     }
 }
 
+/// Poll calls suspend until the test resolves them, ignoring cancellation, so a test
+/// can make an abandoned attempt fail *after* a newer one has started.
+actor ControlledDeviceFlowClient: DeviceFlowClienting {
+    private var pending: [CheckedContinuation<String, Error>] = []
+
+    var pendingCount: Int { pending.count }
+
+    func requestCode(scopes: [String]) async throws -> DeviceCode { FakeDeviceFlowClient.code }
+
+    func pollForToken(_ code: DeviceCode) async throws -> String {
+        try await withCheckedThrowingContinuation { pending.append($0) }
+    }
+
+    func resolve(call index: Int, with result: Result<String, Error>) {
+        pending[index].resume(with: result)
+    }
+}
+
+/// One-shot async latch for pausing a closure mid-flight.
+actor Gate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var isWaiting = false
+
+    func wait() async {
+        isWaiting = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+final class CommitLog {
+    private(set) var tokens: [String] = []
+    func commit(_ token: String) { tokens.append(token) }
+}
+
 @MainActor
 final class StateLog {
     private(set) var states: [SignInState] = []
@@ -66,15 +106,20 @@ final class StateLog {
     static let user = GitHubUser(id: 1, login: "octocat", avatarURL: "", name: nil, email: nil)
 
     func makeService(
-        _ client: FakeDeviceFlowClient,
-        completeSignIn: @escaping @MainActor (String) async throws -> GitHubUser = { _ in GitHubAuthServiceDeviceFlowTests.user }
+        _ client: any DeviceFlowClienting,
+        commits: CommitLog? = nil,
+        fetchUser: @escaping @MainActor (String) async throws -> GitHubUser = { _ in GitHubAuthServiceDeviceFlowTests.user }
     ) -> GitHubAuthService {
-        GitHubAuthService(deviceFlow: client, completeSignIn: completeSignIn)
+        let log = commits ?? CommitLog()
+        return GitHubAuthService(deviceFlow: client, fetchUser: fetchUser, commitToken: { log.commit($0) })
     }
 
     /// Yields until the condition holds; bounded so a broken test fails instead of hanging.
-    func waitUntil(_ condition: () -> Bool) async {
-        for _ in 0..<10_000 where !condition() { await Task.yield() }
+    func waitUntil(_ condition: () async -> Bool) async {
+        for _ in 0..<10_000 {
+            if await condition() { return }
+            await Task.yield()
+        }
     }
 
     @Test func startsIdle() {
@@ -153,6 +198,84 @@ final class StateLog {
 
         #expect(service.signInState == .idle)
         #expect(!service.isAuthenticating)
+    }
+
+    @Test func abandonedAttemptFailingLateDoesNotOverwriteNewAttempt() async {
+        let client = ControlledDeviceFlowClient()
+        let service = makeService(client)
+
+        let first = Task { await service.signIn() }
+        await waitUntil { await client.pendingCount == 1 }
+        service.cancelSignIn()
+        let second = Task { await service.signIn() }
+        await waitUntil { await client.pendingCount == 2 }
+
+        await client.resolve(call: 0, with: .failure(DeviceFlowError.network("late")))
+        await first.value
+
+        #expect(service.signInState == .awaitingUser(FakeDeviceFlowClient.code))
+
+        await client.resolve(call: 1, with: .success("gho_new"))
+        await second.value
+        #expect(service.signInState == .signedIn)
+    }
+
+    @Test func cancelDuringUserFetchCommitsNoToken() async {
+        let gate = Gate()
+        let commits = CommitLog()
+        let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")]), commits: commits) { _ in
+            await gate.wait()
+            return Self.user
+        }
+
+        let signIn = Task { await service.signIn() }
+        await waitUntil { await gate.isWaiting }
+        service.cancelSignIn()
+        await gate.open()
+        await signIn.value
+
+        #expect(commits.tokens.isEmpty)
+        #expect(service.signInState == .idle)
+        #expect(!service.isAuthenticated)
+        #expect(service.currentUser == nil)
+    }
+
+    @Test func abandonedAttemptFailingInUserFetchLeavesNewerSignInIntact() async {
+        let gate = Gate()
+        let commits = CommitLog()
+        let service = makeService(
+            FakeDeviceFlowClient(polls: [.token("old"), .token("new")]),
+            commits: commits
+        ) { token in
+            if token == "old" {
+                await gate.wait()
+                throw URLError(.notConnectedToInternet)
+            }
+            return Self.user
+        }
+
+        let first = Task { await service.signIn() }
+        await waitUntil { await gate.isWaiting }
+        service.cancelSignIn()
+        await service.signIn()
+        #expect(service.signInState == .signedIn)
+
+        await gate.open()
+        await first.value
+
+        #expect(service.signInState == .signedIn)
+        #expect(commits.tokens == ["new"])
+        #expect(service.isAuthenticated)
+    }
+
+    @Test func urlSessionCancellationIsNotAFailure() async {
+        let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")])) { _ in
+            throw URLError(.cancelled)
+        }
+
+        await service.signIn()
+
+        #expect(service.signInState == .idle)
     }
 
     @Test func tryAgainAfterFailureRequestsNewCode() async {

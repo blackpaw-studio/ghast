@@ -156,6 +156,8 @@ extension DeviceFlowClient {
             (data, _) = try await transport.send(request)
         } catch is CancellationError {
             throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw DeviceFlowError.network(error.localizedDescription)
         }

@@ -32,25 +32,39 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         return false
     }
 
-    private var keychain: Keychain {
-        return Keychain(service: "net.evancoleman.ghast")
+    private var keychain: Keychain { Self.makeKeychain() }
+
+    private static func makeKeychain() -> Keychain {
+        Keychain(service: "net.evancoleman.ghast")
             .accessibility(.afterFirstUnlock)
     }
 
     private let deviceFlow: any DeviceFlowClienting
-    private let completeSignInOverride: (@MainActor (String) async throws -> GitHubUser)?
+    private let fetchUser: @MainActor (String) async throws -> GitHubUser
+    private let commitToken: @MainActor (String) -> Void
     private var signInTask: Task<Void, Never>?
+    /// Identity of the sign-in attempt allowed to touch state, Keychain and the API
+    /// service. Cleared on cancel, replaced on each `signIn()`, so an abandoned attempt
+    /// that finishes late cannot clobber a newer one.
+    private var currentAttempt: UUID?
 
     /// - Parameters:
     ///   - deviceFlow: Device Flow transport; production default talks to github.com.
-    ///   - completeSignIn: Turns a fresh token into the signed-in user. The default
-    ///     stores the token in Keychain, hands it to the API service and fetches the user.
+    ///   - fetchUser: Loads the user for a fresh token. Must have no side effects; the
+    ///     default calls the GitHub API with the token explicitly.
+    ///   - commitToken: Persists a verified token. Only runs for the current attempt.
+    ///     The default stores it in Keychain and hands it to the API service.
     init(
         deviceFlow: any DeviceFlowClienting = DeviceFlowClient(),
-        completeSignIn: (@MainActor (String) async throws -> GitHubUser)? = nil
+        fetchUser: (@MainActor (String) async throws -> GitHubUser)? = nil,
+        commitToken: (@MainActor (String) -> Void)? = nil
     ) {
         self.deviceFlow = deviceFlow
-        self.completeSignInOverride = completeSignIn
+        self.fetchUser = fetchUser ?? { try await GitHubAPIService.shared.fetchCurrentUser(token: $0) }
+        self.commitToken = commitToken ?? { token in
+            try? Self.makeKeychain().set(token, key: "github_token") // still works without persistent storage
+            GitHubAPIService.shared.setAccessToken(token)
+        }
         // isCheckingStoredAuth is already true from the property declaration
         // This prevents the login screen flash without triggering keychain access
     }
@@ -82,49 +96,52 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     func signIn() async {
         signInTask?.cancel()
         if signInState != .idle { signInState = .idle }
-        let task = Task { await runSignIn() }
+        let attempt = UUID()
+        currentAttempt = attempt
+        let task = Task { await runSignIn(attempt) }
         signInTask = task
         await task.value
     }
 
     func cancelSignIn() {
+        currentAttempt = nil
         signInTask?.cancel()
         signInTask = nil
         if case .signedIn = signInState { return }
         signInState = .idle
     }
 
-    private func runSignIn() async {
+    private func isCurrent(_ attempt: UUID) -> Bool {
+        currentAttempt == attempt && !Task.isCancelled
+    }
+
+    private func runSignIn(_ attempt: UUID) async {
         do {
             let code = try await deviceFlow.requestCode(scopes: Self.scopes)
-            try Task.checkCancellation()
+            guard isCurrent(attempt) else { return }
             signInState = .awaitingUser(code)
+
             let token = try await deviceFlow.pollForToken(code)
-            try Task.checkCancellation()
-            let user = try await completeSignIn(token)
-            try Task.checkCancellation()
+            guard isCurrent(attempt) else { return }
+            let user = try await fetchUser(token)
+            guard isCurrent(attempt) else { return }
+
+            commitToken(token)
             currentUser = user
             isAuthenticated = true
             signInState = .signedIn
-        } catch is CancellationError {
-            // cancelSignIn() or a newer signIn() owns the state.
-        } catch let error as DeviceFlowError {
-            signInState = .failed(error)
         } catch {
-            signInState = .failed(.network(error.localizedDescription))
+            guard isCurrent(attempt) else { return }
+            signInState = Self.isCancellation(error) ? .idle : .failed(Self.failure(for: error))
         }
     }
 
-    private func completeSignIn(_ token: String) async throws -> GitHubUser {
-        if let completeSignInOverride { return try await completeSignInOverride(token) }
-        try? keychain.set(token, key: "github_token") // still works without persistent storage
-        GitHubAPIService.shared.setAccessToken(token)
-        do {
-            return try await GitHubAPIService.shared.fetchCurrentUser()
-        } catch {
-            try? keychain.remove("github_token")
-            throw error
-        }
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
+    private static func failure(for error: Error) -> DeviceFlowError {
+        (error as? DeviceFlowError) ?? .network(error.localizedDescription)
     }
 
     func signOut() {

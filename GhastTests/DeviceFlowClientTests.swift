@@ -151,6 +151,11 @@ func formFields(_ request: URLRequest) -> [String: String] {
         await #expect(throws: DeviceFlowError.disabled) { try await client.pollForToken(makeCode()) }
     }
 
+    @Test func transportCancellationPropagatesAsCancellation() async {
+        let (client, _, _) = makeClient([.failure(URLError(.cancelled))])
+        await #expect(throws: CancellationError.self) { try await client.pollForToken(makeCode()) }
+    }
+
     @Test func transportErrorThrowsNetwork() async {
         let (client, _, _) = makeClient([.failure(URLError(.notConnectedToInternet))])
         await #expect {
