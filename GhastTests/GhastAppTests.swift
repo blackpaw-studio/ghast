@@ -7,14 +7,14 @@ final class GhastAppTests: XCTestCase {
     
     var app: GhastApp!
     
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         app = GhastApp()
     }
     
-    override func tearDown() {
+    override func tearDown() async throws {
         app = nil
-        super.tearDown()
+        try await super.tearDown()
     }
     
     // MARK: - GhastApp Tests

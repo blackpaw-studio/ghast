@@ -21,7 +21,7 @@ enum SnapshotTestHelpers {
         height: CGFloat,
         runnerService: RunnerService? = nil,
         record: Bool? = nil,
-        file: StaticString = #file,
+        file: StaticString = #filePath,
         testName: String = #function,
         line: UInt = #line
     ) {
@@ -75,7 +75,7 @@ enum SnapshotTestHelpers {
         containerHeight: CGFloat = 800,
         runnerService: RunnerService? = nil,
         record: Bool? = nil,
-        file: StaticString = #file,
+        file: StaticString = #filePath,
         testName: String = #function,
         line: UInt = #line
     ) {

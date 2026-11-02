@@ -40,7 +40,7 @@ struct ContentView: View {
                 await authService.checkStoredAuthentication()
             }
         }
-        .onChange(of: authService.isAuthenticated) { newValue in
+        .onChange(of: authService.isAuthenticated) { _, newValue in
             print("🔐 UI: isAuthenticated changed to \(newValue)")
         }
     }
@@ -106,7 +106,7 @@ struct ToolbarProfileImage: View {
     @State private var image: Image?
     @State private var isLoading = false
     
-    private static var imageCache: [String: Image] = [:]
+    @MainActor private static var imageCache: [String: Image] = [:]
     
     var body: some View {
         Group {

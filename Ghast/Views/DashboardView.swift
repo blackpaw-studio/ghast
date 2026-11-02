@@ -40,7 +40,7 @@ struct DashboardView: View {
                 await loadRunnerStats()
             }
         }
-        .onChange(of: appState.repositories) { _ in
+        .onChange(of: appState.repositories) {
             Task {
                 await loadRunnerStats()
             }

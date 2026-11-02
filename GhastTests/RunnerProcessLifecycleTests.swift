@@ -82,7 +82,7 @@ final class RunnerProcessLifecycleTests: XCTestCase {
             labels: ["label1"]
         )
         
-        var runner2 = LocalRunner(
+        let runner2 = LocalRunner(
             name: "Runner 2",
             repository: "user/repo2",
             path: "/tmp/runner2",

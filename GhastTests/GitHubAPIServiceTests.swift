@@ -6,15 +6,15 @@ final class GitHubAPIServiceTests: XCTestCase {
     
     var service: GitHubAPIService!
     
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         service = GitHubAPIService()
     }
     
-    override func tearDown() {
+    override func tearDown() async throws {
         service.setAccessToken("")
         service = nil
-        super.tearDown()
+        try await super.tearDown()
     }
     
     // MARK: - Basic Tests
