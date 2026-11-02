@@ -47,10 +47,9 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         # Local builds/tests: ad-hoc signed (as leoterm's Debug config), no team or
-        # profile needed. Debug entitlements drop keychain-access-groups, which
-        # requires a provisioning profile.
+        # profile needed.
         Debug:
-          CODE_SIGN_ENTITLEMENTS: Ghast/GhastDebug.entitlements
+          CODE_SIGN_ENTITLEMENTS: Ghast/Ghast.entitlements
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "-"
           DEVELOPMENT_TEAM: ""
