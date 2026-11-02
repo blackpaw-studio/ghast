@@ -1,11 +1,19 @@
 import Foundation
 import SwiftUI
-import AuthenticationServices
 import KeychainAccess
 import Alamofire
 
+enum SignInState: Equatable {
+    case idle
+    case awaitingUser(DeviceCode)
+    case failed(DeviceFlowError)
+    case signedIn
+}
+
 @MainActor
-class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
+class GitHubAuthService: GitHubAuthServiceProtocol {
+    static let scopes = ["repo", "user:email"]
+
     @Published var isAuthenticated = false {
         didSet {
             #if DEBUG
@@ -14,27 +22,53 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         }
     }
     @Published var currentUser: GitHubUser?
-    @Published var isLoading = false
-    @Published var isAuthenticating = false
+    @Published var signInState: SignInState = .idle
     @Published var isCheckingStoredAuth = true // Start with true to prevent login screen flash
-    
-    private var keychain: Keychain {
-        let accessGroup = "net.evancoleman.ghast"
-        return Keychain(service: "net.evancoleman.ghast", accessGroup: accessGroup)
+
+    /// Derived from `signInState` for views that only need "is a sign-in in flight".
+    var isLoading: Bool { isAuthenticating }
+    var isAuthenticating: Bool {
+        if case .awaitingUser = signInState { return true }
+        return false
+    }
+
+    private var keychain: Keychain { Self.makeKeychain() }
+
+    private static func makeKeychain() -> Keychain {
+        Keychain(service: "net.evancoleman.ghast")
             .accessibility(.afterFirstUnlock)
     }
-    private let clientId = "Ov23liLVIllxzZoRYwAN"
-    private let redirectURI = "ghast://auth/callback"
-    
-    private var authSession: ASWebAuthenticationSession?
-    
-    override init() {
-        super.init()
-        
+
+    private let deviceFlow: any DeviceFlowClienting
+    private let fetchUser: @MainActor (String) async throws -> GitHubUser
+    private let commitToken: @MainActor (String) -> Void
+    private var signInTask: Task<Void, Never>?
+    /// Identity of the sign-in attempt allowed to touch state, Keychain and the API
+    /// service. Cleared on cancel, replaced on each `signIn()`, so an abandoned attempt
+    /// that finishes late cannot clobber a newer one.
+    private var currentAttempt: UUID?
+
+    /// - Parameters:
+    ///   - deviceFlow: Device Flow transport; production default talks to github.com.
+    ///   - fetchUser: Loads the user for a fresh token. Must have no side effects; the
+    ///     default calls the GitHub API with the token explicitly.
+    ///   - commitToken: Persists a verified token. Only runs for the current attempt.
+    ///     The default stores it in Keychain and hands it to the API service.
+    init(
+        deviceFlow: any DeviceFlowClienting = DeviceFlowClient(),
+        fetchUser: (@MainActor (String) async throws -> GitHubUser)? = nil,
+        commitToken: (@MainActor (String) -> Void)? = nil
+    ) {
+        self.deviceFlow = deviceFlow
+        self.fetchUser = fetchUser ?? { try await GitHubAPIService.shared.fetchCurrentUser(token: $0) }
+        self.commitToken = commitToken ?? { token in
+            try? Self.makeKeychain().set(token, key: "github_token") // still works without persistent storage
+            GitHubAPIService.shared.setAccessToken(token)
+        }
         // isCheckingStoredAuth is already true from the property declaration
         // This prevents the login screen flash without triggering keychain access
     }
-    
+
     /// Check if the app is running in a test environment
     private func isRunningTests() -> Bool {
         return NSClassFromString("XCTest") != nil || 
@@ -56,37 +90,65 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         await checkExistingAuth()
     }
     
+    /// Runs the whole Device Flow. Returns when sign-in succeeds, fails or is cancelled;
+    /// the outcome is published through `signInState`. Calling again (Try again)
+    /// cancels any run in flight and requests a fresh code.
     func signIn() async {
-        isLoading = true
-        isAuthenticating = true
-        defer { 
-            isLoading = false
-            isAuthenticating = false
-        }
-        
-        // Add timeout to prevent hanging indefinitely
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                await self.performOAuthFlow()
-            }
-            
-            group.addTask {
-                // 60 second timeout for OAuth flow
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                #if DEBUG
-                print("🔐 OAuth: Timeout reached, cancelling OAuth flow")
-                #endif
-            }
-            
-            // Wait for first task to complete (either OAuth or timeout)
-            await group.next()
-            group.cancelAll()
+        signInTask?.cancel()
+        if signInState != .idle { signInState = .idle }
+        let attempt = UUID()
+        currentAttempt = attempt
+        let task = Task { await runSignIn(attempt) }
+        signInTask = task
+        await task.value
+    }
+
+    func cancelSignIn() {
+        currentAttempt = nil
+        signInTask?.cancel()
+        signInTask = nil
+        if case .signedIn = signInState { return }
+        signInState = .idle
+    }
+
+    private func isCurrent(_ attempt: UUID) -> Bool {
+        currentAttempt == attempt && !Task.isCancelled
+    }
+
+    private func runSignIn(_ attempt: UUID) async {
+        do {
+            let code = try await deviceFlow.requestCode(scopes: Self.scopes)
+            guard isCurrent(attempt) else { return }
+            signInState = .awaitingUser(code)
+
+            let token = try await deviceFlow.pollForToken(code)
+            guard isCurrent(attempt) else { return }
+            let user = try await fetchUser(token)
+            guard isCurrent(attempt) else { return }
+
+            commitToken(token)
+            currentUser = user
+            isAuthenticated = true
+            signInState = .signedIn
+        } catch {
+            guard isCurrent(attempt) else { return }
+            signInState = Self.isCancellation(error) ? .idle : .failed(Self.failure(for: error))
         }
     }
-    
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
+    private static func failure(for error: Error) -> DeviceFlowError {
+        (error as? DeviceFlowError) ?? .network(error.localizedDescription)
+    }
+
     func signOut() {
+        cancelSignIn()
         isAuthenticated = false
         currentUser = nil
+        signInState = .idle
         do {
             try keychain.remove("github_token")
         } catch {
@@ -99,29 +161,7 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
     func simulateSuccessfulAuth(user: GitHubUser) {
         self.currentUser = user
         self.isAuthenticated = true
-        self.isLoading = false
-        self.isAuthenticating = false
-    }
-    
-    func debugTestOAuthCallback() async {
-        #if DEBUG
-        print("🔐 DEBUG: Starting debug OAuth test")
-        #endif
-        
-        isLoading = true
-        isAuthenticating = true
-        
-        let callbackURL = URL(string: "ghast://auth/callback?code=debug_test_code&state=debug_state")!
-        
-        #if DEBUG
-        print("🔐 DEBUG: Posting notification for URL: \(callbackURL.absoluteString)")
-        #endif
-        
-        NotificationCenter.default.post(name: .oauthCallback, object: callbackURL)
-        
-        #if DEBUG
-        print("🔐 DEBUG: Notification posted, OAuth flow should continue...")
-        #endif
+        self.signInState = .signedIn
     }
     
     private func checkExistingAuth() async {
@@ -145,145 +185,5 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
             // Token is invalid or keychain access failed, remove it silently
             try? keychain.remove("github_token")
         }
-    }
-    
-    private func performOAuthFlow() async {
-        let authURL = buildAuthURL()
-        
-        
-        // Don't open browser during tests
-        if !isRunningTests() {
-            // Open URL in default browser
-            NSWorkspace.shared.open(authURL)
-        }
-        
-        // Set up notification observer for URL callback
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var observer: NSObjectProtocol?
-            observer = NotificationCenter.default.addObserver(
-                forName: .oauthCallback,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let callbackURL = notification.object as? URL else {
-                    continuation.resume()
-                    return
-                }
-                
-                guard let code = self?.extractCode(from: callbackURL) else {
-                    continuation.resume()
-                    return
-                }
-                
-                // Remove observer
-                if let obs = observer {
-                    NotificationCenter.default.removeObserver(obs)
-                }
-                
-                Task {
-                    await self?.exchangeCodeForToken(code)
-                    continuation.resume()
-                }
-            }
-            
-        }
-    }
-    
-    func buildAuthURL() -> URL {
-        var components = URLComponents(string: "https://github.com/login/oauth/authorize")!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "scope", value: "repo user:email"),
-            URLQueryItem(name: "state", value: UUID().uuidString)
-        ]
-        return components.url!
-    }
-    
-    private func extractCode(from url: URL) -> String? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let queryItems = components.queryItems else {
-            return nil
-        }
-        
-        return queryItems.first { $0.name == "code" }?.value
-    }
-    
-    private func exchangeCodeForToken(_ code: String) async {
-        
-        let tokenURL = URL(string: "https://github.com/login/oauth/access_token")!
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body = [
-            "client_id": clientId,
-            "client_secret": "0d2d7ddfe0cbc94c9f28a53cf02a09f4d0d3b48b",
-            "code": code
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            
-            let (data, _) = try await URLSession.shared.data(for: request)
-            
-            if let tokenResponse = try? JSONDecoder().decode(TokenResponse.self, from: data) {
-                do {
-                    try keychain.set(tokenResponse.accessToken, key: "github_token")
-                } catch {
-                    // Continue anyway as we can still function without persistent storage
-                }
-                GitHubAPIService.shared.setAccessToken(tokenResponse.accessToken)
-                
-                do {
-                    let user = try await GitHubAPIService.shared.fetchCurrentUser()
-                    
-                    // Atomic state update on MainActor
-                    await MainActor.run {
-                        self.currentUser = user
-                        self.isAuthenticated = true
-                        self.isAuthenticating = false
-                    }
-                } catch {
-                    
-                    // Clean up on user fetch failure
-                    await MainActor.run {
-                        self.isAuthenticated = false
-                        self.isAuthenticating = false
-                        self.currentUser = nil
-                    }
-                    try? keychain.remove("github_token")
-                }
-            } else {
-                await MainActor.run {
-                    self.isAuthenticated = false
-                    self.isAuthenticating = false
-                }
-            }
-        } catch {
-            await MainActor.run {
-                self.isAuthenticated = false
-                self.isAuthenticating = false
-            }
-        }
-    }
-}
-
-extension GitHubAuthService: ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return NSApplication.shared.windows.first ?? ASPresentationAnchor()
-    }
-}
-
-private struct TokenResponse: Codable {
-    let accessToken: String
-    let tokenType: String
-    let scope: String
-    
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case tokenType = "token_type"
-        case scope
     }
 }

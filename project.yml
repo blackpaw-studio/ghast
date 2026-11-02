@@ -32,9 +32,6 @@ targets:
         LSMinimumSystemVersion: "15.0"
         NSHumanReadableCopyright: "Copyright © 2025 Blackpaw Studio, LLC. All rights reserved."
         LSApplicationCategoryType: "public.app-category.developer-tools"
-        CFBundleURLTypes:
-          - CFBundleURLName: net.evancoleman.ghast.oauth
-            CFBundleURLSchemes: [ghast]
         SUFeedURL: "https://evancoleman.net/ghast/appcast.xml"
         SUPublicEDKey: "XiAxrGMH7g3mTu9QpwrqXkUCfqyQkuqT7lB2LgJUnjE="
     settings:

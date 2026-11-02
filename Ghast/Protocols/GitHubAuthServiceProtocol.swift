@@ -6,15 +6,16 @@ import SwiftUI
 protocol GitHubAuthServiceProtocol: ObservableObject {
     var isAuthenticated: Bool { get set }
     var currentUser: GitHubUser? { get set }
-    var isLoading: Bool { get set }
-    var isAuthenticating: Bool { get set }
+    var signInState: SignInState { get }
+    var isLoading: Bool { get }
+    var isAuthenticating: Bool { get }
     var isCheckingStoredAuth: Bool { get set }
     
     func checkStoredAuthentication() async
     func signIn() async
+    func cancelSignIn()
     func signOut()
     func simulateSuccessfulAuth(user: GitHubUser)
-    func debugTestOAuthCallback() async
 }
 
 /// Environment key for injecting auth service

@@ -6,7 +6,7 @@ A native macOS app for managing GitHub Actions self-hosted runners with a deligh
 
 ## Features
 
-- **OAuth Authentication**: Secure GitHub login with token storage in macOS Keychain
+- **GitHub Device Flow Sign-in**: Approve Ghast with a one-time code in your browser; no secrets ship in the app and the token is stored in the macOS Keychain
 - **Repository Management**: Browse and manage your GitHub repositories
 - **Self-Hosted Runners**: 
   - View existing runners for any repository
@@ -46,7 +46,7 @@ open Ghast.xcodeproj
 ## Getting Started
 
 1. **Launch Ghast** and click "Sign in with GitHub"
-2. **Authorize the app** in your browser
+2. **Approve Ghast on GitHub**: the app shows a one-time code, copies it, and opens github.com/login/device; paste the code and authorize
 3. **Browse your repositories** from the dashboard
 4. **Select a repository** to view its runners
 5. **Add a local runner** by:
