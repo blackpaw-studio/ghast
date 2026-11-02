@@ -189,7 +189,7 @@ class GitHubAuthService: NSObject, GitHubAuthServiceProtocol {
         }
     }
     
-    private func buildAuthURL() -> URL {
+    func buildAuthURL() -> URL {
         var components = URLComponents(string: "https://github.com/login/oauth/authorize")!
         components.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),

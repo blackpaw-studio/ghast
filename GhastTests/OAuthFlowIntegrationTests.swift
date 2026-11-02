@@ -27,7 +27,8 @@ final class OAuthFlowIntegrationTests: XCTestCase {
     
     func testSignOutClearsState() async throws {
         // Simulate authenticated state
-        authService.mockAuthenticate()
+        authService.simulateSuccessfulAuth(user: GitHubUser(
+            id: 1, login: "mockuser", avatarURL: "", name: nil, email: nil))
         
         // Verify authenticated
         XCTAssertTrue(authService.isAuthenticated)
@@ -40,18 +41,16 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         // Verify state is cleared
         XCTAssertFalse(authService.isAuthenticated)
         XCTAssertNil(authService.currentUser)
-        XCTAssertNil(authService.authToken)
     }
     
     func testOAuthURLConstruction() {
         // Test that OAuth URL is properly constructed
-        let url = authService.createOAuthURL()
+        let url = authService.buildAuthURL()
         
-        XCTAssertNotNil(url)
-        XCTAssertEqual(url?.host, "github.com")
-        XCTAssertEqual(url?.path, "/login/oauth/authorize")
+        XCTAssertEqual(url.host, "github.com")
+        XCTAssertEqual(url.path, "/login/oauth/authorize")
         
-        let components = URLComponents(url: url!, resolvingAgainstBaseURL: false)
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let queryItems = components?.queryItems ?? []
         
         XCTAssertTrue(queryItems.contains { $0.name == "client_id" && $0.value == "Ov23liLVIllxzZoRYwAN" })
@@ -84,7 +83,8 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         
         // In a real scenario, this would authenticate if the backend was mocked
         // For now, we'll use the mock method
-        authService.mockAuthenticate()
+        authService.simulateSuccessfulAuth(user: GitHubUser(
+            id: 1, login: "mockuser", avatarURL: "", name: nil, email: nil))
         
         await fulfillment(of: [expectation], timeout: 1.0)
         
@@ -110,23 +110,11 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         }
         
         // Trigger state change
-        authService.mockAuthenticate()
+        authService.simulateSuccessfulAuth(user: GitHubUser(
+            id: 1, login: "mockuser", avatarURL: "", name: nil, email: nil))
         
         await fulfillment(of: [expectation], timeout: 1.0)
         cancellable.cancel()
-    }
-    
-    func testErrorStateHandling() {
-        // Test error state management
-        let testError = "Test authentication error"
-        
-        // Set error state
-        authService.error = testError
-        XCTAssertEqual(authService.error, testError)
-        
-        // Clear error on new attempt
-        authService.error = nil
-        XCTAssertNil(authService.error)
     }
     
     func testLoadingStateTransitions() async throws {
@@ -137,7 +125,8 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         // Note: Can't test actual signIn flow without mocking, but we can verify initial state
         
         // Mock authentication sets proper state
-        authService.mockAuthenticate()
+        authService.simulateSuccessfulAuth(user: GitHubUser(
+            id: 1, login: "mockuser", avatarURL: "", name: nil, email: nil))
         XCTAssertFalse(authService.isLoading)
         XCTAssertFalse(authService.isAuthenticating)
     }

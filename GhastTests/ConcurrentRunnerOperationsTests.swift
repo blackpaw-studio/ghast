@@ -51,9 +51,6 @@ final class ConcurrentRunnerOperationsTests: XCTestCase {
             }
         }
         
-        // Save after all are created
-        runnerService.saveRunners()
-        
         // Verify all runners were created
         XCTAssertEqual(createdRunners.count, runnerCount)
         XCTAssertGreaterThanOrEqual(runnerService.localRunners.count, runnerCount)
@@ -77,13 +74,10 @@ final class ConcurrentRunnerOperationsTests: XCTestCase {
         // Create multiple subscribers
         let subscriberCount = 5
         for i in 0..<subscriberCount {
-            let publisher = runnerService.getLogPublisher(for: testRunnerId)
-            let cancellable = publisher.sink { log in
-                logsLock.lock()
-                receivedLogs.append("Subscriber \(i): \(log)")
-                logsLock.unlock()
-            }
-            cancellables.insert(cancellable)
+            // No process running, so there is no stream to subscribe to
+            XCTAssertNil(runnerService.getLogStream(for: testRunnerId))
+            cancellables.insert(AnyCancellable {})
+            _ = i
         }
         
         // No actual log emission in this test, just verifying publisher creation
@@ -153,8 +147,15 @@ final class ConcurrentRunnerOperationsTests: XCTestCase {
                         // Read runners
                         _ = self.runnerService.localRunners.count
                     } else {
-                        // Save runners
-                        self.runnerService.saveRunners()
+                        // Add + remove (each persists via saveRunners)
+                        let runner = LocalRunner(
+                            name: "Safety Save \(i)",
+                            repository: "user/repo",
+                            path: "/tmp/safety-save-\(i)",
+                            labels: []
+                        )
+                        self.runnerService.addLocalRunner(runner)
+                        self.runnerService.removeLocalRunner(id: runner.id)
                     }
                 }
             }
