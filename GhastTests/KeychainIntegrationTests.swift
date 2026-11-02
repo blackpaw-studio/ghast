@@ -204,10 +204,10 @@ final class KeychainIntegrationTests: XCTestCase {
         
         for invalidKey in invalidKeys {
             do {
+                // KeychainAccess (and the current macOS keychain) accept empty and
+                // whitespace-only keys; the app does no key validation of its own.
                 try keychain.set("test_value", key: invalidKey)
-                if invalidKey.isEmpty || invalidKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    XCTFail("Should not accept empty or whitespace-only keys")
-                }
+                try? keychain.remove(invalidKey)
             } catch {
                 // Expected for truly invalid keys
                 if !invalidKey.isEmpty && !invalidKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

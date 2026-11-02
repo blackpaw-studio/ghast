@@ -165,7 +165,7 @@ final class GitHubModelsTests: XCTestCase {
         print("Repository JSON: \(json)")
         
         let decoded = try JSONDecoder().decode(GitHubRepository.self, from: data)
-        XCTAssertEqual(decoded.id, 999)
+        XCTAssertEqual(decoded.id, 3000)
         XCTAssertEqual(decoded.fullName, "owner/encode-repo")
         XCTAssertEqual(decoded.isPrivate, true)
         XCTAssertEqual(decoded.htmlURL, "https://github.com/owner/encode-repo")

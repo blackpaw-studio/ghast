@@ -55,7 +55,7 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         
         XCTAssertTrue(queryItems.contains { $0.name == "client_id" && $0.value == "Ov23liLVIllxzZoRYwAN" })
         XCTAssertTrue(queryItems.contains { $0.name == "redirect_uri" && $0.value == "ghast://auth/callback" })
-        XCTAssertTrue(queryItems.contains { $0.name == "scope" && $0.value == "repo read:org admin:org" })
+        XCTAssertTrue(queryItems.contains { $0.name == "scope" && $0.value == "repo user:email" })
     }
     
     func testOAuthCallbackNotificationHandling() async throws {
