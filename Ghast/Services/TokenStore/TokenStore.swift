@@ -23,8 +23,8 @@ enum TokenStoreError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// Generic-password Keychain item. Query attributes deliberately mirror KeychainAccess
-/// 4.2.2 (what earlier builds wrote) so existing tokens keep working: no
+/// Generic-password Keychain item. Query attributes deliberately mirror the Keychain
+/// wrapper (v4.2.2) that earlier builds used, so existing tokens keep working: no
 /// `kSecUseDataProtectionKeychain` and no `kSecAttrAccessGroup`, either of which would
 /// route to the data-protection keychain and orphan stored tokens.
 struct KeychainTokenStore: TokenStore {

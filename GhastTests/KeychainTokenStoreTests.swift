@@ -1,7 +1,6 @@
 import Testing
 import Foundation
 import Security
-import KeychainAccess
 @testable import Ghast
 
 /// Every test uses its own throwaway service so parallel runs never collide and the
@@ -14,8 +13,30 @@ import KeychainAccess
         return (KeychainTokenStore(service: service, account: Self.account), service)
     }
 
-    private func legacy(_ service: String) -> Keychain {
-        Keychain(service: service).accessibility(.afterFirstUnlock)
+    /// Writes an item exactly as the previous Keychain wrapper (v4.2.2) did for
+    /// `Keychain(service:).accessibility(.afterFirstUnlock).set(_, key:)`, so the
+    /// compatibility tests don't need the library.
+    func legacyWrite(token: String, service: String) {
+        let item: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: Self.account,
+            kSecValueData as String: Data(token.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrSynchronizable as String: false,
+        ]
+        let status = SecItemAdd(item as CFDictionary, nil)
+        #expect(status == errSecSuccess, "legacy write failed: \(status)")
+    }
+
+    private func legacyDelete(service: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: Self.account,
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     private func itemCount(service: String) -> Int {
@@ -86,46 +107,35 @@ import KeychainAccess
         try store.delete()
     }
 
-    // MARK: KeychainAccess compatibility (existing tokens must keep working)
+    // MARK: Legacy (pre-TokenStore) item compatibility
 
-    @Test func readsTokenWrittenByKeychainAccess() throws {
+    @Test func readsLegacyItem() throws {
         let (store, service) = makeStore()
-        defer { try? legacy(service).remove(Self.account) }
-
-        try legacy(service).set("gho_legacy", key: Self.account)
+        defer { legacyDelete(service: service) }
+        legacyWrite(token: "gho_legacy", service: service)
 
         #expect(try store.read() == "gho_legacy")
     }
 
-    @Test func keychainAccessReadsTokenWrittenByStore() throws {
-        let (store, service) = makeStore()
-        defer { try? store.delete() }
-
-        try store.write("gho_new")
-
-        #expect(try legacy(service).get(Self.account) == "gho_new")
-    }
-
     @Test func writeUpdatesLegacyItemInPlace() throws {
         let (store, service) = makeStore()
-        defer { try? legacy(service).remove(Self.account) }
-        try legacy(service).set("old", key: Self.account)
+        defer { legacyDelete(service: service) }
+        legacyWrite(token: "old", service: service)
 
         try store.write("new")
 
-        #expect(try legacy(service).get(Self.account) == "new")
         #expect(try store.read() == "new")
         #expect(itemCount(service: service) == 1)
     }
 
-    @Test func itemAttributesMatchKeychainAccess() throws {
+    @Test func itemAttributesMatchLegacyItem() throws {
         let (store, storeService) = makeStore()
         let legacyService = "net.evancoleman.ghast.tests.\(UUID())"
         defer {
             try? store.delete()
-            try? legacy(legacyService).remove(Self.account)
+            legacyDelete(service: legacyService)
         }
-        try legacy(legacyService).set("tok", key: Self.account)
+        legacyWrite(token: "tok", service: legacyService)
         try store.write("tok")
 
         let expected = try #require(attributes(service: legacyService))

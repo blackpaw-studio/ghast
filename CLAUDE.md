@@ -33,7 +33,7 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 
 **Authentication Flow**:
 - `DeviceFlowClient`: RFC 8628 Device Flow against github.com; HTTP transport and sleeper are injected, so tests never touch the network or sleep
-- `GitHubAuthService`: drives the flow and publishes `signInState` (`idle`, `awaitingUser(code)`, `failed(error)`, `signedIn`); uses Keychain for token storage
+- `GitHubAuthService`: drives the flow and publishes `signInState` (`idle`, `awaitingUser(code)`, `failed(error)`, `signedIn`); stores the token through an injected `TokenStore` (`KeychainTokenStore` in production, Security.framework, service `net.evancoleman.ghast`)
 - `WelcomeView` shows the user code, copies it and opens GitHub once per attempt
 - OAuth app: Client ID `Ov23liLVIllxzZoRYwAN` with **Enable Device Flow** ticked; there is no client secret in the app
 
@@ -46,13 +46,13 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 **UI Architecture**:
 - `AppState`: Central navigation state (`SelectedView` enum)
 - Navigation: Dashboard → Repository Detail → Local Runners → Settings
-- `GitHubAPIService`: Alamofire-based GitHub REST API client
+- `GitHubAPIService`: URLSession-based GitHub REST API client over an injected `HTTPTransport`
 - Environment objects flow: `GitHubAuthService` + `AppState` injected throughout
 
 ### Project Configuration
 - **Bundle ID**: `net.evancoleman.ghast`
 - **Single Instance**: `LSMultipleInstancesProhibited: true`
-- **Dependencies**: Alamofire (networking), KeychainAccess (secure storage), SnapshotTesting (UI testing)
+- **Dependencies**: Sparkle (updates), SnapshotTesting (UI testing); networking and Keychain use system frameworks
 - **Target**: macOS 15.0+, SwiftUI lifecycle
 
 ### Testing Strategy
