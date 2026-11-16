@@ -70,4 +70,22 @@ import Foundation
         let repo = try JSONDecoder().decode(GitHubRepository.self, from: Data(json.utf8))
         #expect(repo.runnerScope == .repository(fullName: "octo/ghast"))
     }
+
+    // MARK: Error copy
+
+    @Test(arguments: [GitHubAPIError.httpStatus(403), .notFound])
+    func organizationPermissionErrorsExplainOwnership(error: GitHubAPIError) {
+        #expect(RunnerScope.organization(login: "acme").errorMessage(for: error)
+                == "You need to be an owner of acme to manage its runners.")
+    }
+
+    @Test func otherOrganizationErrorsUseTheirDescription() {
+        let error = GitHubAPIError.serverError(502)
+        #expect(RunnerScope.organization(login: "acme").errorMessage(for: error) == error.localizedDescription)
+    }
+
+    @Test(arguments: [GitHubAPIError.httpStatus(403), .notFound])
+    func repositoryErrorsUseTheirDescription(error: GitHubAPIError) {
+        #expect(RunnerScope.repository(fullName: "octo/ghast").errorMessage(for: error) == error.localizedDescription)
+    }
 }

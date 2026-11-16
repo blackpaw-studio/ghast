@@ -324,7 +324,7 @@ struct ScopedRunnersPanel<Header: View>: View {
             }
         } catch {
             // A view that disappears mid-fetch cancels the request; that isn't a failure.
-            let message = error.isCancellation ? nil : error.localizedDescription
+            let message = error.isCancellation ? nil : scope.errorMessage(for: error)
             await MainActor.run {
                 self.isLoadingRunners = false
                 if let message { self.errorMessage = message }
