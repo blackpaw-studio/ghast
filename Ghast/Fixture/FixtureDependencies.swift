@@ -75,7 +75,10 @@ struct FixtureDependencies {
         let scratch = scratchRoot.appendingPathComponent("ghast-fixture-\(UUID().uuidString)", isDirectory: true)
         let runners = scratch.appendingPathComponent("runners", isDirectory: true)
         let suite = "net.evancoleman.ghast.fixture.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite) ?? UserDefaults()
+        // No fallback: `UserDefaults()` would be the user's real defaults.
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            preconditionFailure("cannot create the fixture's private defaults suite \(suite)")
+        }
         defaults.removePersistentDomain(forName: suite)
 
         let api = FixtureGitHubAPIService()

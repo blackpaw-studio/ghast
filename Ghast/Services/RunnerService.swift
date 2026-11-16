@@ -497,7 +497,7 @@ class RunnerService {
         // Graceful first. The wrapper leads its own process group, so the group signal reaches
         // the runner and its helpers and nothing else; no pattern kill, which would match
         // other runners whose folder name merely starts the same.
-        kill(-running.processGroupID, SIGTERM)
+        send(SIGTERM, to: running)
         
         let launchToken = running.launchToken
         Task { [weak self, sleeper] in
@@ -508,13 +508,26 @@ class RunnerService {
         }
     }
     
+    /// Whether `kill(-pgid, …)` is safe: never Ghast's own group (that would signal Ghast itself),
+    /// and never 0, 1 or negative values, which `kill` reads as "everything".
+    nonisolated static func canSignalGroup(_ pgid: pid_t, ownGroup: pid_t = getpgrp()) -> Bool {
+        pgid > 1 && pgid != ownGroup
+    }
+    
+    /// Signals the process and, when that is safe, its whole group.
+    private func send(_ signal: Int32, to running: RunningProcess) {
+        if Self.canSignalGroup(running.processGroupID) {
+            kill(-running.processGroupID, signal)
+        }
+        kill(running.handle.processIdentifier, signal)
+    }
+    
     /// SIGKILLs the launch if it is still running. Returns whether it was.
     private func forceKill(id: String, launchToken: UUID) -> Bool {
         guard let running = runningProcesses[id], running.launchToken == launchToken, running.handle.isRunning else {
             return false
         }
-        kill(-running.processGroupID, SIGKILL)
-        kill(running.handle.processIdentifier, SIGKILL)
+        send(SIGKILL, to: running)
         return true
     }
     
@@ -531,12 +544,9 @@ class RunnerService {
         #endif
         
         for (id, running) in Array(runningProcesses) {
-            let pgid = running.processGroupID
-            let pid = running.handle.processIdentifier
-            
             // Graceful first: the process, then its whole group.
             running.handle.terminate()
-            kill(-pgid, SIGTERM)
+            send(SIGTERM, to: running)
             
             let deadline = Date().addingTimeInterval(1.0)
             while running.handle.isRunning && Date() < deadline {
@@ -545,8 +555,7 @@ class RunnerService {
             
             var code = 128 + SIGTERM
             if running.handle.isRunning {
-                kill(-pgid, SIGKILL)
-                kill(pid, SIGKILL)
+                send(SIGKILL, to: running)
                 Thread.sleep(forTimeInterval: 0.1)
                 code = 128 + SIGKILL
             }
