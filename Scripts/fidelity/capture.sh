@@ -34,7 +34,7 @@ start_virtual_display
 
 APP_LOG="$OUT_DIR/app-$SCREEN$APPEARANCE.log"
 : > "$APP_LOG"
-APP_ARGS=(-GhastDesignFixture "$SCREEN")
+APP_ARGS=(-GhastDesignFixture "$SCREEN" -ApplePersistenceIgnoreState YES)
 [ -n "$APPEARANCE" ] && APP_ARGS+=(-GhastAppearance dark)
 "$APP_BINARY" "${APP_ARGS[@]}" > "$APP_LOG" 2>&1 &
 APP_PID=$!

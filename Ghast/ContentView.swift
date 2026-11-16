@@ -3,7 +3,6 @@ import Foundation
 
 struct ContentView: View {
     let authService: GitHubAuthService
-    @State private var appState = AppState()
     
     var body: some View {
         Group {
@@ -19,21 +18,16 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(NSColor.windowBackgroundColor))
             } else if authService.isAuthenticated {
-                MainAppView()
+                FocusMainView()
                     .environment(authService)
-                    .environment(appState)
-                    .onAppear {
-                        print("🔐 UI: MainAppView appeared")
-                    }
             } else {
+                // The Focus welcome window arrives with the sign-in flows.
                 WelcomeView()
                     .environment(authService)
-                    .onAppear {
-                        print("🔐 UI: WelcomeView appeared")
-                    }
+                    .frame(minWidth: 1200, minHeight: 650)
             }
         }
-        .frame(minWidth: 1200, maxWidth: .infinity, minHeight: 650, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             // Check for stored authentication when app starts
             Task {

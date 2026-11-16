@@ -35,6 +35,8 @@ final class FixtureStage {
         self.prepare = prepare
     }
 
+    var mainWindowPreset: MainWindowPreset? { launch.screen.mainWindowPreset }
+
     func shutdown() {
         removeScratch()
     }

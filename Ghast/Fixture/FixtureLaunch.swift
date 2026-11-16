@@ -95,6 +95,21 @@ struct FixtureWindowPlacement: Equatable, Sendable {
 extension FixtureScreen {
     private static let mainWindow = FixtureWindowPlacement(size: CGSize(width: 1240, height: 780), topLeft: CGPoint(x: 100, y: 60))
 
+    /// What the main window opens on for this screen; nil for screens without it.
+    var mainWindowPreset: MainWindowPreset? {
+        switch self {
+        case .main, .newRunner, .newRunnerProgress: return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output)
+        case .configuration: return MainWindowPreset(runnerName: "dionysus-xcode", tab: .configuration)
+        case .remote: return MainWindowPreset(runnerName: "helios-linux", tab: .output)
+        case .error: return MainWindowPreset(runnerName: "ghast-release", tab: .output)
+        case .firstRun: return MainWindowPreset(runnerName: nil, tab: .output)
+        case .welcome, .deviceCode, .settingsGeneral, .settingsAccount, .menuBar: return nil
+        }
+    }
+
+    /// The first-run screen is the window right after sign-in: no runners on this Mac yet.
+    var hasLocalRunners: Bool { self != .firstRun }
+
     /// nil when the screen has no window of its own (the menu bar extra).
     var placement: FixtureWindowPlacement? {
         switch self {

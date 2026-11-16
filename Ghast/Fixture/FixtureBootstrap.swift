@@ -18,7 +18,10 @@ enum FixtureBootstrap {
             let stage = FixtureStage(
                 launch: launch,
                 removeScratch: { dependencies.tearDown() },
-                prepare: { await dependencies.seedProcessStates() }
+                prepare: {
+                    await dependencies.seedProcessStates()
+                    await dependencies.appDependencies.startServices()
+                }
             )
             return Result(dependencies: dependencies, stage: stage)
         } catch {

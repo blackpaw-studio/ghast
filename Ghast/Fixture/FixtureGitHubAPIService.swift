@@ -40,6 +40,14 @@ enum FixtureWorld {
 /// A `GitHubAPIServiceProtocol` that answers from `FixtureWorld` and never leaves the process.
 @MainActor
 final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
+    /// False on the first-run screen, where this Mac has no runners yet, so GitHub lists only
+    /// the other machines'.
+    private let listsThisMacRunners: Bool
+
+    init(listsThisMacRunners: Bool = true) {
+        self.listsThisMacRunners = listsThisMacRunners
+    }
+
     func setAccessToken(_ token: String) {}
 
     func fetchCurrentUser(token: String?) async throws -> AuthenticatedUser {
@@ -52,8 +60,12 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
 
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
         switch scope {
-        case FixtureWorld.organizationScope: return FixtureWorld.organizationRunners
-        case FixtureWorld.repositoryScope: return FixtureWorld.repositoryRunners
+        case FixtureWorld.organizationScope:
+            guard !listsThisMacRunners else { return FixtureWorld.organizationRunners }
+            let localNames = Set(FixtureWorld.localRunners.map(\.name))
+            return FixtureWorld.organizationRunners.filter { !localNames.contains($0.name) }
+        case FixtureWorld.repositoryScope:
+            return listsThisMacRunners ? FixtureWorld.repositoryRunners : []
         default: return []
         }
     }

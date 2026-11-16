@@ -15,8 +15,15 @@ enum FocusMetrics {
 
     // MARK: Main window
     static let sidebarWidth: CGFloat = 248
+    /// The kit's floating sidebar sits 8 pt in from the window edge on each side, so the detail
+    /// column starts at 8 + 248 + 8 = 264. The native sidebar is full-bleed on the build host,
+    /// so it takes the panel's whole footprint and the content lines up with the mockups.
+    static let sidebarColumnWidth: CGFloat = 264
     static let sidebarMinWidth: CGFloat = 220
     static let sidebarMaxWidth: CGFloat = 320
+    /// Measured: the content layer starts 64 pt below the window's top edge in every main
+    /// window PNG (the kit's toolbar band), whatever height the native toolbar has.
+    static let contentTop: CGFloat = 64
     static let contentInset: CGFloat = 32
     /// Measured: the Configuration form is 1277 / 1.68 ≈ 760 pt wide in Configuration.png.
     static let configurationMaxWidth: CGFloat = 760

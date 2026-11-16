@@ -7,6 +7,7 @@ import Sparkle
 struct AppDependencies {
     let runnerService: RunnerService
     let activityStore: RunnerActivityStore
+    let remoteStore: RemoteRunnerStore
     let apiService: any GitHubAPIServiceProtocol
     let authService: GitHubAuthService
     let clock: any AppClock
@@ -26,9 +27,15 @@ struct AppDependencies {
         hostInfo: any HostInfo = SystemHostInfo(),
         fileTrasher: any FileTrasher = WorkspaceFileTrasher(),
         processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
-        settings: AppSettings
+        settings: AppSettings,
+        remoteStore: RemoteRunnerStore? = nil
     ) {
         self.runnerService = runnerService
+        self.remoteStore = remoteStore ?? RemoteRunnerStore(
+            api: apiService,
+            clock: clock,
+            localScopes: { runnerService.localRunners.map(\.scope) }
+        )
         self.activityStore = activityStore
         self.apiService = apiService
         self.authService = authService
@@ -38,6 +45,18 @@ struct AppDependencies {
         self.fileTrasher = fileTrasher
         self.processLauncher = processLauncher
         self.settings = settings
+    }
+
+    /// The words the Focus views write against this app's clock and host.
+    var focusContext: FocusContext {
+        FocusContext(clock: clock, hostInfo: hostInfo)
+    }
+
+    /// Starts the always-on services: output tailing for every local runner and GitHub's
+    /// runner lists. Never called under test.
+    func startServices() async {
+        activityStore.observe(runnerService)
+        await remoteStore.refresh(.launch)
     }
 
     static func live() -> AppDependencies {
@@ -60,19 +79,22 @@ struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        WindowGroup {
+        Window("Ghast", id: "main") {
             if !isRunningTests() {
                 let dependencies = appDelegate.dependencies
                 ContentView(authService: dependencies.authService)
                     .environment(dependencies.runnerService)
+                    .environment(dependencies.activityStore)
+                    .environment(dependencies.remoteStore)
                     .environment(\.gitHubAPIService, dependencies.apiService)
+                    .environment(\.focusContext, dependencies.focusContext)
+                    .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
             } else {
                 EmptyView()
             }
         }
-        .windowStyle(.titleBar)
-        .windowResizability(.contentSize)
-        .defaultSize(width: 1000, height: 700)
+        .windowResizability(.contentMinSize)
+        .defaultSize(FocusMetrics.mainWindowSize)
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .appInfo) {
@@ -134,6 +156,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     
+    /// The selection the design fixture opens on; nil on a normal launch.
+    var mainWindowPreset: MainWindowPreset? {
+        #if DEBUG
+        return fixtureStage?.mainWindowPreset
+        #else
+        return nil
+        #endif
+    }
+    
     init(dependencies: AppDependencies) {
         builtDependencies = dependencies
         updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
@@ -175,6 +206,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Disable sudden termination to ensure cleanup
         ProcessInfo.processInfo.disableSuddenTermination()
+        
+        let dependencies = dependencies
+        Task { await dependencies.startServices() }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
