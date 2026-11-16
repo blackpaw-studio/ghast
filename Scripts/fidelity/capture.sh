@@ -5,10 +5,11 @@
 #
 # Builds Debug into build/DerivedData, starts the HiDPI virtual display, launches the fixture,
 # waits (30 s cap) for its `fixture-ready window=<n> rect=<x>,<y>,<w>,<h>` line, then captures
-# the window with `screencapture -l <n> -o`. The menu-bar screen has no window of its own, so
-# it captures the whole display instead.
+# the window with `peekaboo see --window-id <n> --retina`. The menu-bar screen has no window of
+# its own, so it captures the whole virtual display as a region instead.
 #
-# Needs Screen Recording granted to the process that runs this script.
+# Captures go through Peekaboo, whose Bridge holds Screen Recording; the script fails if
+# `peekaboo permissions` doesn't report it granted.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -20,8 +21,8 @@ done
 parse_screen_args ${ARGS[@]+"${ARGS[@]}"}
 
 need xcodebuild
-need screencapture
 mkdir -p "$OUT_DIR"
+require_screen_recording
 
 if [ "$NO_BUILD" -eq 0 ]; then
     (cd "$REPO_ROOT" && xcodebuild build -project Ghast.xcodeproj -scheme Ghast -configuration Debug \
@@ -45,10 +46,10 @@ RECT="$(sed -E 's/.* rect=([0-9,]+).*/\1/' <<<"$READY")"
 
 OUT_PNG="$OUT_DIR/$SCREEN$APPEARANCE.png"
 if [ "$WINDOW_ID" = "0" ]; then
-    # Region capture of the whole virtual display: -R x,y,w,h in global points.
-    screencapture -x -R "$VD_ORIGIN,1440,900" "$OUT_PNG"
+    # Region capture of the whole virtual display, x,y,w,h in global points.
+    peek_region "$VD_ORIGIN,1440,900" "$OUT_PNG"
 else
-    screencapture -x -l "$WINDOW_ID" -o "$OUT_PNG"
+    peek_window "$WINDOW_ID" "$OUT_PNG"
 fi
 echo "$RECT" > "$OUT_DIR/$SCREEN$APPEARANCE.rect"
 echo "$OUT_PNG"

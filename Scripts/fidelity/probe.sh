@@ -6,24 +6,26 @@
 # 1. Starts the 1440x900 pt HiDPI virtual display.
 # 2. Launches the glass probe there: a NavigationSplitView with glass toolbar groups, in front
 #    of a window painted with high-contrast stripes.
-# 3. Captures it with `screencapture -l <id> -o`, and the same rect with `screencapture -R`.
+# 3. Captures it with `peekaboo see --window-id <id> --retina`, and the same rect as a region
+#    (`--mode area --region`).
 # 4. Asserts (a) the window capture is exactly 2x the window size, (b) the sidebar shows
 #    blurred stripes (variance above a flat fill, below the sharp stripes), so glass sampled
-#    its backdrop, (c) the -l and -R captures agree.
+#    its backdrop, (c) the window and region captures agree.
 #
 # Exits 0 only if every assertion holds. Output: build/fidelity/probe-*.png.
-# Needs Screen Recording granted to the process that runs this script.
+# Captures go through Peekaboo (its Bridge holds Screen Recording); the script fails if
+# `peekaboo permissions` doesn't report it granted.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 need magick
-need screencapture
 mkdir -p "$OUT_DIR"
+require_screen_recording
 
 # Sidebar region inside the probe window, in points from the window's top-left (below the
 # toolbar, clear of the rounded corners).
 SIDEBAR_X=16 SIDEBAR_Y=120 SIDEBAR_W=200 SIDEBAR_H=300
-# -l vs -R agreement: normalised RMSE must stay under this (corners and shadow differ a little).
+# window vs region agreement: normalised RMSE must stay under this (corners and shadow differ a little).
 AGREE_MAX="0.03"
 # Blur window: stddev of the sidebar crop, as a fraction of the sharp backdrop's.
 BLUR_MIN_ABS="0.01"
@@ -47,9 +49,9 @@ IFS=, read -r RX RY RW RH <<<"$RECT"
 WIN_PNG="$OUT_DIR/probe-window.png"
 REGION_PNG="$OUT_DIR/probe-region.png"
 BACKDROP_PNG="$OUT_DIR/probe-backdrop.png"
-screencapture -x -l "$WINDOW_ID" -o "$WIN_PNG"
-screencapture -x -R "$RX,$RY,$RW,$RH" "$REGION_PNG"
-screencapture -x -l "$BACKDROP_ID" -o "$BACKDROP_PNG"
+peek_window "$WINDOW_ID" "$WIN_PNG"
+peek_region "$RX,$RY,$RW,$RH" "$REGION_PNG"
+peek_window "$BACKDROP_ID" "$BACKDROP_PNG"
 
 FAILED=0
 check() { # check <label> <ok: 0|1> <detail>
@@ -71,14 +73,14 @@ SOURCE_SD="$(stddev "$BACKDROP_PNG" "$backdrop_crop")"
 ok="$(awk -v s="$SIDEBAR_SD" -v src="$SOURCE_SD" -v lo="$BLUR_MIN_ABS" -v r="$BLUR_MAX_RATIO" 'BEGIN { print (s > lo && s < src * r) ? 1 : 0 }')"
 check "sidebar glass blurs the stripes" "$ok" "sidebar stddev $SIDEBAR_SD, sharp backdrop $SOURCE_SD (need > $BLUR_MIN_ABS and < $BLUR_MAX_RATIO x source)"
 
-# (c) -l and -R agree, ignoring the rounded corners
+# (c) window and region captures agree, ignoring the rounded corners
 SHAVE=40
 magick "$WIN_PNG" -shave "${SHAVE}x${SHAVE}" "$OUT_DIR/probe-window-inner.png"
 magick "$REGION_PNG" -shave "${SHAVE}x${SHAVE}" "$OUT_DIR/probe-region-inner.png"
 RMSE="$(magick compare -metric RMSE "$OUT_DIR/probe-window-inner.png" "$OUT_DIR/probe-region-inner.png" null: 2>&1 \
     | sed -E 's/.*\(([0-9.e+-]+)\).*/\1/' || true)"
 ok="$(awk -v v="${RMSE:-1}" -v max="$AGREE_MAX" 'BEGIN { print (v + 0 < max) ? 1 : 0 }')"
-check "-l and -R captures agree" "$ok" "normalised RMSE ${RMSE:-unknown}, need < $AGREE_MAX"
+check "window and region captures agree" "$ok" "normalised RMSE ${RMSE:-unknown}, need < $AGREE_MAX"
 
 echo "probe images: $WIN_PNG $REGION_PNG $BACKDROP_PNG"
 exit "$FAILED"

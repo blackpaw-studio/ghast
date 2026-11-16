@@ -31,6 +31,32 @@ trap cleanup_fidelity EXIT
 # Registers a background process to be killed when the script exits.
 track_pid() { FIDELITY_PIDS+=("$1"); }
 
+# require_screen_recording: fails loudly unless Peekaboo reports Screen Recording granted.
+# Captures go through Peekaboo (its Bridge holds the permission); `screencapture` is denied here.
+require_screen_recording() {
+    need peekaboo
+    local report
+    report="$(peekaboo permissions 2>&1)" || die "peekaboo permissions failed:
+$report"
+    grep -Eq 'Screen Recording[^:]*: *Granted' <<<"$report" \
+        || die "Peekaboo does not report Screen Recording as granted; captures would be blank or denied:
+$report"
+}
+
+# peek_window <CGWindowID> <out.png>: the window at native Retina resolution.
+peek_window() {
+    peekaboo see --no-elements --window-id "$1" --retina --path "$2" >/dev/null 2>"$OUT_DIR/peekaboo.err" \
+        || die "peekaboo window capture of $1 failed: $(cat "$OUT_DIR/peekaboo.err")"
+    [ -s "$2" ] || die "peekaboo wrote no image for window $1"
+}
+
+# peek_region <x,y,w,h in global points> <out.png>: a screen region at native Retina resolution.
+peek_region() {
+    peekaboo see --no-elements --mode area --region "$1" --retina --path "$2" >/dev/null 2>"$OUT_DIR/peekaboo.err" \
+        || die "peekaboo region capture of $1 failed: $(cat "$OUT_DIR/peekaboo.err")"
+    [ -s "$2" ] || die "peekaboo wrote no image for region $1"
+}
+
 # build_tool <name> <swiftc args...>: compiles into $BIN_DIR when the sources are newer.
 build_tool() {
     local name="$1"; shift
