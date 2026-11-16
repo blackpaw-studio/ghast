@@ -40,6 +40,28 @@ struct RunnerWrapperTests {
         return Harness(service: service, runner: runner, folder: folder, defaults: defaults, root: root)
     }
 
+    /// Adds a second runner, with its own folder under the same root, to `harness`'s service.
+    private func addRunner(named name: String, runScript: String, to harness: Harness) throws -> LocalRunner {
+        let folder = harness.root.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let script = folder.appendingPathComponent("run.sh")
+        try ("#!/bin/bash\n" + runScript + "\n").write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let runner = LocalRunner(name: name, scope: .organization(login: "acme"), path: folder.path)
+        harness.service.addLocalRunner(runner)
+        return runner
+    }
+
+    /// Passes when `condition` stays true for `duration`; fails the moment it turns false.
+    private func staysTrue(for duration: Duration, _ description: String, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: duration)
+        while ContinuousClock.now < deadline {
+            #expect(condition(), "\(description)")
+            if !condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
     /// Waits for `condition`, yielding to the main actor between checks.
     private func waitUntil(_ description: String, _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(15))
@@ -134,6 +156,26 @@ struct RunnerWrapperTests {
         #expect(exit.wasRequested)
         #expect(!service.localRunners[0].shouldBeRunning)
         #expect(!service.isRunnerRunning(id: runner.id))
+    }
+
+    @Test("stopping a runner leaves another whose folder name starts with the same text untouched")
+    func stopDoesNotReachPrefixSibling() async throws {
+        let harness = try makeRunner(runScript: "sleep 60", folderName: "mac")
+        let service = harness.service
+        let sibling = try addRunner(named: "mac-arm", runScript: "sleep 60", to: harness)
+        try await service.startRunner(id: harness.runner.id)
+        try await service.startRunner(id: sibling.id)
+
+        service.stopRunner(id: harness.runner.id)
+        try await waitUntil("mac to stop") { service.processStates[harness.runner.id] == .stopped }
+
+        // The stop's side effects (a stray pattern kill, if any) land within a few milliseconds.
+        try await staysTrue(for: .milliseconds(250), "mac-arm must keep running") { isRunning(service.processStates[sibling.id]) }
+        let siblingRunner = try #require(service.localRunners.first { $0.id == sibling.id })
+        #expect(siblingRunner.shouldBeRunning)
+        #expect(siblingRunner.lastExit == nil)
+
+        service.stopAllRunners()
     }
 
     @Test("quitting stops the process but keeps run intent for the next launch")

@@ -472,18 +472,10 @@ class RunnerService {
         let pgid = running.processGroupID
         let pid = running.handle.processIdentifier
         
-        // First try graceful termination of the process group
+        // Graceful first. The wrapper leads its own process group, so the group signal reaches
+        // the runner and its helpers and nothing else; no pattern kill, which would match
+        // other runners whose folder name merely starts the same.
         kill(-pgid, SIGTERM)
-        
-        // Read the path while still on the main actor; only value snapshots cross to the background queue.
-        let runnerPath = localRunners.first(where: { $0.id == id })?.path
-        
-        // Also kill any related processes by pattern for this specific runner (async)
-        if let runnerPath {
-            DispatchQueue.global(qos: .utility).async {
-                Self.killProcesses(matching: runnerPath, signal: nil)
-            }
-        }
         
         // Give it a moment to terminate gracefully, then force it.
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
@@ -491,29 +483,6 @@ class RunnerService {
             guard kill(pid, 0) == 0 else { return }
             kill(-pgid, SIGKILL)
             kill(pid, SIGKILL)
-            if let runnerPath {
-                Self.killProcesses(matching: runnerPath, signal: "-9")
-            }
-        }
-    }
-    
-    /// Runs `pkill -f <path>` (optionally with a signal flag) to catch stragglers in a runner
-    /// directory. The path is matched literally and passed as an argument, never to a shell.
-    /// Blocks until `pkill` exits, so call it off the main actor.
-    nonisolated private static func killProcesses(matching runnerPath: String, signal: String?) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        process.arguments = (signal.map { [$0] } ?? []) + ["-f", NSRegularExpression.escapedPattern(for: runnerPath)]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            #if DEBUG
-            print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
-            #endif
         }
     }
     
