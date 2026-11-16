@@ -376,6 +376,9 @@ class RunnerService {
     }
     
     func startRunner(id: String) async throws {
+        // A stop that is still pending (its card already reads stopped) must finish first.
+        await waitForPendingStop(id: id)
+        
         guard let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) else {
             throw RunnerError.runnerNotFound
         }
@@ -471,8 +474,18 @@ class RunnerService {
     /// after another grace period if the exit is never reported.
     func stopRunner(id: String) async {
         requestStop(id: id)
+        await waitForTermination(of: id)
+    }
+    
+    /// Returns once the runner's current process has ended; immediately if there is none.
+    private func waitForTermination(of id: String) async {
         guard runningProcesses[id] != nil else { return }
         await withCheckedContinuation { terminationWaiters[id, default: []].append($0) }
+    }
+    
+    private func waitForPendingStop(id: String) async {
+        guard stopRequested.contains(id) else { return }
+        await waitForTermination(of: id)
     }
     
     /// Asks a runner to stop and returns immediately; the process ends (and is recorded) later.

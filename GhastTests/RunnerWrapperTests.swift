@@ -222,6 +222,27 @@ struct RunnerWrapperTests {
         await service.stopRunner(id: runner.id)
     }
 
+    @Test("a start clicked while a stop is still pending waits for the old process, then succeeds")
+    func startDuringPendingStop() async throws {
+        let harness = try makeRunner(runScript: "echo up\nsleep 60")
+        let (service, runner) = (harness.service, harness.runner)
+        try await service.startRunner(id: runner.id)
+
+        // Request the stop but don't await it; let it reach its pending state.
+        let stop = Task { await service.stopRunner(id: runner.id) }
+        await Task.yield()
+
+        try await service.startRunner(id: runner.id)
+
+        #expect(isRunning(service.processStates[runner.id]))
+        #expect(service.isRunnerRunning(id: runner.id))
+        #expect(service.localRunners[0].shouldBeRunning)
+        // The old process's requested exit was recorded before the new one started.
+        #expect(service.localRunners[0].lastExit?.wasRequested == true)
+        await stop.value
+        await service.stopRunner(id: runner.id)
+    }
+
     @Test("a process that never reports its end is given up on after the grace period, bounded")
     func stopGivesUpOnStuckProcess() async throws {
         let root = makeTemporaryDirectory()
