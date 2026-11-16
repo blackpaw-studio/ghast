@@ -18,6 +18,9 @@ struct AppDependencies {
     let settings: AppSettings
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
+    /// How runner folders are written; the design fixture shows its scratch folder as the
+    /// real runners folder.
+    var displayPath: @Sendable (String) -> String = { ($0 as NSString).abbreviatingWithTildeInPath }
 
     init(
         runnerService: RunnerService,
@@ -51,7 +54,7 @@ struct AppDependencies {
 
     /// The words the Focus views write against this app's clock and host.
     var focusContext: FocusContext {
-        FocusContext(clock: clock, hostInfo: hostInfo, animatesCursor: animatesCursor)
+        FocusContext(clock: clock, hostInfo: hostInfo, animatesCursor: animatesCursor, sleeper: sleeper, displayPath: displayPath)
     }
 
     /// Starts the always-on services: output tailing for every local runner and GitHub's

@@ -99,6 +99,31 @@ enum FocusMetrics {
     static let outputButtonGlyph: CGFloat = 13
     static let findFieldWidth: CGFloat = 260
 
+    // MARK: Configuration form (measured from Configuration.png)
+    static let formTop: CGFloat = 16
+    static let formRowInset: CGFloat = 14
+    static let formCaptionGap: CGFloat = 6
+    static let formSectionGap: CGFloat = 24
+    static let formBoxRadius: CGFloat = 10
+    static let formRowHeight: CGFloat = 40
+    static let formButtonRowHeight: CGFloat = 44
+    static let formToggleRowHeight: CGFloat = 42
+    static let environmentRowHeight: CGFloat = 36
+    static let formAddRemoveTop: CGFloat = 8
+    static let formHelpTop: CGFloat = 8
+    static let formRemoveTop: CGFloat = 26
+    static let addRemoveButtonWidth: CGFloat = 26
+    static let addRemoveHeight: CGFloat = 22
+    static let addRemoveDividerHeight: CGFloat = 14
+    static let fieldRadius: CGFloat = 6
+    static let invalidFieldOutset: CGFloat = 3
+    static let scriptEditorHeight: CGFloat = 94
+    static let scriptEditorPadding: CGFloat = 8
+    static let scriptEditorRadius: CGFloat = 8
+    /// The kit's mono text sits on a 19 pt line.
+    static let scriptLineSpacing: CGFloat = 4
+    static let scriptEditorExtraTop: CGFloat = 2
+
     // MARK: Welcome and empty states
     static let appIconLarge: CGFloat = 96
     static let appIconLargeRadius: CGFloat = 22

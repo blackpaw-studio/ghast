@@ -103,6 +103,10 @@ struct FixtureDependencies {
             settings: AppSettings(defaults: defaults)
         )
         dependencies.animatesCursor = false
+        let scratchRunners = runners.path
+        dependencies.displayPath = { path in
+            path.hasPrefix(scratchRunners) ? "~/.ghast/runners" + path.dropFirst(scratchRunners.count) : path
+        }
         if launch.screen.hasLocalRunners {
             Self.writeRunners(into: runners, service: dependencies.runnerService)
         }

@@ -92,7 +92,8 @@ struct FocusMainView: View {
                     tab: tab.wrappedValue,
                     actions: actions,
                     pane: outputPane(for: localID),
-                    clearOutput: { runnerService.clearOutput(id: localID) }
+                    clearOutput: { runnerService.clearOutput(id: localID) },
+                    runnerService: runnerService
                 )
             }
         case let .otherMachine(runner)?:

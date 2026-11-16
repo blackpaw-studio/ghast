@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 /// The injected time and host the Focus views write their words against, so tests and the
 /// design fixture control them.
@@ -8,6 +9,9 @@ struct FocusContext: Sendable {
     var calendar: Calendar = .current
     /// False in the design fixture, so a capture never catches the cursor mid-blink.
     var animatesCursor = true
+    var sleeper: Sleeper = { try await Task.sleep(for: $0) }
+    /// How a runner folder is written ("~/.ghast/runners/dionysus-xcode").
+    var displayPath: @Sendable (String) -> String = { ($0 as NSString).abbreviatingWithTildeInPath }
 
     var displayTime: DisplayTime { .current(now: clock.now(), calendar: calendar) }
 

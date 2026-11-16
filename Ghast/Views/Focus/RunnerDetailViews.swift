@@ -10,6 +10,7 @@ struct LocalRunnerDetail: View {
     let actions: RunnerActions
     let pane: OutputPaneState
     let clearOutput: () -> Void
+    let runnerService: RunnerService
     @Environment(\.focusContext) private var context
 
     var body: some View {
@@ -28,11 +29,17 @@ struct LocalRunnerDetail: View {
                         clear: clearOutput
                     )
                 }
+                .focusContentLayer()
             case .configuration:
-                Text("Configuration")
+                RunnerConfigurationForm(
+                    item: item,
+                    runner: runner,
+                    isRunning: actions.isRunning(runner.id),
+                    runnerService: runnerService,
+                    actions: actions
+                )
             }
         }
-        .focusContentLayer()
         .onChange(of: activity.currentJob) { old, new in
             announceJobChange(from: old, to: new)
         }
