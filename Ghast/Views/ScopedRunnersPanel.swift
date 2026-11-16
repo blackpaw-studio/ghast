@@ -198,11 +198,18 @@ struct ScopedRunnersPanel<Header: View>: View {
                     
                     VStack(spacing: 8) {
                         ForEach(filteredRemoteRunners) { runner in
-                            ModernRemoteRunnerCard(runner: runner, scope: scope) {
-                                Task {
-                                    await loadRunners()
+                            ModernRemoteRunnerCard(
+                                runner: runner,
+                                scope: scope,
+                                onRunnerDeleted: {
+                                    Task {
+                                        await loadRunners()
+                                    }
+                                },
+                                onDeleteFailed: { error in
+                                    errorMessage = scope.errorMessage(for: error)
                                 }
-                            }
+                            )
                         }
                     }
                 }

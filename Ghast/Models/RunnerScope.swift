@@ -37,12 +37,19 @@ enum RunnerScope: Hashable, Sendable {
     /// User-facing text for a failed runner call. A 403/404 on an organization most
     /// likely means the user isn't an owner of it.
     func errorMessage(for error: Error) -> String {
-        if case .organization(let login) = self,
-           let status = (error as? GitHubAPIError)?.statusCode,
-           status == 403 || status == 404 {
-            return "You need to be an owner of \(login) to manage its runners."
-        }
-        return error.localizedDescription
+        ownershipMessage(for: error) ?? error.localizedDescription
+    }
+
+    /// Like `errorMessage(for:)`, but other errors read "`action`: description".
+    func errorMessage(for error: Error, failing action: String) -> String {
+        ownershipMessage(for: error) ?? "\(action): \(error.localizedDescription)"
+    }
+
+    private func ownershipMessage(for error: Error) -> String? {
+        guard case .organization(let login) = self,
+              let status = (error as? GitHubAPIError)?.statusCode,
+              status == 403 || status == 404 else { return nil }
+        return "You need to be an owner of \(login) to manage its runners."
     }
 
     /// Maps a runner's `gitHubUrl` (from its `.runner` file) to a scope:

@@ -844,7 +844,7 @@ struct AddRunnerView: View {
             
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = scope.errorMessage(for: error)
                 self.isLoading = false
                 withAnimation {
                     self.currentStep = .configure
@@ -876,7 +876,7 @@ struct AddRunnerView: View {
             // A view that disappears mid-fetch cancels the request; that isn't a failure.
             guard !error.isCancellation else { return }
             await MainActor.run {
-                self.errorMessage = "Failed to load runner applications for \(scope.displayName): \(error.localizedDescription)"
+                self.errorMessage = scope.errorMessage(for: error, failing: "Failed to load runner applications for \(scope.displayName)")
                 print("🏃 Runner Applications Error: \(error)")
             }
         }

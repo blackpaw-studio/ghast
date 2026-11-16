@@ -295,6 +295,8 @@ struct ModernRemoteRunnerCard: View {
     let runner: GitHubRunner
     let scope: RunnerScope
     let onRunnerDeleted: () -> Void
+    /// Called with the error when removal fails, so the page can show it.
+    let onDeleteFailed: (Error) -> Void
     @State private var isHovered = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
@@ -489,8 +491,8 @@ struct ModernRemoteRunnerCard: View {
         } catch {
             await MainActor.run {
                 isDeleting = false
+                if !error.isCancellation { onDeleteFailed(error) }
             }
-            print("Failed to delete runner: \(error)")
         }
     }
 }

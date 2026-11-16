@@ -88,4 +88,16 @@ import Foundation
     func repositoryErrorsUseTheirDescription(error: GitHubAPIError) {
         #expect(RunnerScope.repository(fullName: "octo/ghast").errorMessage(for: error) == error.localizedDescription)
     }
+
+    @Test(arguments: [GitHubAPIError.httpStatus(403), .notFound])
+    func prefixedOrganizationPermissionErrorsExplainOwnership(error: GitHubAPIError) {
+        #expect(RunnerScope.organization(login: "acme").errorMessage(for: error, failing: "Failed to load runner applications for acme")
+                == "You need to be an owner of acme to manage its runners.")
+    }
+
+    @Test func prefixedOtherErrorsKeepTheirContext() {
+        let error = GitHubAPIError.httpStatus(403)
+        #expect(RunnerScope.repository(fullName: "octo/ghast").errorMessage(for: error, failing: "Failed to load runner applications for octo/ghast")
+                == "Failed to load runner applications for octo/ghast: \(error.localizedDescription)")
+    }
 }
