@@ -43,12 +43,15 @@ struct RunnerReconfigurer {
         await services.runnerService.stopRunner(id: runner.id)
         let token = try await services.api.createRegistrationToken(for: runner.scope)
         let backup = try setAside(in: folder)
+        let environment = Self.environment(in: folder)
         do {
             try await services.registrar.register(registration, token: token.token, in: folder, replace: true)
         } catch {
+            Self.restore(environment, into: folder)
             restore(backup, into: folder)
             throw error
         }
+        Self.restore(environment, into: folder)
         if let backup { try? await services.trasher.trash(backup) }
         try await services.runnerService.startRunner(id: runner.id)
     }
@@ -88,6 +91,24 @@ struct RunnerReconfigurer {
         }
         guard let group = groups.first(where: { $0.id == groupID }) else { throw ReconfigureError.groupUnknown(runner: agent) }
         return group.isDefault ? nil : group.name
+    }
+
+    /// The runner's environment files. `config.sh` sources `env.sh`, which overwrites `.path`
+    /// with Ghast's own PATH and appends to `.env`; Reconfigure puts the runner's own back.
+    static let environmentFiles = [".path", ".env"]
+
+    private static func environment(in folder: URL) -> [String: Data] {
+        Dictionary(uniqueKeysWithValues: environmentFiles.compactMap { file in
+            (try? Data(contentsOf: folder.appendingPathComponent(file))).map { (file, $0) }
+        })
+    }
+
+    /// Writes the saved environment files back. A file that wasn't there before is left as
+    /// `config.sh` made it, as on a fresh setup.
+    private static func restore(_ environment: [String: Data], into folder: URL) {
+        for (file, data) in environment {
+            try? data.write(to: folder.appendingPathComponent(file), options: .atomic)
+        }
     }
 
     /// Moves the registration files into a hidden folder in the runner folder. nil when there

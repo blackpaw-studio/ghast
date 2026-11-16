@@ -167,6 +167,31 @@ import Foundation
         #expect(leftovers.isEmpty)
     }
 
+    /// config.sh sources env.sh, which rewrites `.path` with the caller's PATH (Ghast's, not
+    /// the shell the runner was set up from) and appends to `.env`. Reconfigure keeps the
+    /// runner's own environment, whether config.sh succeeds or fails.
+    @Test(arguments: [true, false])
+    func keepsTheRunnersPathAndEnvFiles(configSucceeds: Bool) async throws {
+        let runner = try await configuredRunner()
+        let folder = URL(fileURLWithPath: runner.path)
+        try Data("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin\n".utf8).write(to: folder.appendingPathComponent(".path"))
+        try Data("LANG=en_US.UTF-8\nRUNNER_TOOL_CACHE=/Volumes/cache\n".utf8).write(to: folder.appendingPathComponent(".env"))
+        let before = ["path": contents(runner, ".path"), "env": contents(runner, ".env")]
+        await h.scripts.set(configSideEffect: { folder in
+            try? Data("/usr/bin:/bin:/usr/sbin:/sbin\n".utf8).write(to: folder.appendingPathComponent(".path"))
+            let env = folder.appendingPathComponent(".env")
+            let existing = (try? Data(contentsOf: env)) ?? Data()
+            try? (existing + Data("JAVA_HOME=/opt/jdk\n".utf8)).write(to: env)
+        })
+        if !configSucceeds {
+            await h.scripts.set(config: ScriptResult(status: 1, output: "Http response code: Unauthorized"))
+        }
+
+        _ = try? await reconfigurer.reconfigure(runner)
+
+        #expect(["path": contents(runner, ".path"), "env": contents(runner, ".env")] == before)
+    }
+
     @Test func aTokenFailureTouchesNoFiles() async throws {
         let runner = try await configuredRunner()
         let before = snapshot(runner)

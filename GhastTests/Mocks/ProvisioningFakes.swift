@@ -77,6 +77,8 @@ actor FakeScriptRunner: RunnerScriptRunner {
     /// Results for the next config calls, used before `configResult`.
     var queuedConfigResults: [ScriptResult] = []
     var configGate: HoldGate?
+    /// Runs in the runner folder on each config call, before it returns, like `env.sh` does.
+    var configSideEffect: (@Sendable (URL) -> Void)?
     private(set) var calls: [(arguments: [String], directory: URL)] = []
 
     init(log: CallLog) { self.log = log }
@@ -88,11 +90,16 @@ actor FakeScriptRunner: RunnerScriptRunner {
         self.configGate = configGate
     }
 
+    func set(configSideEffect: @escaping @Sendable (URL) -> Void) {
+        self.configSideEffect = configSideEffect
+    }
+
     func run(_ arguments: [String], in directory: URL) async throws -> ScriptResult {
         calls.append((arguments, directory))
         let isRemove = arguments.dropFirst().first == "remove"
         log.append(isRemove ? "config remove \(directory.lastPathComponent)" : "config \(directory.lastPathComponent)")
         if isRemove { return removeResult }
+        configSideEffect?(directory)
         if let configGate { try? await configGate.wait() }
         return queuedConfigResults.isEmpty ? configResult : queuedConfigResults.removeFirst()
     }
