@@ -87,7 +87,7 @@ struct FixtureDependencies {
         let launcher = ScriptedRunnerLauncher(exitCodes: Dictionary(
             uniqueKeysWithValues: FixtureWorld.localRunners.compactMap { spec in spec.process.exit.map { (spec.name, $0.code) } }
         ))
-        let dependencies = AppDependencies(
+        var dependencies = AppDependencies(
             runnerService: RunnerService(
                 defaults: defaults,
                 runnersDirectory: runners,
@@ -102,6 +102,7 @@ struct FixtureDependencies {
             processLauncher: launcher,
             settings: AppSettings(defaults: defaults)
         )
+        dependencies.animatesCursor = false
         if launch.screen.hasLocalRunners {
             Self.writeRunners(into: runners, service: dependencies.runnerService)
         }

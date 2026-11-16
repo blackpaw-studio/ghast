@@ -16,6 +16,8 @@ struct AppDependencies {
     let fileTrasher: any FileTrasher
     let processLauncher: any RunnerProcessLauncher
     let settings: AppSettings
+    /// False in the design fixture: no cursor blink to catch mid-frame.
+    var animatesCursor = true
 
     init(
         runnerService: RunnerService,
@@ -49,7 +51,7 @@ struct AppDependencies {
 
     /// The words the Focus views write against this app's clock and host.
     var focusContext: FocusContext {
-        FocusContext(clock: clock, hostInfo: hostInfo)
+        FocusContext(clock: clock, hostInfo: hostInfo, animatesCursor: animatesCursor)
     }
 
     /// Starts the always-on services: output tailing for every local runner and GitHub's

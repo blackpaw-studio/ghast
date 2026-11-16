@@ -76,10 +76,28 @@ enum FocusMetrics {
     // MARK: Output
     static let outputLineHeight: CGFloat = 19
     static let outputTimeColumn: CGFloat = 64
-    static let outputGlyphColumn: CGFloat = 16
-    static let liveLineHeight: CGFloat = 24
+    /// Measured: glyphs centre 6 pt after the time column and the text starts 20 pt after it
+    /// (the spec's 16 pt column did not survive measurement).
+    static let outputGlyphColumn: CGFloat = 12
+    static let outputGlyphTextGap: CGFloat = 8
+    static let outputGlyphSize: CGFloat = 10
+    static let outputCircleGlyphSize: CGFloat = 11
+    static let cursorGap: CGFloat = 6
+    /// Measured: 23 pt high, 2 pt below the line before it, 10 pt wider than the text on each side.
+    static let liveLineHeight: CGFloat = 23
+    static let liveLineTopGap: CGFloat = 2
     static let liveLineRadius: CGFloat = 6
-    static let liveLineInset: CGFloat = -8
+    static let liveLineInset: CGFloat = 10
+    static let cursorSize = CGSize(width: 7, height: 14)
+    static let cursorBlinkInterval: TimeInterval = 0.6
+    /// From the header separator to the centre of the "Output" row (201 − 177 − 8).
+    static let outputHeaderTop: CGFloat = 16
+    /// From the "Output" row to the first line.
+    static let outputLinesTop: CGFloat = 18
+    static let outputButtonSize: CGFloat = 16
+    static let outputButtonSpacing: CGFloat = 16
+    static let outputButtonGlyph: CGFloat = 13
+    static let findFieldWidth: CGFloat = 260
 
     // MARK: Welcome and empty states
     static let appIconLarge: CGFloat = 96

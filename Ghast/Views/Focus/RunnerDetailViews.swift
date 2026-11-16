@@ -8,6 +8,8 @@ struct LocalRunnerDetail: View {
     let activity: RunnerActivity
     let tab: DetailTab
     let actions: RunnerActions
+    let pane: OutputPaneState
+    let clearOutput: () -> Void
     @Environment(\.focusContext) private var context
 
     var body: some View {
@@ -18,13 +20,31 @@ struct LocalRunnerDetail: View {
                 VStack(alignment: .leading, spacing: 0) {
                     header(time: time)
                     ContentSeparator()
-                    Spacer(minLength: 0)
+                    RunnerOutputView(
+                        lines: activity.lines,
+                        hasLiveLine: activity.currentJob != nil && activity.lines.last?.kind == .jobStarted,
+                        pane: pane,
+                        copyAll: { actions.copy(OutputLine.copyText(activity.lines)) },
+                        clear: clearOutput
+                    )
                 }
             case .configuration:
                 Text("Configuration")
             }
         }
         .focusContentLayer()
+        .onChange(of: activity.currentJob) { old, new in
+            announceJobChange(from: old, to: new)
+        }
+    }
+
+    /// Spoken politely when a job starts or ends, never per line.
+    private func announceJobChange(from old: CurrentJob?, to new: CurrentJob?) {
+        if let new, new != old {
+            AccessibilityNotification.Announcement("\(runner.name) started \(new.name)").post()
+        } else if let old, new == nil {
+            AccessibilityNotification.Announcement("\(runner.name) finished \(old.name)").post()
+        }
     }
 
     private func header(time: DisplayTime) -> some View {

@@ -11,6 +11,8 @@ struct FocusMainView: View {
     @SceneStorage("main.selection") private var storedSelection = ""
     @SceneStorage("main.tab") private var storedTab = DetailTab.output.rawValue
     @State private var didApplyPreset = false
+    /// Find and follow state per runner, kept while the window lives.
+    @State private var outputPanes = OutputPaneRegistry()
 
     private var catalog: RunnerCatalog {
         RunnerCatalog.merge(
@@ -88,7 +90,9 @@ struct FocusMainView: View {
                     processState: runnerService.processStates[localID] ?? .stopped,
                     activity: activityStore.activity(for: localID),
                     tab: tab.wrappedValue,
-                    actions: actions
+                    actions: actions,
+                    pane: outputPane(for: localID),
+                    clearOutput: { runnerService.clearOutput(id: localID) }
                 )
             }
         case let .otherMachine(runner)?:
@@ -96,6 +100,10 @@ struct FocusMainView: View {
         case nil:
             Text("No Runners on This Mac")
         }
+    }
+
+    private func outputPane(for localID: String) -> OutputPaneState {
+        outputPanes.pane(for: localID)
     }
 
     private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }

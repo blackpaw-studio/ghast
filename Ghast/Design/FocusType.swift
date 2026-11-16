@@ -14,6 +14,9 @@ enum FocusType {
     static let token = Font.system(size: 11, weight: .medium)
     static let footnote = Font.system(size: 10)
     static let output = Font.system(size: 12, design: .monospaced)
+    /// Measured: the mockups' mono text advances 7.22 pt a character, the system mono font
+    /// 7.42 pt; this tracking closes the gap with the same glyphs.
+    static let outputTracking: CGFloat = -0.2
     static let deviceCode = Font.system(size: FocusMetrics.deviceCodeFontSize, weight: .semibold, design: .monospaced)
 
     /// Line height for `output`, so rows line up with the kit's 19 pt grid.

@@ -65,6 +65,15 @@ import Foundation
         #expect(find.matchCountText == "2 of 4")
     }
 
+    @Test func connectedLineShowsAndFindsTextWithoutItsOwnMark() {
+        let connected = OutputLine(id: 0, byteOffset: 0, timestamp: nil, clockText: "06:58:02", text: "√ Connected to GitHub", kind: .connected)
+        #expect(connected.displayText == "Connected to GitHub")
+        var find = OutputFindModel()
+        find.update(query: "connected", lines: [connected])
+        #expect(find.matches.map(\.range) == [0..<9])
+        #expect(OutputLine.copyText([connected]) == "06:58:02  Connected to GitHub")
+    }
+
     // MARK: Follow
 
     @Test func followIsOnByDefaultAndScrollingUpTurnsItOff() {

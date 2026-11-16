@@ -6,6 +6,8 @@ struct FocusContext: Sendable {
     let clock: any AppClock
     let hostInfo: any HostInfo
     var calendar: Calendar = .current
+    /// False in the design fixture, so a capture never catches the cursor mid-blink.
+    var animatesCursor = true
 
     var displayTime: DisplayTime { .current(now: clock.now(), calendar: calendar) }
 

@@ -28,7 +28,7 @@ struct OutputFindModel: Equatable, Sendable {
         let previous = current
         self.query = query
         matches = query.isEmpty ? [] : lines.flatMap { line in
-            Self.ranges(of: query, in: line.text).map { Match(lineID: line.id, range: $0) }
+            Self.ranges(of: query, in: line.displayText).map { Match(lineID: line.id, range: $0) }
         }
         if matches.isEmpty {
             currentIndex = nil
@@ -81,6 +81,16 @@ struct FollowState: Equatable, Sendable {
 extension OutputLine {
     /// "10:08:15  Running job: build-and-notarize", one line each, for Copy All Output.
     static func copyText(_ lines: [OutputLine]) -> String {
-        lines.map { $0.clockText.isEmpty ? $0.text : "\($0.clockText)  \($0.text)" }.joined(separator: "\n")
+        lines.map { $0.clockText.isEmpty ? $0.displayText : "\($0.clockText)  \($0.displayText)" }.joined(separator: "\n")
     }
+}
+
+extension OutputLine {
+    /// The text as shown: a connected line's own "√" gives way to the glyph column.
+    var displayText: String {
+        guard kind == .connected, text.hasPrefix(Self.connectedMark) else { return text }
+        return String(text.dropFirst(Self.connectedMark.count))
+    }
+
+    private static let connectedMark = "√ "
 }
