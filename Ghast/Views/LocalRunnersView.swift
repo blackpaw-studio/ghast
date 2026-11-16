@@ -332,7 +332,7 @@ struct ModernRunnerCard: View {
                     // Control button
                     if currentRunner?.status == .running {
                         Button(action: {
-                            runnerService.stopRunner(id: runner.id)
+                            Task { await runnerService.stopRunner(id: runner.id) }
                         }) {
                             HStack(spacing: 4) {
                                 Image(systemName: "stop.fill")

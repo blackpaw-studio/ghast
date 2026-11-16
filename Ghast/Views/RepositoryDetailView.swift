@@ -202,7 +202,7 @@ struct ModernLocalRunnerCard: View {
             HStack(spacing: 8) {
                 if currentRunner?.status == .running {
                     Button("Stop") {
-                        runnerService.stopRunner(id: runner.id)
+                        Task { await runnerService.stopRunner(id: runner.id) }
                     }
                     .font(.system(.caption, design: .rounded, weight: .semibold))
                     .foregroundStyle(.red)

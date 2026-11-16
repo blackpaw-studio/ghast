@@ -148,9 +148,9 @@ struct RunnerWrapperTests {
 
         try await service.startRunner(id: runner.id)
         #expect(isRunning(service.processStates[runner.id]))
-        service.stopRunner(id: runner.id)
+        await service.stopRunner(id: runner.id)
         #expect(!service.localRunners[0].shouldBeRunning)
-        try await waitUntil("stop") { service.processStates[runner.id] == .stopped }
+        #expect(service.processStates[runner.id] == .stopped)
 
         let exit = try #require(service.localRunners[0].lastExit)
         #expect(exit.wasRequested)
@@ -166,8 +166,8 @@ struct RunnerWrapperTests {
         try await service.startRunner(id: harness.runner.id)
         try await service.startRunner(id: sibling.id)
 
-        service.stopRunner(id: harness.runner.id)
-        try await waitUntil("mac to stop") { service.processStates[harness.runner.id] == .stopped }
+        await service.stopRunner(id: harness.runner.id)
+        #expect(service.processStates[harness.runner.id] == .stopped)
 
         // The stop's side effects (a stray pattern kill, if any) land within a few milliseconds.
         try await staysTrue(for: .milliseconds(250), "mac-arm must keep running") { isRunning(service.processStates[sibling.id]) }
@@ -176,6 +176,46 @@ struct RunnerWrapperTests {
         #expect(siblingRunner.lastExit == nil)
 
         service.stopAllRunners()
+    }
+
+    @Test("stop returns only once the process has ended, so a start right after it succeeds")
+    func restartRightAfterStop() async throws {
+        let harness = try makeRunner(runScript: "echo up\nsleep 60")
+        let (service, runner) = (harness.service, harness.runner)
+        try await service.startRunner(id: runner.id)
+
+        await service.stopRunner(id: runner.id)
+        #expect(service.processStates[runner.id] == .stopped)
+        #expect(!service.isRunnerRunning(id: runner.id))
+
+        try await service.startRunner(id: runner.id)
+        #expect(isRunning(service.processStates[runner.id]))
+        #expect(service.isRunnerRunning(id: runner.id))
+        await service.stopRunner(id: runner.id)
+    }
+
+    @Test("a process that never reports its end is given up on after the grace period, bounded")
+    func stopGivesUpOnStuckProcess() async throws {
+        let root = makeTemporaryDirectory()
+        let service = RunnerService(
+            defaults: makeIsolatedDefaults().defaults,
+            runnersDirectory: root,
+            clock: clock,
+            launcher: StuckRunnerLauncher(),
+            sleeper: { _ in },
+            runsStrayProcessCleanup: false
+        )
+        let folder = root.appendingPathComponent("stuck", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let runner = LocalRunner(name: "stuck", scope: .organization(login: "acme"), path: folder.path)
+        service.addLocalRunner(runner)
+        try await service.startRunner(id: runner.id)
+
+        await service.stopRunner(id: runner.id)
+
+        #expect(service.processStates[runner.id] == .stopped)
+        try await service.startRunner(id: runner.id)
+        #expect(isRunning(service.processStates[runner.id]))
     }
 
     @Test("quitting stops the process but keeps run intent for the next launch")
@@ -251,5 +291,18 @@ private extension String {
         defer { try? handle.close() }
         try handle.seekToEnd()
         try handle.write(contentsOf: Data(utf8))
+    }
+}
+
+/// A launcher whose process never ends and never says so, and cannot be signalled.
+private struct StuckRunnerLauncher: RunnerProcessLauncher {
+    private struct Handle: RunnerProcessHandle {
+        let processIdentifier: Int32 = .max
+        let isRunning = true
+        func terminate() {}
+    }
+
+    func launch(_ spec: RunnerLaunchSpec, onTermination: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+        Handle()
     }
 }

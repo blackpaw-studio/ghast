@@ -13,6 +13,7 @@ class RunnerService {
     @ObservationIgnored private let clock: any AppClock
     @ObservationIgnored private let launcher: any RunnerProcessLauncher
     @ObservationIgnored private let restartDelay: Int
+    @ObservationIgnored private let sleeper: Sleeper
     @ObservationIgnored private let runsStrayProcessCleanup: Bool
     
     var localRunners: [LocalRunner] = []
@@ -30,6 +31,8 @@ class RunnerService {
     @ObservationIgnored private var runningProcesses: [String: RunningProcess] = [:]
     /// Runners Ghast has asked to stop; their next exit is a requested stop, not a crash.
     @ObservationIgnored private var stopRequested: Set<String> = []
+    /// Callers of `stopRunner` waiting for a runner's process to end.
+    @ObservationIgnored private var terminationWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     @ObservationIgnored private let runnersBaseDirectory: URL
@@ -44,12 +47,14 @@ class RunnerService {
         clock: any AppClock = SystemClock(),
         launcher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
         restartDelay: Int = RunnerWrapperScript.defaultRestartDelay,
+        sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
         runsStrayProcessCleanup: Bool = true
     ) {
         self.store = RunnerStore(defaults: defaults)
         self.clock = clock
         self.launcher = launcher
         self.restartDelay = restartDelay
+        self.sleeper = sleeper
         self.runsStrayProcessCleanup = runsStrayProcessCleanup
         self.runnersBaseDirectory = runnersDirectory
         createRunnersDirectoryIfNeeded()
@@ -349,7 +354,7 @@ class RunnerService {
     }
     
     func removeLocalRunner(id: String) {
-        stopRunner(id: id)
+        requestStop(id: id)
         localRunners.removeAll { $0.id == id }
         processStates.removeValue(forKey: id)
         saveRunners()
@@ -360,7 +365,7 @@ class RunnerService {
     func removeAllLocalRunners() {
         // Stop all running runners first
         for runner in localRunners {
-            stopRunner(id: runner.id)
+            requestStop(id: runner.id)
         }
         
         // Clear the array and persist the empty state
@@ -432,6 +437,11 @@ class RunnerService {
         guard runningProcesses[id]?.launchToken == launchToken else { return }
         runningProcesses.removeValue(forKey: id)
         recordExit(id: id, code: exitCode, wasRequested: stopRequested.remove(id) != nil)
+        resumeTerminationWaiters(id: id)
+    }
+    
+    private func resumeTerminationWaiters(id: String) {
+        for waiter in terminationWaiters.removeValue(forKey: id) ?? [] { waiter.resume() }
     }
     
     /// Updates state for a process that has ended. A requested stop leaves the runner `.stopped`;
@@ -452,7 +462,21 @@ class RunnerService {
         saveRunners()
     }
     
-    func stopRunner(id: String) {
+    /// How long a stopping runner gets to exit on SIGTERM before SIGKILL, and then how long
+    /// SIGKILL gets before Ghast gives up waiting for the exit report.
+    static let stopGracePeriod: Duration = .seconds(1)
+    
+    /// Stops a runner and returns once its process has ended, so a start right after succeeds.
+    /// Bounded: SIGTERM, then SIGKILL after the grace period, then Ghast records the stop itself
+    /// after another grace period if the exit is never reported.
+    func stopRunner(id: String) async {
+        requestStop(id: id)
+        guard runningProcesses[id] != nil else { return }
+        await withCheckedContinuation { terminationWaiters[id, default: []].append($0) }
+    }
+    
+    /// Asks a runner to stop and returns immediately; the process ends (and is recorded) later.
+    private func requestStop(id: String) {
         // A stop request always ends the intent to keep running, even with no process to kill.
         if let index = localRunners.firstIndex(where: { $0.id == id }), localRunners[index].shouldBeRunning {
             localRunners[index].shouldBeRunning = false
@@ -470,21 +494,33 @@ class RunnerService {
             saveRunners()
         }
         
-        let pgid = running.processGroupID
-        let pid = running.handle.processIdentifier
-        
         // Graceful first. The wrapper leads its own process group, so the group signal reaches
         // the runner and its helpers and nothing else; no pattern kill, which would match
         // other runners whose folder name merely starts the same.
-        kill(-pgid, SIGTERM)
+        kill(-running.processGroupID, SIGTERM)
         
-        // Give it a moment to terminate gracefully, then force it.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-            // Liveness by pid: the process handle must not cross isolation boundaries.
-            guard kill(pid, 0) == 0 else { return }
-            kill(-pgid, SIGKILL)
-            kill(pid, SIGKILL)
+        let launchToken = running.launchToken
+        Task { [weak self, sleeper] in
+            try? await sleeper(Self.stopGracePeriod)
+            guard let self, self.forceKill(id: id, launchToken: launchToken) else { return }
+            try? await sleeper(Self.stopGracePeriod)
+            self.giveUpWaiting(id: id, launchToken: launchToken)
         }
+    }
+    
+    /// SIGKILLs the launch if it is still running. Returns whether it was.
+    private func forceKill(id: String, launchToken: UUID) -> Bool {
+        guard let running = runningProcesses[id], running.launchToken == launchToken, running.handle.isRunning else {
+            return false
+        }
+        kill(-running.processGroupID, SIGKILL)
+        kill(running.handle.processIdentifier, SIGKILL)
+        return true
+    }
+    
+    /// The exit report never came after SIGKILL: record the stop here so callers aren't left waiting.
+    private func giveUpWaiting(id: String, launchToken: UUID) {
+        didTerminate(id: id, launchToken: launchToken, exitCode: 128 + SIGKILL)
     }
     
     /// Stops every runner for a quit. A requested stop that keeps `shouldBeRunning`, so the next
@@ -519,6 +555,7 @@ class RunnerService {
             runningProcesses.removeValue(forKey: id)
             stopRequested.remove(id)
             recordExit(id: id, code: code, wasRequested: true)
+            resumeTerminationWaiters(id: id)
         }
         
         if runsStrayProcessCleanup {
