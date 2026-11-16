@@ -130,6 +130,9 @@ enum GitHubAPIError: Error, LocalizedError, Sendable {
     case decodingError(Error)
     /// The API service was never injected (see `UnconfiguredGitHubAPIService`).
     case notConfigured
+    /// GitHub's primary or secondary rate limit (403 or 429). `retryAfter` comes from
+    /// `Retry-After`; `resetAt` from `X-RateLimit-Reset` when `X-RateLimit-Remaining` is 0.
+    case rateLimited(status: Int, retryAfter: TimeInterval?, resetAt: Date?)
     
     var errorDescription: String? {
         switch self {
@@ -153,15 +156,26 @@ enum GitHubAPIError: Error, LocalizedError, Sendable {
             return "Failed to decode response: \(error.localizedDescription)"
         case .notConfigured:
             return "GitHub API service is not configured"
+        case .rateLimited:
+            return "GitHub's rate limit was reached. Ghast will try again later."
         }
     }
+
+    /// When a rate-limited request may be retried; nil for any other error. Without either
+    /// header GitHub asks clients to wait at least a minute.
+    func retryDate(now: Date) -> Date? {
+        guard case let .rateLimited(_, retryAfter, resetAt) = self else { return nil }
+        return retryAfter.map { now.addingTimeInterval($0) } ?? resetAt ?? now.addingTimeInterval(Self.defaultRateLimitWait)
+    }
+
+    static let defaultRateLimitWait: TimeInterval = 60
 
     /// HTTP status behind this error, when it came from a response.
     var statusCode: Int? {
         switch self {
         case .unauthorized: 401
         case .notFound: 404
-        case .serverError(let code), .httpStatus(let code): code
+        case .serverError(let code), .httpStatus(let code), .rateLimited(let code, _, _): code
         default: nil
         }
     }

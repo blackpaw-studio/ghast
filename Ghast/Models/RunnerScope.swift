@@ -29,6 +29,14 @@ enum RunnerScope: Hashable, Sendable {
         }
     }
 
+    /// The runner's settings page on GitHub.
+    func runnerSettingsURL(gitHubRunnerID id: Int) -> URL? {
+        switch self {
+        case .organization(let login): URL(string: "https://\(Self.gitHubHost)/organizations/\(login)/settings/actions/runners/\(id)")
+        case .repository(let fullName): URL(string: "https://\(Self.gitHubHost)/\(fullName)/settings/actions/runners/\(id)")
+        }
+    }
+
     var isOrganization: Bool {
         if case .organization = self { return true }
         return false

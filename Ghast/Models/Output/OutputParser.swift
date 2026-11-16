@@ -103,7 +103,7 @@ enum OutputParser {
             case .cancelled, .other: return .plain
             }
         }
-        if errorPrefixes.contains(where: text.hasPrefix) || text.contains("exit with terminated error") { return .error }
+        if errorPrefixes.contains(where: text.hasPrefix) || text.contains("exit with terminated error") || text.contains("exited with error code") { return .error }
         return .plain
     }
 

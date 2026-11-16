@@ -7,6 +7,7 @@ import Sparkle
 struct AppDependencies {
     let runnerService: RunnerService
     let activityStore: RunnerActivityStore
+    let remoteStore: RemoteRunnerStore
     let apiService: any GitHubAPIServiceProtocol
     let authService: GitHubAuthService
     let clock: any AppClock
@@ -15,6 +16,11 @@ struct AppDependencies {
     let fileTrasher: any FileTrasher
     let processLauncher: any RunnerProcessLauncher
     let settings: AppSettings
+    /// False in the design fixture: no cursor blink to catch mid-frame.
+    var animatesCursor = true
+    /// How runner folders are written; the design fixture shows its scratch folder as the
+    /// real runners folder.
+    var displayPath: @Sendable (String) -> String = { ($0 as NSString).abbreviatingWithTildeInPath }
 
     init(
         runnerService: RunnerService,
@@ -26,9 +32,15 @@ struct AppDependencies {
         hostInfo: any HostInfo = SystemHostInfo(),
         fileTrasher: any FileTrasher = WorkspaceFileTrasher(),
         processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
-        settings: AppSettings
+        settings: AppSettings,
+        remoteStore: RemoteRunnerStore? = nil
     ) {
         self.runnerService = runnerService
+        self.remoteStore = remoteStore ?? RemoteRunnerStore(
+            api: apiService,
+            clock: clock,
+            localScopes: { runnerService.localRunners.map(\.scope) }
+        )
         self.activityStore = activityStore
         self.apiService = apiService
         self.authService = authService
@@ -38,6 +50,18 @@ struct AppDependencies {
         self.fileTrasher = fileTrasher
         self.processLauncher = processLauncher
         self.settings = settings
+    }
+
+    /// The words the Focus views write against this app's clock and host.
+    var focusContext: FocusContext {
+        FocusContext(clock: clock, hostInfo: hostInfo, animatesCursor: animatesCursor, sleeper: sleeper, displayPath: displayPath)
+    }
+
+    /// Starts the always-on services: output tailing for every local runner. GitHub's runner
+    /// lists load once the account is signed in (the main window), since the stored token
+    /// isn't applied yet at launch. Never called under test.
+    func startServices() async {
+        activityStore.observe(runnerService)
     }
 
     static func live() -> AppDependencies {
@@ -58,23 +82,27 @@ struct AppDependencies {
 @main
 struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    static let mainWindowID = "main"
     
     var body: some Scene {
-        WindowGroup {
+        Window("Ghast", id: Self.mainWindowID) {
             if !isRunningTests() {
                 let dependencies = appDelegate.dependencies
                 ContentView(authService: dependencies.authService)
                     .environment(dependencies.runnerService)
+                    .environment(dependencies.activityStore)
+                    .environment(dependencies.remoteStore)
                     .environment(\.gitHubAPIService, dependencies.apiService)
+                    .environment(\.focusContext, dependencies.focusContext)
+                    .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
             } else {
                 EmptyView()
             }
         }
-        .windowStyle(.titleBar)
-        .windowResizability(.contentSize)
-        .defaultSize(width: 1000, height: 700)
+        .windowResizability(.contentMinSize)
+        .defaultSize(FocusMetrics.mainWindowSize)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            MainWindowCommands()
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: appDelegate.updaterController.updater)
             }
@@ -134,6 +162,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     
+    /// The selection the design fixture opens on; nil on a normal launch.
+    var mainWindowPreset: MainWindowPreset? {
+        #if DEBUG
+        return fixtureStage?.mainWindowPreset
+        #else
+        return nil
+        #endif
+    }
+    
     init(dependencies: AppDependencies) {
         builtDependencies = dependencies
         updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
@@ -175,6 +212,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Disable sudden termination to ensure cleanup
         ProcessInfo.processInfo.disableSuddenTermination()
+        
+        let dependencies = dependencies
+        Task { await dependencies.startServices() }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

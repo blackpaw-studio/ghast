@@ -29,40 +29,59 @@ Measured on the build host (macOS 27) with `Scripts/fidelity/probe.sh`, on a sta
 | Sidebar selection is the system accent colour (solid blue on an active window), not the mockups' neutral grey row | native: selection is drawn by `List`, which follows the accent colour |
 | Toolbar glass capsules blur the content scrolling under them to a near-flat tint (stddev 0.004 against 0.248 for the sharp content) | native: system glass |
 
+## Main window content (main, configuration, remote, error, first-run)
+
+PR 2 captures, light and dark. The content layer is placed at the kit's window coordinates (content top 64, detail inset 32, sidebar column 264). Deviations shared by all five screens:
+
+| Deviation | Status |
+|---|---|
+| Native toolbar is about 52 pt tall, not 64: the title sits at x 268–284, y 19 (kit 296, 25) and the traffic lights sit higher | native: system toolbar; content is pinned to the kit's y 64 independently |
+| Toolbar glyphs (`stop.fill`, `arrow.clockwise`, `plus`, `ellipsis`) and capsules are the system toolbar size, a little larger than the kit's | native: system toolbar buttons |
+| Toolbar glass group spacing | native: `ToolbarSpacer(.fixed)` between groups, system layout |
+| Sidebar rows follow native list insets, about 11 pt left of the kit's; section headers use the native sidebar style | native: `List(.sidebar)` |
+| Sidebar status dots look darker through the sidebar's vibrancy | native: sidebar material |
+| Dark window background is the system's (41, 39, 38), not the kit's `--win` #1e1e20; groups, fields and the script editor keep the kit's relative contrast | native: kit says content is plain window background |
+| `borderedProminent` buttons use the system accent blue | native: system accent |
+| Toolbar has no bar background (`toolbarBackgroundVisibility(.hidden)`), so screens without a scroll view no longer show a title-bar band in dark | fixed (2.11) |
+
 ## main
 
 | Deviation | Status |
 |---|---|
-| Toolbar glass group spacing | native: system toolbar layout |
-| Sidebar metrics | native: floating sidebar sets its own insets and selection shape |
+| Output glyph column is 12 pt and the live line 23 pt (spec: 16 and 24) | fixed: measured from Main.png, PNG wins |
+| Header status dot is 8 pt | fixed: measured in PR 1 |
+| Output copy icon is `square.on.square` (spec said `doc.on.doc`) | fixed: PNG wins |
+| `trash` symbol has inner lines the kit's icon lacks | native: SF Symbol |
+| Monospaced output uses −0.2 tracking to match the kit's 7.22 pt advance (system mono is 7.42) | fixed |
 
 ## configuration
 
 | Deviation | Status |
 |---|---|
-| Toolbar glass group spacing | native: system toolbar layout |
-| Sidebar metrics | native: floating sidebar sets its own insets and selection shape |
+| Job-script switches are the system small switch, not the kit's 38 × 22 | native: `Toggle(.switch)` `.controlSize(.small)` |
+| Environment variable rows are centred; the mockup's text sits about 1.75 pt off-centre | fixed: capture is centred, mockup drift ignored |
+| "Remove Runner…" renders dimmed (disabled) until the PR 3 flows | open: enabled in PR 3 |
+| "Restart the runner to apply changes." footer shows only after an edit while running; the PNG shows a running runner without it | fixed: PNG wins |
 
 ## remote
 
 | Deviation | Status |
 |---|---|
-| Toolbar glass group spacing | native: system toolbar layout |
-| Sidebar metrics | native: floating sidebar sets its own insets and selection shape |
+| "Remove from GitHub…" in the ellipsis menu is disabled until PR 3 | open: enabled in PR 3 |
 
 ## error
 
 | Deviation | Status |
 |---|---|
-| Toolbar glass group spacing | native: system toolbar layout |
-| Sidebar metrics | native: floating sidebar sets its own insets and selection shape |
+| "Reconfigure…" renders dimmed (disabled) until the PR 3 flows | open: enabled in PR 3 |
+| "Runner listener exited with error code 1" is red | fixed: parser rule (2.9) |
 
 ## first-run
 
 | Deviation | Status |
 |---|---|
-| Toolbar glass group spacing | native: system toolbar layout |
-| Sidebar metrics | native: floating sidebar sets its own insets and selection shape |
+| Empty-state glyph is the system `laptopcomputer` with a `plus` overlay; no single symbol matches the kit | native: SF Symbols |
+| Body text uses hand line breaks to reproduce the PNG's balanced three-line wrap | fixed |
 
 ## welcome
 

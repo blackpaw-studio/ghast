@@ -268,6 +268,8 @@ Steps:
 
 ## PR 3 · Flows (brief: `implement.design`, high; 3.1–3.4 first, test-first; review with `review.concurrency`)
 
+> **Note from PR 2 review:** when Runner › Remove Runner… (⌘⌫) is enabled, it must not fire while a text field or text view has focus, where ⌘⌫ deletes to the start of the line. Disable the command (or let the key pass through) whenever the first responder is a text input, and check it in the running app in the environment-variable fields and the job-script editor.
+
 ### 3.1 New Runner rules [L]
 - Test first, `NewRunnerNameTests`:
   - suggested `{host}-{n}` with n = local count + 1, bumped until unique in the scope

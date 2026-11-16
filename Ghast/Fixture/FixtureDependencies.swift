@@ -81,13 +81,13 @@ struct FixtureDependencies {
         }
         defaults.removePersistentDomain(forName: suite)
 
-        let api = FixtureGitHubAPIService()
+        let api = FixtureGitHubAPIService(listsThisMacRunners: launch.screen.hasLocalRunners)
         let tokenStore = InMemoryFixtureTokenStore(token: launch.screen.isSignedOut ? nil : "fixture-token")
         let clock = FrozenClock()
         let launcher = ScriptedRunnerLauncher(exitCodes: Dictionary(
             uniqueKeysWithValues: FixtureWorld.localRunners.compactMap { spec in spec.process.exit.map { (spec.name, $0.code) } }
         ))
-        let dependencies = AppDependencies(
+        var dependencies = AppDependencies(
             runnerService: RunnerService(
                 defaults: defaults,
                 runnersDirectory: runners,
@@ -102,7 +102,14 @@ struct FixtureDependencies {
             processLauncher: launcher,
             settings: AppSettings(defaults: defaults)
         )
-        Self.writeRunners(into: runners, service: dependencies.runnerService)
+        dependencies.animatesCursor = false
+        let scratchRunners = runners.path
+        dependencies.displayPath = { path in
+            path.hasPrefix(scratchRunners) ? "~/.ghast/runners" + path.dropFirst(scratchRunners.count) : path
+        }
+        if launch.screen.hasLocalRunners {
+            Self.writeRunners(into: runners, service: dependencies.runnerService)
+        }
         return FixtureDependencies(
             launch: launch,
             scratchDirectory: scratch,
