@@ -8,6 +8,31 @@ struct AppDependencies {
     let runnerService: RunnerService
     let apiService: GitHubAPIService
     let authService: GitHubAuthService
+    let clock: any AppClock
+    let sleeper: Sleeper
+    let hostInfo: any HostInfo
+    let fileTrasher: any FileTrasher
+    let processLauncher: any RunnerProcessLauncher
+
+    init(
+        runnerService: RunnerService,
+        apiService: GitHubAPIService,
+        authService: GitHubAuthService,
+        clock: any AppClock = SystemClock(),
+        sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
+        hostInfo: any HostInfo = SystemHostInfo(),
+        fileTrasher: any FileTrasher = WorkspaceFileTrasher(),
+        processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher()
+    ) {
+        self.runnerService = runnerService
+        self.apiService = apiService
+        self.authService = authService
+        self.clock = clock
+        self.sleeper = sleeper
+        self.hostInfo = hostInfo
+        self.fileTrasher = fileTrasher
+        self.processLauncher = processLauncher
+    }
 
     static func live() -> AppDependencies {
         let apiService = GitHubAPIService()
