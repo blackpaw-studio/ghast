@@ -896,19 +896,17 @@ class RunnerService {
                     continue
                 }
                 
-                // Try to extract repository info from .runner file if it exists
-                var repository = "Unknown/Repository"
+                // Try to extract the scope from the .runner file if it exists:
+                // https://github.com/{org} or https://github.com/{owner}/{repo}
+                var scope = RunnerScope.repository(fullName: "Unknown/Repository")
                 let runnerFile = runnerDir.appendingPathComponent(".runner")
                 if FileManager.default.fileExists(atPath: runnerFile.path) {
                     do {
                         let data = try Data(contentsOf: runnerFile)
                         if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let gitHubUrl = json["gitHubUrl"] as? String {
-                            // Extract owner/repo from URL like https://github.com/owner/repo
-                            if let url = URL(string: gitHubUrl),
-                               url.pathComponents.count >= 3 {
-                                repository = "\(url.pathComponents[1])/\(url.pathComponents[2])"
-                            }
+                           let gitHubUrl = json["gitHubUrl"] as? String,
+                           let parsed = RunnerScope(gitHubURL: gitHubUrl) {
+                            scope = parsed
                         }
                     } catch {
                         #if DEBUG
@@ -920,13 +918,13 @@ class RunnerService {
                 // Create a LocalRunner entry for this discovered runner
                 let discoveredRunner = LocalRunner(
                     name: runnerName,
-                    repository: repository,
+                    scope: scope,
                     path: runnerDir.path,
                     labels: ["self-hosted"]
                 )
                 
                 #if DEBUG
-                print("🏃 Discovered existing runner: \(runnerName) for \(repository)")
+                print("🏃 Discovered existing runner: \(runnerName) for \(scope.displayName)")
                 #endif
                 localRunners.append(discoveredRunner)
             }

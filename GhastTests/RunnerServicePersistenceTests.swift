@@ -102,4 +102,34 @@ struct RunnerServicePersistenceTests {
 
         #expect(b.localRunners.map(\.scope) == [.repository(fullName: "octo/ghast"), .organization(login: "acme")])
     }
+
+    // MARK: Discovery
+
+    func makeDiscoverableRunner(named name: String, in directory: URL, gitHubURL: String?) throws {
+        let runnerDir = directory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: runnerDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: runnerDir.appendingPathComponent("run.sh").path, contents: Data())
+        if let gitHubURL {
+            let json = try JSONSerialization.data(withJSONObject: ["agentName": name, "gitHubUrl": gitHubURL])
+            FileManager.default.createFile(atPath: runnerDir.appendingPathComponent(".runner").path, contents: json)
+        }
+    }
+
+    @Test func discoveryMapsRunnerFileURLsToScopes() throws {
+        let isolated = makeIsolatedDefaults()
+        defer { isolated.cleanup() }
+        let directory = makeTemporaryDirectory()
+        try makeDiscoverableRunner(named: "a-org", in: directory, gitHubURL: "https://github.com/acme")
+        try makeDiscoverableRunner(named: "b-repo", in: directory, gitHubURL: "https://github.com/octo/ghast")
+        try makeDiscoverableRunner(named: "c-unknown", in: directory, gitHubURL: nil)
+
+        let service = RunnerService(defaults: isolated.defaults, runnersDirectory: directory)
+
+        let scopes = Dictionary(uniqueKeysWithValues: service.localRunners.map { ($0.name, $0.scope) })
+        #expect(scopes == [
+            "a-org": .organization(login: "acme"),
+            "b-repo": .repository(fullName: "octo/ghast"),
+            "c-unknown": .repository(fullName: "Unknown/Repository"),
+        ])
+    }
 }
