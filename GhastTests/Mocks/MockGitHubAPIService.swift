@@ -12,6 +12,10 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     var mockOrganizations: [GitHubOrganization] = []
     /// Scopes whose runner calls fail, to exercise one-scope-fails paths.
     var failingScopes: Set<RunnerScope> = []
+    /// A specific error per scope for `fetchRunners`.
+    var runnerErrors: [RunnerScope: Error] = [:]
+    /// Every scope `fetchRunners` was asked for, in order.
+    private(set) var runnerFetches: [RunnerScope] = []
     
     /// When true, `fetchRepositories` suspends until `releasePendingRequests()`, so a test can
     /// capture the in-flight (loading) state deterministically.
@@ -67,6 +71,8 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     }
 
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
+        runnerFetches.append(scope)
+        if let error = runnerErrors[scope] { throw error }
         if shouldThrowError || failingScopes.contains(scope) {
             throw GitHubAPIError.unauthorized
         }

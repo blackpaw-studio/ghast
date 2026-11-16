@@ -253,6 +253,53 @@ import Foundation
         }
     }
 
+    @Test func tooManyRequestsCarriesRetryAfter() async {
+        let (service, _) = makeService([.json("{}", status: 429, headers: ["Retry-After": "30"])])
+
+        await #expect {
+            try await service.fetchRepositories()
+        } throws: { error in
+            guard case let .rateLimited(status, retryAfter, resetAt) = error as? GitHubAPIError else { return false }
+            return status == 429 && retryAfter == 30 && resetAt == nil
+        }
+    }
+
+    @Test func exhaustedRateLimitCarriesResetTime() async {
+        let (service, _) = makeService([.json("{}", status: 403, headers: [
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1800000900",
+        ])])
+
+        await #expect {
+            try await service.fetchRepositories()
+        } throws: { error in
+            guard case let .rateLimited(status, retryAfter, resetAt) = error as? GitHubAPIError else { return false }
+            return status == 403 && retryAfter == nil && resetAt == Date(timeIntervalSince1970: 1_800_000_900)
+        }
+    }
+
+    @Test func secondaryRateLimitForbiddenCarriesRetryAfter() async {
+        let (service, _) = makeService([.json("{}", status: 403, headers: ["Retry-After": "60", "X-RateLimit-Remaining": "4000"])])
+
+        await #expect {
+            try await service.fetchRepositories()
+        } throws: { error in
+            guard case let .rateLimited(403, retryAfter, _) = error as? GitHubAPIError else { return false }
+            return retryAfter == 60
+        }
+    }
+
+    @Test func forbiddenWithRemainingQuotaIsNotARateLimit() async {
+        let (service, _) = makeService([.json("{}", status: 403, headers: ["X-RateLimit-Remaining": "4999", "X-RateLimit-Reset": "1800000900"])])
+
+        await #expect {
+            try await service.fetchRepositories()
+        } throws: { error in
+            guard case .httpStatus(403) = error as? GitHubAPIError else { return false }
+            return true
+        }
+    }
+
     @Test func undecodableSuccessBodyIsDecodingError() async {
         let (service, _) = makeService([.json("not json")])
 

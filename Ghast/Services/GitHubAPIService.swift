@@ -158,9 +158,24 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
             throw GitHubAPIError.networkError(error)
         }
         guard (200..<300).contains(response.statusCode) else {
-            throw Self.error(forStatus: response.statusCode)
+            throw Self.error(for: response)
         }
         return (data, response)
+    }
+
+    /// A 403 or 429 is a rate limit when GitHub says when to come back: `Retry-After`
+    /// (secondary limits), or `X-RateLimit-Reset` once `X-RateLimit-Remaining` is 0. A 429
+    /// is always one.
+    private static func error(for response: HTTPURLResponse) -> GitHubAPIError {
+        let status = response.statusCode
+        guard status == 403 || status == 429 else { return error(forStatus: status) }
+        let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+        let exhausted = response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0"
+        let resetAt = exhausted
+            ? response.value(forHTTPHeaderField: "X-RateLimit-Reset").flatMap(TimeInterval.init).map(Date.init(timeIntervalSince1970:))
+            : nil
+        guard status == 429 || retryAfter != nil || resetAt != nil else { return error(forStatus: status) }
+        return .rateLimited(status: status, retryAfter: retryAfter, resetAt: resetAt)
     }
 
     private static func error(forStatus status: Int) -> GitHubAPIError {
