@@ -72,6 +72,8 @@ struct FocusMainView: View {
             detail(for: selected)
                 .navigationTitle(MainWindowTitle.title(for: selected))
                 .navigationSubtitle(MainWindowTitle.subtitle(for: selected, hostName: context.hostInfo.computerName))
+                // The kit's toolbar floats over plain content with no bar background (kit.md).
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                 .toolbar {
                     MainToolbar(
                         item: selected,
