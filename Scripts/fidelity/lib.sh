@@ -83,13 +83,14 @@ else:
 # mockups show active windows). If the app did not become frontmost by itself, ask Peekaboo to
 # focus it once, then insist.
 require_active_window() {
-    local state
-    state="$(window_state "$1" "$2")"
-    if [ "$state" != "true true" ]; then
+    local state attempt
+    for attempt in 1 2 3 4; do
+        state="$(window_state "$1" "$2")"
+        [ "$state" = "true true" ] && return 0
         peekaboo window focus --window-id "$2" >/dev/null 2>&1 || true
         sleep 1
-        state="$(window_state "$1" "$2")"
-    fi
+    done
+    state="$(window_state "$1" "$2")"
     [ "$state" = "true true" ] || die "window $2 (pid $1) is not frontmost and key (Peekaboo: '$state'); an inactive window would be captured"
 }
 

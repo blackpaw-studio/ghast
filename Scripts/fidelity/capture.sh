@@ -54,5 +54,12 @@ if [ "$WINDOW_ID" = "0" ]; then
 else
     peek_window "$WINDOW_ID" "$OUT_PNG"
 fi
+# The rect is recorded relative to the virtual display's top-left, which is where the 1440x900
+# mockups are measured from (the window itself reports global coordinates).
+if [ "$WINDOW_ID" != "0" ]; then
+    IFS=, read -r RX RY RW RH <<<"$RECT"
+    IFS=, read -r VDX VDY <<<"$VD_ORIGIN"
+    RECT="$((RX - VDX)),$((RY - VDY)),$RW,$RH"
+fi
 echo "$RECT" > "$OUT_DIR/$SCREEN$APPEARANCE.rect"
 echo "$OUT_PNG"
