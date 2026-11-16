@@ -4,8 +4,8 @@ import Foundation
 final class GitHubAPIService: GitHubAPIServiceProtocol {
     private static let baseURL = URL(string: "https://api.github.com")!
     private static let apiVersion = "2022-11-28"
-    private static let reposPerPage = 100 // Maximum allowed by GitHub API
-    private static let maxRepoPages = 50 // Safety limit: 5000 repositories
+    private static let pageSize = 100 // Maximum allowed by GitHub API
+    private static let maxPages = 50 // Safety limit: 5000 items per list
 
     private var accessToken: String?
     private let transport: any HTTPTransport
@@ -28,24 +28,22 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     // MARK: - Repository APIs
 
     func fetchRepositories() async throws -> [GitHubRepository] {
-        var allRepositories: [GitHubRepository] = []
+        try await fetchAllPages(path: "/user/repos", query: [
+            URLQueryItem(name: "type", value: "all"),
+            URLQueryItem(name: "sort", value: "updated"),
+            URLQueryItem(name: "direction", value: "desc"),
+        ])
+    }
 
-        for page in 1...Self.maxRepoPages {
-            let request = makeRequest(method: "GET", path: "/user/repos", query: [
-                URLQueryItem(name: "type", value: "all"),
-                URLQueryItem(name: "sort", value: "updated"),
-                URLQueryItem(name: "direction", value: "desc"),
-                URLQueryItem(name: "page", value: String(page)),
-                URLQueryItem(name: "per_page", value: String(Self.reposPerPage)),
-            ])
-            let repositories: [GitHubRepository] = try await send(request)
-            allRepositories.append(contentsOf: repositories)
-            // A short page means we've reached the end
-            if repositories.count < Self.reposPerPage { return allRepositories }
-        }
+    // MARK: - Organization APIs
 
-        print("⚠️ Repository pagination limit reached (\(Self.maxRepoPages * Self.reposPerPage) repos)")
-        return allRepositories
+    /// Active organization memberships where the user is an admin (owner).
+    func fetchAdminOrganizations() async throws -> [GitHubOrganization] {
+        let memberships: [OrganizationMembership] = try await fetchAllPages(
+            path: "/user/memberships/orgs",
+            query: [URLQueryItem(name: "state", value: "active")]
+        )
+        return memberships.filter { $0.role == "admin" }.map(\.organization)
     }
 
     // MARK: - Runner APIs
@@ -83,6 +81,24 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     }
 
     // MARK: - Transport
+
+    /// Follows `page`/`per_page` pagination until a short page or the safety limit.
+    private func fetchAllPages<Item: Decodable>(path: String, query: [URLQueryItem]) async throws -> [Item] {
+        var items: [Item] = []
+        for page in 1...Self.maxPages {
+            let request = makeRequest(method: "GET", path: path, query: query + [
+                URLQueryItem(name: "page", value: String(page)),
+                URLQueryItem(name: "per_page", value: String(Self.pageSize)),
+            ])
+            let pageItems: [Item] = try await send(request)
+            items.append(contentsOf: pageItems)
+            // A short page means we've reached the end
+            if pageItems.count < Self.pageSize { return items }
+        }
+
+        print("⚠️ Pagination limit reached for \(path) (\(Self.maxPages * Self.pageSize) items)")
+        return items
+    }
 
     /// Every request carries `Accept` and the API version; `Authorization` only when a
     /// token is available (explicit `token` wins over the stored one).
@@ -147,6 +163,11 @@ extension Error {
     var isCancellation: Bool {
         self is CancellationError || (self as? URLError)?.code == .cancelled
     }
+}
+
+private struct OrganizationMembership: Decodable {
+    let role: String
+    let organization: GitHubOrganization
 }
 
 private struct RunnersResponse: Codable {

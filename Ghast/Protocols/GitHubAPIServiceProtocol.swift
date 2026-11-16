@@ -8,6 +8,7 @@ protocol GitHubAPIServiceProtocol {
     func setAccessToken(_ token: String)
     func fetchCurrentUser(token: String?) async throws -> GitHubUser
     func fetchRepositories() async throws -> [GitHubRepository]
+    func fetchAdminOrganizations() async throws -> [GitHubOrganization]
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner]
     func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken
     func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken
@@ -33,6 +34,7 @@ struct UnconfiguredGitHubAPIService: GitHubAPIServiceProtocol {
     }
     func fetchCurrentUser(token: String?) async throws -> GitHubUser { throw unconfigured("fetchCurrentUser") }
     func fetchRepositories() async throws -> [GitHubRepository] { throw unconfigured("fetchRepositories") }
+    func fetchAdminOrganizations() async throws -> [GitHubOrganization] { throw unconfigured("fetchAdminOrganizations") }
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] { throw unconfigured("fetchRunners") }
     func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken { throw unconfigured("createRegistrationToken") }
     func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken { throw unconfigured("createRemoveToken") }

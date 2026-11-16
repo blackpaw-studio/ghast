@@ -149,6 +149,46 @@ import Foundation
         #expect(apps.map(\.architecture) == ["arm64"])
     }
 
+    // MARK: Organizations
+
+    static func membershipJSON(login: String, id: Int, role: String) -> String {
+        #"{"state":"active","role":"\#(role)","organization":{"login":"\#(login)","id":\#(id),"avatar_url":"https://a/\#(id)"}}"#
+    }
+
+    @Test func fetchAdminOrganizationsKeepsOnlyAdminMemberships() async throws {
+        let body = "[" + [
+            Self.membershipJSON(login: "acme", id: 1, role: "admin"),
+            Self.membershipJSON(login: "other", id: 2, role: "member"),
+            Self.membershipJSON(login: "zeta", id: 3, role: "admin"),
+        ].joined(separator: ",") + "]"
+        let (service, transport) = makeService([.json(body)])
+
+        let orgs = try await service.fetchAdminOrganizations()
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.path == "/user/memberships/orgs")
+        #expect(query(request) == ["state": "active", "per_page": "100", "page": "1"])
+        expectStandardHeaders(request)
+        #expect(orgs == [
+            GitHubOrganization(login: "acme", id: 1, avatarURL: "https://a/1"),
+            GitHubOrganization(login: "zeta", id: 3, avatarURL: "https://a/3"),
+        ])
+    }
+
+    @Test func fetchAdminOrganizationsPaginatesUntilShortPage() async throws {
+        let membership = Self.membershipJSON(login: "acme", id: 1, role: "admin")
+        let fullPage = "[" + Array(repeating: membership, count: 100).joined(separator: ",") + "]"
+        let (service, transport) = makeService([.json(fullPage), .json("[\(membership)]")])
+
+        let orgs = try await service.fetchAdminOrganizations()
+
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        #expect(query(requests[1])["page"] == "2")
+        #expect(orgs.count == 101)
+    }
+
     @Test func requestWithoutTokenOmitsAuthorizationButKeepsOtherHeaders() async throws {
         let (service, transport) = makeService([.json(Self.userJSON)], token: nil)
 

@@ -9,6 +9,9 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     var shouldThrowError = false
     var mockRepositories: [GitHubRepository] = []
     var mockRunners: [GitHubRunner] = []
+    var mockOrganizations: [GitHubOrganization] = []
+    /// Scopes whose runner calls fail, to exercise one-scope-fails paths.
+    var failingScopes: Set<RunnerScope> = []
     
     /// When true, `fetchRepositories` suspends until `releasePendingRequests()`, so a test can
     /// capture the in-flight (loading) state deterministically.
@@ -52,8 +55,15 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRepositories
     }
     
-    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
+    func fetchAdminOrganizations() async throws -> [GitHubOrganization] {
         if shouldThrowError {
+            throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
+        }
+        return mockOrganizations
+    }
+
+    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
+        if shouldThrowError || failingScopes.contains(scope) {
             throw GitHubAPIError.unauthorized
         }
         

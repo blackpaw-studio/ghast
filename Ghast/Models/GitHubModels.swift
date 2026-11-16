@@ -30,6 +30,18 @@ struct GitHubRepository: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// An organization the signed-in user administers.
+struct GitHubOrganization: Codable, Identifiable, Hashable, Sendable {
+    let login: String
+    let id: Int
+    let avatarURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case login, id
+        case avatarURL = "avatar_url"
+    }
+}
+
 struct GitHubRunner: Sendable, Codable, Identifiable {
     let id: Int
     let name: String
