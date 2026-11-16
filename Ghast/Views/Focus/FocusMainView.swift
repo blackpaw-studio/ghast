@@ -49,17 +49,16 @@ struct FocusMainView: View {
         let catalog = catalog
         let selected = selectedItem(in: catalog)
         NavigationSplitView {
-            List(selection: listSelection) {
-                Section("This Mac") {
-                    ForEach(catalog.thisMac) { Text($0.name).tag($0.id) }
-                }
-                if !catalog.otherMachines.isEmpty {
-                    Section("Other Machines") {
-                        ForEach(catalog.otherMachines) { Text($0.name).tag($0.id) }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
+            RunnerSidebar(
+                catalog: catalog,
+                selection: listSelection,
+                actions: actions,
+                show: { id, tab in
+                    storedSelection = MainSelection.runner(id).storageValue
+                    storedTab = tab.rawValue
+                },
+                newRunner: newRunner
+            )
             .navigationSplitViewColumnWidth(
                 min: FocusMetrics.sidebarMinWidth,
                 ideal: FocusMetrics.sidebarColumnWidth,
@@ -87,6 +86,11 @@ struct FocusMainView: View {
             Text("No Runners on This Mac")
         }
     }
+
+    private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }
+
+    /// The New Runner flow arrives in the next step of the redesign; the old one stands in.
+    private func newRunner() {}
 
     private func selectedItem(in catalog: RunnerCatalog) -> RunnerItem? {
         guard case let .runner(id) = selection else { return nil }

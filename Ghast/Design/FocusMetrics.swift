@@ -40,7 +40,11 @@ enum FocusMetrics {
 
     // MARK: Rows and tokens
     static let runnerRowPadding = CGSize(width: 8, height: 7)
+    /// Measured: the native sidebar row already adds 3 pt above and below its content, so 4 pt
+    /// more gives the mockups' 46 pt row pitch.
+    static let sidebarRowVerticalPadding: CGFloat = 4
     static let runnerRowRadius: CGFloat = 10
+    static let runnerRowDotSpacing: CGFloat = 8
     static let tokenHeight: CGFloat = 20
     static let tokenHorizontalPadding: CGFloat = 7
     static let tokenRadius: CGFloat = 6
