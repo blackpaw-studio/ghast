@@ -161,6 +161,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     ]
     /// Runs when a removal token is asked for, so a test can check what had happened by then.
     var onRemoveToken: (@MainActor () -> Void)?
+    var onRegistrationToken: (@MainActor () -> Void)?
     private var tokenCount = 0
 
     init(log: CallLog) { self.log = log }
@@ -177,6 +178,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     }
 
     func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
+        onRegistrationToken?()
         log.append("registration-token \(scope.displayName)")
         if let registrationTokenError { throw registrationTokenError }
         tokenCount += 1
