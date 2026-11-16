@@ -1180,8 +1180,9 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         case environmentVariables, preJobScript, postJobScript
     }
 
-    /// Runners saved before scopes existed carry only `repository`; they decode as
-    /// `.repository(fullName:)`.
+    /// Runners saved before scopes existed (or rewritten by an older build) carry only
+    /// `repository`: an `owner/repo` full name decodes as `.repository`, a bare login
+    /// (no "/", which a full name always has) as `.organization`.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -1189,7 +1190,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         if let scope = try container.decodeIfPresent(RunnerScope.self, forKey: .scope) {
             self.scope = scope
         } else {
-            scope = .repository(fullName: try container.decode(String.self, forKey: .repository))
+            scope = Self.legacyScope(try container.decode(String.self, forKey: .repository))
         }
         path = try container.decode(String.self, forKey: .path)
         labels = try container.decode([String].self, forKey: .labels)
@@ -1198,6 +1199,10 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         environmentVariables = try container.decode([String: String].self, forKey: .environmentVariables)
         preJobScript = try container.decodeIfPresent(String.self, forKey: .preJobScript)
         postJobScript = try container.decodeIfPresent(String.self, forKey: .postJobScript)
+    }
+
+    private static func legacyScope(_ repository: String) -> RunnerScope {
+        repository.contains("/") ? .repository(fullName: repository) : .organization(login: repository)
     }
 
     /// Also writes `repository`, so a build from before scopes can still read the list.

@@ -71,6 +71,23 @@ struct RunnerServicePersistenceTests {
         #expect(runner.postJobScript == nil)
     }
 
+    /// An older build rewrites storage with only `repository`; a value without "/" was an org login.
+    @Test(arguments: [
+        ("acme", RunnerScope.organization(login: "acme")),
+        ("octo/ghast", .repository(fullName: "octo/ghast")),
+        ("Unknown/Repository", .repository(fullName: "Unknown/Repository")),
+    ])
+    func legacyRepositoryFieldMapsToScope(repository: String, expected: RunnerScope) throws {
+        let json = """
+        {"id":"x","name":"r","repository":"\(repository)","path":"/tmp/x","labels":[],\
+        "status":"stopped","createdAt":0,"environmentVariables":{}}
+        """
+
+        let runner = try JSONDecoder().decode(LocalRunner.self, from: Data(json.utf8))
+
+        #expect(runner.scope == expected)
+    }
+
     @Test(arguments: [RunnerScope.repository(fullName: "octo/ghast"), .organization(login: "acme")])
     func scopeRoundTripsThroughCoding(scope: RunnerScope) throws {
         let runner = LocalRunner(name: "r1", scope: scope, path: "/tmp/x", labels: ["a"])
