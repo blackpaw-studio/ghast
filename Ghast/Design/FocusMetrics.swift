@@ -122,6 +122,9 @@ enum FocusMetrics {
     static let scriptEditorRadius: CGFloat = 8
     /// The kit's mono text sits on a 19 pt line.
     static let scriptLineSpacing: CGFloat = 4
+    /// Script text inside the editor, measured against Configuration.png.
+    static let scriptTextInset = NSSize(width: 0, height: 1.5)
+    static let scriptLinePadding: CGFloat = 2
     static let scriptEditorExtraTop: CGFloat = 2
 
     // MARK: Welcome and empty states

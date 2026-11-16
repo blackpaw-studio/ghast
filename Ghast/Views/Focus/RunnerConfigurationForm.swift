@@ -206,12 +206,7 @@ struct RunnerConfigurationForm: View {
                 .onChange(of: script.wrappedValue.isEnabled) { draft.saveSoon() }
         }
         if script.wrappedValue.isEnabled {
-            TextEditor(text: script.text)
-                .font(FocusType.output)
-                .tracking(FocusType.outputTracking)
-                .lineSpacing(FocusMetrics.scriptLineSpacing)
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(.never)
+            ScriptTextEditor(text: script.text, label: label)
                 .padding(.horizontal, FocusMetrics.scriptEditorPadding)
                 .padding(.vertical, FocusMetrics.scriptEditorPadding + FocusMetrics.scriptEditorExtraTop)
                 .frame(minHeight: FocusMetrics.scriptEditorHeight)
@@ -226,7 +221,6 @@ struct RunnerConfigurationForm: View {
                 .padding(.horizontal, FocusMetrics.formRowInset)
                 .padding(.bottom, FocusMetrics.formRowInset)
                 .onChange(of: script.wrappedValue.text) { draft.saveSoon() }
-                .accessibilityLabel(label)
         }
     }
 
