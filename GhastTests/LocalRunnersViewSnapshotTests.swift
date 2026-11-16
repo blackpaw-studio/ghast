@@ -79,6 +79,30 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
     }
     
+    func testLocalRunnersViewWithOrganizationRunner() async {
+        let appState = AppState()
+        let runnerService = makeTestRunnerService(runners: [
+            LocalRunner(
+                name: "org-runner",
+                scope: .organization(login: "acme"),
+                path: "/Users/test/.ghast/runners/org-runner",
+                labels: ["self-hosted", "macOS"]
+            ),
+            LocalRunner(
+                name: "repo-runner",
+                repository: "testuser/ghast",
+                path: "/Users/test/.ghast/runners/repo-runner",
+                labels: ["self-hosted"]
+            ),
+        ])
+
+        let view = LocalRunnersView()
+            .environment(appState)
+            .environment(runnerService)
+
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
+    }
+    
     func testLocalRunnersViewWithSelectedRunner() async {
         let appState = AppState()
         appState.repositories = [
