@@ -48,7 +48,7 @@ struct RepositoryDetailView: View {
         }
         .navigationTitle("")
         .sheet(isPresented: $showingAddRunner) {
-            AddRunnerView(repository: repository) {
+            AddRunnerView(scope: repository.runnerScope, repository: repository) {
                 Task {
                     await loadRunners()
                 }

@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct AddRunnerView: View {
-    let repository: GitHubRepository
+    let scope: RunnerScope
+    /// Only for the header's public/private icon when `scope` is a repository.
+    var repository: GitHubRepository? = nil
     let onRunnerAdded: () -> Void
     
     @Environment(\.dismiss) private var dismiss
@@ -16,6 +18,8 @@ struct AddRunnerView: View {
     @Environment(RunnerService.self) private var runnerService
     @Environment(\.gitHubAPIService) private var apiService
     
+    private var scopeNoun: String { scope.isOrganization ? "organization" : "repository" }
+
     // Filtered applications for macOS only
     private var macOSApplications: [GitHubRunnerApplication] {
         runnerApplications.filter { app in
@@ -102,6 +106,17 @@ struct AddRunnerView: View {
         }
     }
     
+    @ViewBuilder
+    private var scopeIcon: some View {
+        if let repository {
+            Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                .foregroundStyle(repository.isPrivate ? .orange : .green)
+        } else {
+            Image(systemName: scope.isOrganization ? "building.2" : "folder")
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var modernHeader: some View {
         VStack(spacing: 20) {
             // Title and repository info
@@ -122,10 +137,9 @@ struct AddRunnerView: View {
                         .foregroundStyle(.primary)
                     
                     HStack(spacing: 6) {
-                        Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
+                        scopeIcon
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(repository.isPrivate ? .orange : .green)
-                        Text(repository.fullName)
+                        RunnerScopeLabel(scope: scope)
                             .font(.system(.body, design: .rounded, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -217,7 +231,7 @@ struct AddRunnerView: View {
                 modernErrorCard(
                     icon: "exclamationmark.triangle.fill",
                     title: "No macOS Runners Available",
-                    message: "This repository doesn't have macOS runner applications available. Contact your repository administrator to enable macOS runners."
+                    message: "This \(scopeNoun) doesn't have macOS runner applications available. Contact your \(scopeNoun) administrator to enable macOS runners."
                 )
             } else {
                 VStack(spacing: 20) {
@@ -808,7 +822,7 @@ struct AddRunnerView: View {
             }
             
             // Generate registration token
-            let token = try await apiService.createRegistrationToken(for: repository.runnerScope)
+            let token = try await apiService.createRegistrationToken(for: scope)
             
             // Extract labels
             let labels = runnerLabels.components(separatedBy: ",")
@@ -818,7 +832,7 @@ struct AddRunnerView: View {
             // Create the managed runner
             _ = try await runnerService.createManagedRunner(
                 name: runnerName.trimmingCharacters(in: .whitespacesAndNewlines),
-                repository: repository,
+                scope: scope,
                 application: selectedApp,
                 registrationToken: token.token,
                 labels: labels
@@ -841,7 +855,7 @@ struct AddRunnerView: View {
     
     private func loadRunnerApplications() async {
         do {
-            let applications = try await apiService.fetchRunnerApplications(for: repository.runnerScope)
+            let applications = try await apiService.fetchRunnerApplications(for: scope)
             await MainActor.run {
                 self.runnerApplications = applications
                 
@@ -862,7 +876,7 @@ struct AddRunnerView: View {
             // A view that disappears mid-fetch cancels the request; that isn't a failure.
             guard !error.isCancellation else { return }
             await MainActor.run {
-                self.errorMessage = "Failed to load runner applications for \(repository.fullName): \(error.localizedDescription)"
+                self.errorMessage = "Failed to load runner applications for \(scope.displayName): \(error.localizedDescription)"
                 print("🏃 Runner Applications Error: \(error)")
             }
         }
@@ -1027,6 +1041,7 @@ extension AddRunnerView.Step: RawRepresentable {
 
 #Preview {
     AddRunnerView(
+        scope: .repository(fullName: "user/sample-repo"),
         repository: GitHubRepository(
             id: 1,
             name: "Sample Repo",

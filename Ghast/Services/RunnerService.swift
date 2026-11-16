@@ -33,7 +33,7 @@ class RunnerService {
     /// Automatically downloads, extracts, configures and creates a new runner
     func createManagedRunner(
         name: String,
-        repository: GitHubRepository,
+        scope: RunnerScope,
         application: GitHubRunnerApplication,
         registrationToken: String,
         labels: [String] = []
@@ -52,7 +52,7 @@ class RunnerService {
         // Configure runner
         try await configureRunner(
             at: runnerDir,
-            repository: repository,
+            scope: scope,
             token: registrationToken,
             name: name,
             labels: labels
@@ -61,7 +61,7 @@ class RunnerService {
         // Create LocalRunner instance
         let runner = LocalRunner(
             name: name,
-            repository: repository.fullName,
+            scope: scope,
             path: runnerDir.path,
             labels: labels
         )
@@ -220,9 +220,21 @@ class RunnerService {
         }
     }
     
+    /// Arguments for a non-interactive `config.sh` registering against `url`.
+    static func configArguments(url: String, token: String, name: String, labels: [String]) -> [String] {
+        let base = [
+            "./config.sh",
+            "--url", url,
+            "--token", token,
+            "--name", name,
+            "--unattended",  // Non-interactive mode
+        ]
+        return labels.isEmpty ? base : base + ["--labels", labels.joined(separator: ",")]
+    }
+
     private func configureRunner(
         at directory: URL,
-        repository: GitHubRepository,
+        scope: RunnerScope,
         token: String,
         name: String,
         labels: [String]
@@ -243,19 +255,7 @@ class RunnerService {
         process.currentDirectoryPath = directory.path
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         
-        var arguments = [
-            "./config.sh",
-            "--url", repository.htmlURL,
-            "--token", token,
-            "--name", name,
-            "--unattended"  // Non-interactive mode
-        ]
-        
-        if !labels.isEmpty {
-            arguments.append("--labels")
-            arguments.append(labels.joined(separator: ","))
-        }
-        
+        let arguments = Self.configArguments(url: scope.configURL, token: token, name: name, labels: labels)
         process.arguments = arguments
         
         // Capture output for debugging
