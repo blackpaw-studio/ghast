@@ -9,8 +9,8 @@ options:
   indentWidth: 4
 
 settings:
-  MARKETING_VERSION: "1.0"
-  CURRENT_PROJECT_VERSION: "1"
+  MARKETING_VERSION: "1.1.0"
+  CURRENT_PROJECT_VERSION: "2"
   SWIFT_VERSION: "6.0"
   ENABLE_PREVIEWS: YES
   DEVELOPMENT_ASSET_PATHS: "\"Ghast/Preview Content\""
@@ -27,12 +27,14 @@ targets:
       path: Ghast/Info.plist
       properties:
         CFBundleDisplayName: Ghast
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconFile: "AppIcon"
         LSMultipleInstancesProhibited: true
         LSMinimumSystemVersion: "15.0"
         NSHumanReadableCopyright: "Copyright © 2025 Blackpaw Studio, LLC. All rights reserved."
         LSApplicationCategoryType: "public.app-category.developer-tools"
-        SUFeedURL: "https://evancoleman.net/ghast/appcast.xml"
+        SUFeedURL: "https://github.com/blackpaw-studio/ghast/releases/latest/download/appcast.xml"
         SUPublicEDKey: "XiAxrGMH7g3mTu9QpwrqXkUCfqyQkuqT7lB2LgJUnjE="
     settings:
       base:

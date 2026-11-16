@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
@@ -31,7 +31,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2025 Blackpaw Studio, LLC. All rights reserved.</string>
 	<key>SUFeedURL</key>
-	<string>https://evancoleman.net/ghast/appcast.xml</string>
+	<string>https://github.com/blackpaw-studio/ghast/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>XiAxrGMH7g3mTu9QpwrqXkUCfqyQkuqT7lB2LgJUnjE=</string>
 </dict>
