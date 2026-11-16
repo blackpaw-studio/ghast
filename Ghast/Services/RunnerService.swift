@@ -36,6 +36,8 @@ class RunnerService {
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     @ObservationIgnored private let runnersBaseDirectory: URL
+    /// Where every managed runner keeps its folder.
+    var runnersDirectory: URL { runnersBaseDirectory }
     
     /// - Parameters:
     ///   - restartDelay: Seconds the wrapper waits before restarting a runner that updated itself.
