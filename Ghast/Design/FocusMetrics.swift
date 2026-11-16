@@ -1,0 +1,63 @@
+import CoreGraphics
+
+/// Every size in the Focus design, named once. Views use these; none carries its own literals.
+/// Values come from the spec's token table, except the three marked "measured", which were
+/// taken from the @2x design PNGs (1 pt = 2 px).
+enum FocusMetrics {
+    // MARK: Windows
+    static let mainWindowSize = CGSize(width: 1240, height: 780)
+    static let mainWindowMinSize = CGSize(width: 900, height: 560)
+    static let welcomeWindow = CGSize(width: 560, height: 520)
+    static let settingsWidth: CGFloat = 620
+    static let settingsPadding = CGSize(width: 28, height: 20)
+    static let sheetWidth: CGFloat = 500
+    static let sheetPadding: CGFloat = 24
+
+    // MARK: Main window
+    static let sidebarWidth: CGFloat = 248
+    static let sidebarMinWidth: CGFloat = 220
+    static let sidebarMaxWidth: CGFloat = 320
+    static let contentInset: CGFloat = 32
+    /// Measured: the Configuration form is 1277 / 1.68 ≈ 760 pt wide in Configuration.png.
+    static let configurationMaxWidth: CGFloat = 760
+    /// Measured: the environment-variable value column starts 260 pt after the name column.
+    static let environmentNameColumn: CGFloat = 260
+
+    // MARK: Status
+    static let statusDot: CGFloat = 8
+    /// Measured: the header dot in ErrorRunner.png is 16 px, the same 8 pt as the sidebar dot.
+    /// (The spec's provisional 10 pt did not survive measurement.)
+    static let statusDotHeader: CGFloat = 8
+    static let runningHaloWidth: CGFloat = 3
+    static let runningHaloOpacity = 0.22
+
+    // MARK: Rows and tokens
+    static let runnerRowPadding = CGSize(width: 8, height: 7)
+    static let runnerRowRadius: CGFloat = 10
+    static let tokenHeight: CGFloat = 20
+    static let tokenHorizontalPadding: CGFloat = 7
+    static let tokenRadius: CGFloat = 6
+
+    // MARK: Output
+    static let outputLineHeight: CGFloat = 19
+    static let outputTimeColumn: CGFloat = 64
+    static let outputGlyphColumn: CGFloat = 16
+    static let liveLineHeight: CGFloat = 24
+    static let liveLineRadius: CGFloat = 6
+    static let liveLineInset: CGFloat = -8
+
+    // MARK: Welcome and empty states
+    static let appIconLarge: CGFloat = 96
+    static let appIconLargeRadius: CGFloat = 22
+    static let appIconBanner: CGFloat = 32
+    static let deviceCodeFontSize: CGFloat = 34
+    static let deviceCodeTracking = 0.08
+    static let deviceCodePadding = CGSize(width: 28, height: 16)
+    static let deviceCodeRadius: CGFloat = 12
+    static let emptyStateGlyph: CGFloat = 56
+    static let emptyStateBodyMaxWidth: CGFloat = 380
+
+    // MARK: Account
+    static let accountAvatar: CGFloat = 64
+    static let accountInitialsFontSize: CGFloat = 24
+}

@@ -15,7 +15,11 @@ enum FixtureBootstrap {
         do {
             guard let launch = try FixtureLaunch.parse(arguments) else { return nil }
             let dependencies = FixtureDependencies.make(for: launch)
-            let stage = FixtureStage(launch: launch, removeScratch: { dependencies.tearDown() })
+            let stage = FixtureStage(
+                launch: launch,
+                removeScratch: { dependencies.tearDown() },
+                prepare: { await dependencies.seedProcessStates() }
+            )
             return Result(dependencies: dependencies, stage: stage)
         } catch {
             FileHandle.standardError.write(Data("ghast: \(error)\n".utf8))

@@ -15,20 +15,24 @@ final class FixtureStage {
     private let launch: FixtureLaunch
     private let emit: @MainActor (String) -> Void
     private let removeScratch: @MainActor () -> Void
+    private let prepare: @MainActor () async -> Void
     private var backdrop: NSWindow?
     private var task: Task<Void, Never>?
     private var signalSources: [DispatchSourceSignal] = []
 
     /// - Parameter removeScratch: Deletes the fixture's throwaway storage; runs on quit and on
     ///   SIGTERM/SIGINT, because a fixture is always stopped by the capture script.
+    ///   - prepare: Runs before the window is announced, so a capture never sees half-seeded state.
     init(
         launch: FixtureLaunch,
         emit: @escaping @MainActor (String) -> Void = FixtureStage.printToStdout,
-        removeScratch: @escaping @MainActor () -> Void = {}
+        removeScratch: @escaping @MainActor () -> Void = {},
+        prepare: @escaping @MainActor () async -> Void = {}
     ) {
         self.launch = launch
         self.emit = emit
         self.removeScratch = removeScratch
+        self.prepare = prepare
     }
 
     func shutdown() {
@@ -60,7 +64,10 @@ final class FixtureStage {
         NSApp.appearance = NSAppearance(named: launch.isDark ? .darkAqua : .aqua)
         let screen = Self.targetScreen()
         backdrop = makeBackdrop(on: screen)
-        task = Task { [weak self] in await self?.placeWindowAndAnnounce(on: screen) }
+        task = Task { [weak self] in
+            await self?.prepare()
+            await self?.placeWindowAndAnnounce(on: screen)
+        }
     }
 
     /// The 1440 x 900 pt HiDPI screen if one is attached (the virtual display); otherwise the

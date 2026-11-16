@@ -36,7 +36,7 @@ struct FixtureSafetyTests {
         #expect(!scratch.hasPrefix(real))
         #expect(!scratch.contains("/.ghast"))
         #expect(scratch.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path))
-        #expect(fixture.appDependencies.runnerService.localRunners.isEmpty)
+        #expect(fixture.appDependencies.runnerService.localRunners.map(\.name) == FixtureWorld.localRunners.map(\.name))
     }
 
     @Test("stores the token in memory, never the Keychain")
