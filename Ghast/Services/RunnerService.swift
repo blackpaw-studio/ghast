@@ -9,18 +9,53 @@ class RunnerService {
         .appendingPathComponent(".ghast")
         .appendingPathComponent("runners")
     
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var store: RunnerStore
+    @ObservationIgnored private let clock: any AppClock
+    @ObservationIgnored private let launcher: any RunnerProcessLauncher
+    @ObservationIgnored private let restartDelay: Int
+    @ObservationIgnored private let sleeper: Sleeper
+    @ObservationIgnored private let runsStrayProcessCleanup: Bool
     
     var localRunners: [LocalRunner] = []
+    /// Runtime process state per runner id. A runner with no entry is stopped.
+    private(set) var processStates: [String: RunnerProcessState] = [:]
     
-    @ObservationIgnored private var runningProcesses: [String: Process] = [:]
-    @ObservationIgnored private var processGroupIDs: [String: pid_t] = [:]
+    /// A launched wrapper and the token that ties its termination callback to this launch.
+    private struct RunningProcess {
+        let handle: any RunnerProcessHandle
+        let launchToken: UUID
+        /// The wrapper leads its own process group, so the group is signalled as one.
+        let processGroupID: pid_t
+    }
+    
+    @ObservationIgnored private var runningProcesses: [String: RunningProcess] = [:]
+    /// Runners Ghast has asked to stop; their next exit is a requested stop, not a crash.
+    @ObservationIgnored private var stopRequested: Set<String> = []
+    /// Callers of `stopRunner` waiting for a runner's process to end.
+    @ObservationIgnored private var terminationWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     @ObservationIgnored private let runnersBaseDirectory: URL
     
-    init(defaults: UserDefaults = .standard, runnersDirectory: URL = RunnerService.defaultRunnersDirectory) {
-        self.defaults = defaults
+    /// - Parameters:
+    ///   - restartDelay: Seconds the wrapper waits before restarting a runner that updated itself.
+    ///   - runsStrayProcessCleanup: Whether quitting also `pkill`s runner processes machine-wide.
+    ///     Tests turn this off so they never touch the developer's real runners.
+    init(
+        defaults: UserDefaults = .standard,
+        runnersDirectory: URL = RunnerService.defaultRunnersDirectory,
+        clock: any AppClock = SystemClock(),
+        launcher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
+        restartDelay: Int = RunnerWrapperScript.defaultRestartDelay,
+        sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
+        runsStrayProcessCleanup: Bool = true
+    ) {
+        self.store = RunnerStore(defaults: defaults)
+        self.clock = clock
+        self.launcher = launcher
+        self.restartDelay = restartDelay
+        self.sleeper = sleeper
+        self.runsStrayProcessCleanup = runsStrayProcessCleanup
         self.runnersBaseDirectory = runnersDirectory
         createRunnersDirectoryIfNeeded()
         loadRunners()
@@ -298,6 +333,7 @@ class RunnerService {
     
     func addLocalRunner(_ runner: LocalRunner) {
         localRunners.append(runner)
+        processStates[runner.id] = .restored(from: runner.lastExit)
         saveRunners()
         
         // Sync environment files, pre-job and post-job scripts
@@ -318,8 +354,9 @@ class RunnerService {
     }
     
     func removeLocalRunner(id: String) {
-        stopRunner(id: id)
+        requestStop(id: id)
         localRunners.removeAll { $0.id == id }
+        processStates.removeValue(forKey: id)
         saveRunners()
     }
     
@@ -328,15 +365,20 @@ class RunnerService {
     func removeAllLocalRunners() {
         // Stop all running runners first
         for runner in localRunners {
-            stopRunner(id: runner.id)
+            requestStop(id: runner.id)
         }
         
         // Clear the array and persist the empty state
         localRunners.removeAll()
+        processStates.removeAll()
+        store.discardKeptRecords()
         saveRunners()
     }
     
     func startRunner(id: String) async throws {
+        // A stop that is still pending (its card already reads stopped) must finish first.
+        await waitForPendingStop(id: id)
+        
         guard let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) else {
             throw RunnerError.runnerNotFound
         }
@@ -350,352 +392,201 @@ class RunnerService {
         }
         
         // Check if already running
-        if let existingProcess = runningProcesses[id] {
-            if existingProcess.isRunning {
+        if let existing = runningProcesses[id] {
+            if existing.handle.isRunning {
                 throw RunnerError.runnerAlreadyRunning
-            } else {
-                // Clean up dead process reference
-                #if DEBUG
-                print("🏃 Cleaning up dead process reference for runner \(id)")
-                #endif
-                runningProcesses.removeValue(forKey: id)
-                processGroupIDs.removeValue(forKey: id)
             }
+            // Clean up the dead process reference
+            runningProcesses.removeValue(forKey: id)
         }
         
-        let process = Process()
-        process.currentDirectoryPath = runner.path
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        let script = RunnerWrapperScript.make(
+            runnerPath: runner.path,
+            logFile: runnerPath.appendingPathComponent(RunnerWrapperScript.logFileName).path,
+            parentPID: ProcessInfo.processInfo.processIdentifier,
+            restartDelay: restartDelay
+        )
+        let spec = RunnerLaunchSpec(
+            executable: URL(fileURLWithPath: "/bin/bash"),
+            arguments: ["-c", script],
+            currentDirectory: runnerPath
+        )
         
-        // Create a wrapper script that monitors the parent process and kills itself if parent dies
-        // This ensures the runner process doesn't outlive Ghast
-        let parentPID = ProcessInfo.processInfo.processIdentifier
-        let logFile = "\(runner.path)/ghast-runner.log"
-        let wrapperScript = """
-        #!/bin/bash
-        
-        # Set up log file
-        LOG_FILE="\(logFile)"
-        
-        # Function to log with timestamp
-        log_message() {
-            echo "$(date '+%H:%M:%S') $1" | tee -a "$LOG_FILE" >/dev/null
-        }
-        
-        # Change to the runner directory
-        cd "\(runner.path)" 2>&1 || {
-            log_message "❌ ERROR: Cannot change to directory \(runner.path)"
-            exit 1
-        }
-        
-        # Verify run.sh exists and is executable
-        if [ ! -f "./run.sh" ]; then
-            log_message "❌ ERROR: ./run.sh not found"
-            exit 127
-        fi
-        
-        if [ ! -x "./run.sh" ]; then
-            log_message "🔧 Making ./run.sh executable"
-            chmod +x ./run.sh
-        fi
-        
-        log_message "🏃 Starting runner '\(runner.name)'"
-        
-        # Simple loop to keep runner running
-        while true; do
-            # Run the runner and capture its output to log file
-            log_message "🚀 Executing ./run.sh"
-            # Run the runner and log output with timestamps
-            ./run.sh > >(while IFS= read -r line; do echo "$(date '+%H:%M:%S') $line" >> "$LOG_FILE"; done) 2>&1 &
-            RUNNER_PID=$!
-            
-            # Wait for completion
-            wait $RUNNER_PID
-            EXIT_CODE=$?
-            
-            log_message "🏁 Runner exited with code $EXIT_CODE"
-            
-            # Check if parent is still alive
-            if ! kill -0 \(parentPID) 2>/dev/null; then
-                log_message "🛑 Parent process terminated - stopping runner"
-                break
-            fi
-            
-            # Only restart if exit code suggests we should continue
-            if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
-                log_message "🔄 Restarting runner in 5 seconds..."
-                sleep 5
-            else
-                log_message "❌ Runner failed with exit code $EXIT_CODE - stopping"
-                break
-            fi
-        done
-        """
-        
-        process.arguments = ["-c", wrapperScript]
-        
-        // Setup output pipes
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        
-        // Send initial log message to file
-        let logFileURL = URL(fileURLWithPath: logFile)
-        let initialMessage = "\(Date().formatted(date: .omitted, time: .standard)) 🏃 Starting runner '\(runner.name)' at \(runner.path)\n"
-        
-        // Append to existing log file or create new one
-        if FileManager.default.fileExists(atPath: logFileURL.path) {
-            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                fileHandle.seekToEndOfFile()
-                if let data = initialMessage.data(using: .utf8) {
-                    fileHandle.write(data)
-                }
-                fileHandle.closeFile()
-            }
-        } else {
-            try? initialMessage.write(to: logFileURL, atomically: false, encoding: .utf8)
-        }
-        
-        // Setup termination handler. It runs on a background queue, so it only uses value
-        // snapshots; the state update hops to the main actor.
-        let runnerName = runner.name
-        let runnerDirectory = runner.path
-        process.terminationHandler = { [weak self] terminatedProcess in
-            let exitCode = terminatedProcess.terminationStatus
-            #if DEBUG
-            print("🏃 Runner '\(runnerName)' terminated with exit code: \(exitCode)")
-            #endif
-            
-            // Log termination to file
-            let logFileURL = URL(fileURLWithPath: logFile)
-            let terminationMessage = "\(Date().formatted(date: .omitted, time: .standard)) 🏃 Runner process terminated (exit code: \(exitCode))\n"
-            
-            // Append termination message
-            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                fileHandle.seekToEndOfFile()
-                if let data = terminationMessage.data(using: .utf8) {
-                    fileHandle.write(data)
-                }
-                fileHandle.closeFile()
-            }
-            
-            // Log specific error messages for common exit codes
-            let errorMessage: String
-            switch exitCode {
-            case 127:
-                errorMessage = "❌ Error: Command not found (./run.sh missing or not executable)\n"
-                #if DEBUG
-                print("❌ Error: ./run.sh not found or not executable in \(runnerDirectory)")
-                #endif
-            case 126:
-                errorMessage = "❌ Error: Permission denied (./run.sh not executable)\n"
-            case 1:
-                errorMessage = "⚠️ Runner exited with error\n"
-            case 0:
-                errorMessage = "✅ Runner exited normally\n"
-            default:
-                errorMessage = "⚠️ Runner exited with code \(exitCode)\n"
-            }
-            
-            // Write error message to log file
-            let errorLogMessage = "\(Date().formatted(date: .omitted, time: .standard)) \(errorMessage)"
-            if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                fileHandle.seekToEndOfFile()
-                if let data = errorLogMessage.data(using: .utf8) {
-                    fileHandle.write(data)
-                }
-                fileHandle.closeFile()
-            }
-            
-            // Schedule cleanup on main actor
+        let launchToken = UUID()
+        stopRequested.remove(id)
+        // The termination callback runs on a background queue; it only hops to the main actor.
+        let handle = try launcher.launch(spec) { [weak self] exitCode in
             Task { @MainActor [weak self] in
-                self?.didTerminate(id: id)
+                self?.didTerminate(id: id, launchToken: launchToken, exitCode: exitCode)
             }
         }
         
-        try process.run()
+        let pid = handle.processIdentifier
+        let groupID = getpgid(pid)
+        runningProcesses[id] = RunningProcess(handle: handle, launchToken: launchToken, processGroupID: groupID == -1 ? pid : groupID)
+        processStates[id] = .running(since: clock.now())
         
-        // Store the PID and PGID immediately after launch
-        let processPID = process.processIdentifier
-        runningProcesses[id] = process
-        
-        // Store the process group ID (initially same as PID, will change with setsid)
-        let pgid = getpgid(processPID)
-        if pgid != -1 {
-            processGroupIDs[id] = pgid
-            #if DEBUG
-            print("🏃 Runner '\(runner.name)' initial process group: \(pgid)")
-            #endif
-        }
-        
+        localRunners[runnerIndex].shouldBeRunning = true
         localRunners[runnerIndex].status = .running
         saveRunners()
         
         #if DEBUG
-        print("🏃 Started runner '\(runner.name)' with PID: \(process.processIdentifier)")
+        print("🏃 Started runner '\(runner.name)' with PID: \(pid)")
         #endif
     }
     
-    /// Drops the finished process from tracking and marks the runner stopped.
-    private func didTerminate(id: String) {
-        // Remove from tracking - this prevents reuse of the Process instance
+    /// Records how a launch ended. Ignores a callback from a launch that was already replaced.
+    private func didTerminate(id: String, launchToken: UUID, exitCode: Int32) {
+        guard runningProcesses[id]?.launchToken == launchToken else { return }
         runningProcesses.removeValue(forKey: id)
-        processGroupIDs.removeValue(forKey: id)
-        
+        recordExit(id: id, code: exitCode, wasRequested: stopRequested.remove(id) != nil)
+        resumeTerminationWaiters(id: id)
+    }
+    
+    private func resumeTerminationWaiters(id: String) {
+        for waiter in terminationWaiters.removeValue(forKey: id) ?? [] { waiter.resume() }
+    }
+    
+    /// Updates state for a process that has ended. A requested stop leaves the runner `.stopped`;
+    /// an unexpected exit leaves it `.exited` and clears the intent to keep running.
+    private func recordExit(id: String, code: Int32, wasRequested: Bool) {
+        guard let index = localRunners.firstIndex(where: { $0.id == id }) else {
+            // The runner was removed while it stopped: nothing to record.
+            processStates.removeValue(forKey: id)
+            return
+        }
+        var startedAt: Date?
+        if case let .running(since)? = processStates[id] { startedAt = since }
+        let exit = RunnerExit(code: code, startedAt: startedAt, at: clock.now(), wasRequested: wasRequested)
+        processStates[id] = wasRequested ? .stopped : .exited(exit)
+        localRunners[index].lastExit = exit
+        localRunners[index].status = .stopped
+        if !wasRequested { localRunners[index].shouldBeRunning = false }
+        saveRunners()
+    }
+    
+    /// How long a stopping runner gets to exit on SIGTERM before SIGKILL, and then how long
+    /// SIGKILL gets before Ghast gives up waiting for the exit report.
+    static let stopGracePeriod: Duration = .seconds(1)
+    
+    /// Stops a runner and returns once its process has ended, so a start right after succeeds.
+    /// Bounded: SIGTERM, then SIGKILL after the grace period, then Ghast records the stop itself
+    /// after another grace period if the exit is never reported.
+    func stopRunner(id: String) async {
+        requestStop(id: id)
+        await waitForTermination(of: id)
+    }
+    
+    /// Returns once the runner's current process has ended; immediately if there is none.
+    private func waitForTermination(of id: String) async {
+        guard runningProcesses[id] != nil else { return }
+        await withCheckedContinuation { terminationWaiters[id, default: []].append($0) }
+    }
+    
+    private func waitForPendingStop(id: String) async {
+        guard stopRequested.contains(id) else { return }
+        await waitForTermination(of: id)
+    }
+    
+    /// Asks a runner to stop and returns immediately; the process ends (and is recorded) later.
+    private func requestStop(id: String) {
+        // A stop request always ends the intent to keep running, even with no process to kill.
+        if let index = localRunners.firstIndex(where: { $0.id == id }), localRunners[index].shouldBeRunning {
+            localRunners[index].shouldBeRunning = false
+            saveRunners()
+        }
+        guard let running = runningProcesses[id] else {
+            #if DEBUG
+            print("🏃 No running process found for runner ID: \(id)")
+            #endif
+            return
+        }
+        stopRequested.insert(id)
         if let index = localRunners.firstIndex(where: { $0.id == id }) {
             localRunners[index].status = .stopped
             saveRunners()
         }
-    }
-    
-    func stopRunner(id: String) {
-        guard let process = runningProcesses[id] else { 
-            #if DEBUG
-            print("🏃 No running process found for runner ID: \(id)")
-            #endif
-            return 
-        }
         
-        #if DEBUG
-        if let runner = localRunners.first(where: { $0.id == id }) {
-            print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
-        }
-        #endif
+        // Graceful first. The wrapper leads its own process group, so the group signal reaches
+        // the runner and its helpers and nothing else; no pattern kill, which would match
+        // other runners whose folder name merely starts the same.
+        send(SIGTERM, to: running)
         
-        // Use stored process group ID if available, otherwise fall back to process PID
-        let pgid = processGroupIDs[id] ?? process.processIdentifier
-        
-        #if DEBUG
-        print("🏃 Terminating process group \(pgid)")
-        #endif
-        
-        // First try graceful termination of the process group
-        kill(-pgid, SIGTERM)
-        
-        // Read the path while still on the main actor; only value snapshots cross to the background queue.
-        let runnerPath = localRunners.first(where: { $0.id == id })?.path
-        let pid = process.processIdentifier
-        
-        // Also kill any related processes by pattern for this specific runner (async)
-        if let runnerPath {
-            DispatchQueue.global(qos: .utility).async {
-                Self.killProcesses(matching: runnerPath, signal: nil)
-            }
-        }
-        
-        // Give it a moment to terminate gracefully (reduced timeout)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-            // Liveness by pid: the Process object itself must not cross isolation boundaries.
-            guard kill(pid, 0) == 0 else { return }
-            #if DEBUG
-            print("🏃 Force killing runner process group (PGID: \(pgid))")
-            #endif
-            kill(-pgid, SIGKILL)
-            kill(pid, SIGKILL)
-            
-            // Force kill any remaining processes for this runner
-            if let runnerPath {
-                Self.killProcesses(matching: runnerPath, signal: "-9")
-            }
-        }
-        
-        if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
-            localRunners[runnerIndex].status = .stopped
-            saveRunners()
+        let launchToken = running.launchToken
+        Task { [weak self, sleeper] in
+            try? await sleeper(Self.stopGracePeriod)
+            guard let self, self.forceKill(id: id, launchToken: launchToken) else { return }
+            try? await sleeper(Self.stopGracePeriod)
+            self.giveUpWaiting(id: id, launchToken: launchToken)
         }
     }
     
-    /// Runs `pkill -f <path>` (optionally with a signal flag) to catch stragglers in a runner directory.
-    /// Blocks until `pkill` exits, so call it off the main actor.
-    nonisolated private static func killProcesses(matching runnerPath: String, signal: String?) {
-        let flag = signal.map { "\($0) " } ?? ""
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "pkill \(flag)-f \"\(runnerPath)\" 2>/dev/null || true"]
-        
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            #if DEBUG
-            print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
-            #endif
-        }
+    /// Whether `kill(-pgid, …)` is safe: never Ghast's own group (that would signal Ghast itself),
+    /// and never 0, 1 or negative values, which `kill` reads as "everything".
+    nonisolated static func canSignalGroup(_ pgid: pid_t, ownGroup: pid_t = getpgrp()) -> Bool {
+        pgid > 1 && pgid != ownGroup
     }
     
+    /// Signals the process and, when that is safe, its whole group.
+    private func send(_ signal: Int32, to running: RunningProcess) {
+        if Self.canSignalGroup(running.processGroupID) {
+            kill(-running.processGroupID, signal)
+        }
+        kill(running.handle.processIdentifier, signal)
+    }
+    
+    /// SIGKILLs the launch if it is still running. Returns whether it was.
+    private func forceKill(id: String, launchToken: UUID) -> Bool {
+        guard let running = runningProcesses[id], running.launchToken == launchToken, running.handle.isRunning else {
+            return false
+        }
+        send(SIGKILL, to: running)
+        return true
+    }
+    
+    /// The exit report never came after SIGKILL: record the stop here so callers aren't left waiting.
+    private func giveUpWaiting(id: String, launchToken: UUID) {
+        didTerminate(id: id, launchToken: launchToken, exitCode: 128 + SIGKILL)
+    }
+    
+    /// Stops every runner for a quit. A requested stop that keeps `shouldBeRunning`, so the next
+    /// launch can start them again. Synchronous: it must finish before the app exits.
     func stopAllRunners() {
         #if DEBUG
         print("🏃 Stopping all running runners due to app termination...")
         #endif
         
-        // Create a list of processes to terminate to avoid modifying while iterating
-        let processesToStop = Array(runningProcesses)
-        
-        for (id, process) in processesToStop {
-            #if DEBUG
-            if let runner = localRunners.first(where: { $0.id == id }) {
-                print("🏃 Terminating runner '\(runner.name)' (PID: \(process.processIdentifier))")
-            }
-            #endif
+        for (id, running) in Array(runningProcesses) {
+            // Graceful first: the process, then its whole group.
+            running.handle.terminate()
+            send(SIGTERM, to: running)
             
-            // Use stored process group ID if available, otherwise fall back to process PID
-            let pgid = processGroupIDs[id] ?? process.processIdentifier
-            let pid = process.processIdentifier
-            
-            #if DEBUG
-            print("🏃 Terminating process group \(pgid) for runner \(id)")
-            #endif
-            
-            // First try to terminate the process normally
-            process.terminate()
-            
-            // Send SIGTERM to the process group using stored PGID
-            kill(-pgid, SIGTERM)
-            
-            // Give it a moment to terminate gracefully (reduced timeout for app termination)
             let deadline = Date().addingTimeInterval(1.0)
-            while process.isRunning && Date() < deadline {
+            while running.handle.isRunning && Date() < deadline {
                 Thread.sleep(forTimeInterval: 0.05)
             }
             
-            // If still running, force kill the entire process group
-            if process.isRunning {
-                #if DEBUG
-                print("🏃 Force killing runner process group (PGID: \(pgid))")
-                #endif
-                
-                // Force terminate through Process API
-                process.interrupt()
-                
-                // Send SIGKILL to process group
-                kill(-pgid, SIGKILL)
-                
-                // Also kill the main process directly as backup
-                kill(pid, SIGKILL)
-                
-                // Final wait
+            var code = 128 + SIGTERM
+            if running.handle.isRunning {
+                send(SIGKILL, to: running)
                 Thread.sleep(forTimeInterval: 0.1)
+                code = 128 + SIGKILL
             }
             
-            if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
-                localRunners[runnerIndex].status = .stopped
-            }
+            // The termination callback may never run (the app is exiting), so record it here.
+            runningProcesses.removeValue(forKey: id)
+            stopRequested.remove(id)
+            recordExit(id: id, code: code, wasRequested: true)
+            resumeTerminationWaiters(id: id)
         }
         
-        // Clear all running processes and process group IDs
-        runningProcesses.removeAll()
-        processGroupIDs.removeAll()
-        
-        // Save updated runner states
-        saveRunners()
+        if runsStrayProcessCleanup {
+            comprehensiveRunnerCleanup()
+        }
         
         #if DEBUG
         print("🏃 All runners stopped")
         #endif
-        
-        // Comprehensive cleanup of all runner-related processes
-        comprehensiveRunnerCleanup()
     }
     
     private func comprehensiveRunnerCleanup() {
@@ -749,52 +640,50 @@ class RunnerService {
     
     func getRunnerLogFile(for runnerId: String) -> URL? {
         guard let runner = localRunners.first(where: { $0.id == runnerId }) else { return nil }
-        return URL(fileURLWithPath: runner.path).appendingPathComponent("ghast-runner.log")
+        return URL(fileURLWithPath: runner.path).appendingPathComponent(RunnerWrapperScript.logFileName)
     }
     
+    /// The runner's log text after the point the user last cleared (see `clearOutput`).
     func readRunnerLogs(for runnerId: String) -> String {
-        guard let logFileURL = getRunnerLogFile(for: runnerId),
+        let placeholder = "No logs available. Start the runner to see output."
+        guard let runner = localRunners.first(where: { $0.id == runnerId }),
+              let logFileURL = getRunnerLogFile(for: runnerId),
               FileManager.default.fileExists(atPath: logFileURL.path) else {
-            return "No logs available. Start the runner to see output."
+            return placeholder
         }
         
         do {
-            let logContent = try String(contentsOf: logFileURL, encoding: .utf8)
-            return logContent.isEmpty ? "No logs available. Start the runner to see output." : logContent
+            let handle = try FileHandle(forReadingFrom: logFileURL)
+            defer { try? handle.close() }
+            let size = try handle.seekToEnd()
+            try handle.seek(toOffset: min(runner.outputClearOffset, size))
+            let data = try handle.readToEnd() ?? Data()
+            let text = String(decoding: data, as: UTF8.self)
+            return text.isEmpty ? placeholder : text
         } catch {
             return "Error reading log file: \(error.localizedDescription)"
         }
     }
     
-    func clearRunnerLogs(for runnerId: String) {
-        guard let logFileURL = getRunnerLogFile(for: runnerId) else { return }
-        
-        do {
-            if FileManager.default.fileExists(atPath: logFileURL.path) {
-                // Use FileHandle to truncate file while preserving file descriptor
-                let fileHandle = try FileHandle(forWritingTo: logFileURL)
-                fileHandle.truncateFile(atOffset: 0)
-                fileHandle.closeFile()
-                #if DEBUG
-                print("🏃 Cleared logs for runner \(runnerId)")
-                #endif
-            }
-        } catch {
-            #if DEBUG
-            print("🏃 Warning: Could not clear log file: \(error)")
-            #endif
-        }
+    /// Hides everything logged so far from the Output tab. The file is never truncated, so the
+    /// activity parser still sees every job (Jobs Today stays correct).
+    func clearOutput(id: String) {
+        guard let index = localRunners.firstIndex(where: { $0.id == id }),
+              let logFileURL = getRunnerLogFile(for: id) else { return }
+        let size = (try? FileManager.default.attributesOfItem(atPath: logFileURL.path)[.size] as? UInt64) ?? nil
+        localRunners[index].outputClearOffset = size ?? 0
+        saveRunners()
     }
     
     func isRunnerRunning(id: String) -> Bool {
-        return runningProcesses[id]?.isRunning == true
+        return runningProcesses[id]?.handle.isRunning == true
     }
     
     /// Verify and sync runner status with actual process state
     func syncRunnerStatus(id: String) {
         guard let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) else { return }
         
-        let isActuallyRunning = runningProcesses[id]?.isRunning == true
+        let isActuallyRunning = runningProcesses[id]?.handle.isRunning == true
         let currentStatus = localRunners[runnerIndex].status
         
         // If status is out of sync, update it
@@ -817,8 +706,7 @@ class RunnerService {
     
     private func saveRunners() {
         do {
-            let data = try JSONEncoder().encode(localRunners)
-            defaults.set(data, forKey: "localRunners")
+            try store.save(localRunners)
         } catch {
             #if DEBUG
             print("Failed to save runners: \(error)")
@@ -827,27 +715,25 @@ class RunnerService {
     }
     
     func loadRunners() {
-        guard let data = defaults.data(forKey: "localRunners") else { return }
+        localRunners = store.load()
         
-        do {
-            localRunners = try JSONDecoder().decode([LocalRunner].self, from: data)
-            
-            // Reset all runners to stopped status on app startup since processes don't persist
-            for index in localRunners.indices {
-                if localRunners[index].status == .running {
-                    localRunners[index].status = .stopped
-                }
+        // Reset all runners to stopped status on app startup since processes don't persist
+        for index in localRunners.indices {
+            if localRunners[index].status == .running {
+                localRunners[index].status = .stopped
             }
-            saveRunners()
-            
-            #if DEBUG
-            print("🏃 Loaded \(localRunners.count) runners")
-            #endif
-        } catch {
-            #if DEBUG
-            print("Failed to load runners: \(error)")
-            #endif
         }
+        processStates = Dictionary(uniqueKeysWithValues: localRunners.map { ($0.id, RunnerProcessState.restored(from: $0.lastExit)) })
+        saveRunners()
+        
+        #if DEBUG
+        print("🏃 Loaded \(localRunners.count) runners")
+        #endif
+    }
+    
+    /// A path with symlinks resolved, so `/var/…` and `/private/var/…` compare equal.
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
     
     /// Discovers existing runners in the .ghast/runners directory that aren't tracked
@@ -880,7 +766,8 @@ class RunnerService {
                 
                 // Check if runner is already tracked
                 let runnerName = runnerDir.lastPathComponent
-                if localRunners.contains(where: { $0.path == runnerDir.path }) {
+                let trackedPaths = Set(localRunners.map(\.path)).union(store.keptPaths).map(Self.canonicalPath)
+                if trackedPaths.contains(Self.canonicalPath(runnerDir.path)) {
                     continue
                 }
                 
@@ -1137,155 +1024,5 @@ class RunnerService {
         writeEnvironmentFile(for: runner)
         writePreJobScript(for: runner)
         writePostJobScript(for: runner)
-    }
-}
-
-// MARK: - Data Models
-
-struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
-    let id: String
-    let name: String
-    let scope: RunnerScope
-    let path: String
-    var labels: [String]
-    var status: RunnerStatus
-    let createdAt: Date
-    var environmentVariables: [String: String]
-    var preJobScript: String?
-    var postJobScript: String?
-
-    /// Repository full name or organization login (see `RunnerScope.displayName`).
-    var repository: String { scope.displayName }
-
-    init(name: String, scope: RunnerScope, path: String, labels: [String] = []) {
-        self.id = UUID().uuidString
-        self.name = name
-        self.scope = scope
-        self.path = path
-        self.labels = labels
-        self.status = .stopped
-        self.createdAt = Date()
-        self.environmentVariables = [:]
-        self.preJobScript = nil
-        self.postJobScript = nil
-    }
-
-    /// A repository-level runner for `repository` (`owner/repo`).
-    init(name: String, repository: String, path: String, labels: [String] = []) {
-        self.init(name: name, scope: .repository(fullName: repository), path: path, labels: labels)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, name, scope, repository, path, labels, status, createdAt
-        case environmentVariables, preJobScript, postJobScript
-    }
-
-    /// Runners saved before scopes existed (or rewritten by an older build) carry only
-    /// `repository`: an `owner/repo` full name decodes as `.repository`, a bare login
-    /// (no "/", which a full name always has) as `.organization`.
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        if let scope = try container.decodeIfPresent(RunnerScope.self, forKey: .scope) {
-            self.scope = scope
-        } else {
-            scope = Self.legacyScope(try container.decode(String.self, forKey: .repository))
-        }
-        path = try container.decode(String.self, forKey: .path)
-        labels = try container.decode([String].self, forKey: .labels)
-        status = try container.decode(RunnerStatus.self, forKey: .status)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        environmentVariables = try container.decode([String: String].self, forKey: .environmentVariables)
-        preJobScript = try container.decodeIfPresent(String.self, forKey: .preJobScript)
-        postJobScript = try container.decodeIfPresent(String.self, forKey: .postJobScript)
-    }
-
-    private static func legacyScope(_ repository: String) -> RunnerScope {
-        repository.contains("/") ? .repository(fullName: repository) : .organization(login: repository)
-    }
-
-    /// Also writes `repository`, so a build from before scopes can still read the list.
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(name, forKey: .name)
-        try container.encode(scope, forKey: .scope)
-        try container.encode(repository, forKey: .repository)
-        try container.encode(path, forKey: .path)
-        try container.encode(labels, forKey: .labels)
-        try container.encode(status, forKey: .status)
-        try container.encode(createdAt, forKey: .createdAt)
-        try container.encode(environmentVariables, forKey: .environmentVariables)
-        try container.encodeIfPresent(preJobScript, forKey: .preJobScript)
-        try container.encodeIfPresent(postJobScript, forKey: .postJobScript)
-    }
-
-    // Custom equality based on ID only
-    static func == (lhs: LocalRunner, rhs: LocalRunner) -> Bool {
-        return lhs.id == rhs.id
-    }
-    
-    // Custom hash based on ID only
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
-enum RunnerStatus: String, Codable, CaseIterable, Sendable {
-    case stopped = "stopped"
-    case running = "running"
-    case error = "error"
-    
-    var displayName: String {
-        switch self {
-        case .stopped: return "Stopped"
-        case .running: return "Running"
-        case .error: return "Error"
-        }
-    }
-    
-    var color: String {
-        switch self {
-        case .stopped: return "gray"
-        case .running: return "green"
-        case .error: return "red"
-        }
-    }
-}
-
-enum RunnerError: LocalizedError {
-    case runnerNotFound
-    case runnerDirectoryNotFound
-    case runnerAlreadyRunning
-    case failedToStart
-    case invalidDownloadURL
-    case downloadFailed
-    case extractionFailed
-    case configurationFailed(details: String? = nil)
-    
-    var errorDescription: String? {
-        switch self {
-        case .runnerNotFound:
-            return "Runner not found"
-        case .runnerDirectoryNotFound:
-            return "Runner directory not found. Please ensure the runner is properly configured."
-        case .runnerAlreadyRunning:
-            return "Runner is already running"
-        case .failedToStart:
-            return "Failed to start runner"
-        case .invalidDownloadURL:
-            return "Invalid download URL for runner package"
-        case .downloadFailed:
-            return "Failed to download runner package"
-        case .extractionFailed:
-            return "Failed to extract runner package"
-        case .configurationFailed(let details):
-            if let details = details {
-                return "Failed to configure runner: \(details)"
-            } else {
-                return "Failed to configure runner. Check Console.app for detailed logs."
-            }
-        }
     }
 }

@@ -2,7 +2,7 @@ name: Ghast
 options:
   bundleIdPrefix: net.evancoleman
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "26.0"
   developmentLanguage: en
   createIntermediateGroups: true
   usesTabs: false
@@ -31,7 +31,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconFile: "AppIcon"
         LSMultipleInstancesProhibited: true
-        LSMinimumSystemVersion: "15.0"
+        LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "Copyright © 2025 Blackpaw Studio, LLC. All rights reserved."
         LSApplicationCategoryType: "public.app-category.developer-tools"
         SUFeedURL: "https://github.com/blackpaw-studio/ghast/releases/latest/download/appcast.xml"

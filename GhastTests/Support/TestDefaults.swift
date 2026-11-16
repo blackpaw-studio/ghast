@@ -31,7 +31,7 @@ func makeTestRunnerService(
     defaults: UserDefaults = makeIsolatedDefaults().defaults,
     runnersDirectory: URL = makeTemporaryDirectory()
 ) -> RunnerService {
-    let service = RunnerService(defaults: defaults, runnersDirectory: runnersDirectory)
+    let service = RunnerService(defaults: defaults, runnersDirectory: runnersDirectory, runsStrayProcessCleanup: false)
     runners.forEach { service.addLocalRunner($0) }
     return service
 }

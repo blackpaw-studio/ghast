@@ -161,29 +161,6 @@ final class RunnerServiceTests: XCTestCase {
         XCTAssertEqual(logs, logContent)
     }
     
-    func testClearRunnerLogs() throws {
-        let runner = LocalRunner(
-            name: "Test Runner",
-            repository: "user/repo",
-            path: tempDirectory.path
-        )
-        
-        runnerService.addLocalRunner(runner)
-        
-        // Create a log file with content
-        let logContent = "Test log entry to be cleared\n"
-        let logFile = tempDirectory.appendingPathComponent("ghast-runner.log")
-        try logContent.write(to: logFile, atomically: true, encoding: .utf8)
-        
-        // Clear logs
-        runnerService.clearRunnerLogs(for: runner.id)
-        
-        // Verify file still exists but is empty
-        XCTAssertTrue(FileManager.default.fileExists(atPath: logFile.path))
-        let clearedContent = try String(contentsOf: logFile, encoding: .utf8)
-        XCTAssertEqual(clearedContent, "")
-    }
-    
     // MARK: - Log File Tests
     
     func testReadAndClearRunnerLogs() throws {
@@ -201,8 +178,8 @@ final class RunnerServiceTests: XCTestCase {
         try "line one\n".write(to: logFile, atomically: true, encoding: .utf8)
         XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), "line one\n")
         
-        runnerService.clearRunnerLogs(for: runner.id)
-        XCTAssertEqual(try String(contentsOf: logFile, encoding: .utf8), "")
+        runnerService.clearOutput(id: runner.id)
+        XCTAssertEqual(try String(contentsOf: logFile, encoding: .utf8), "line one\n", "clearing hides output; it never truncates the file")
         XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), placeholder)
     }
     

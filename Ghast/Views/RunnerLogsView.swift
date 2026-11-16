@@ -146,7 +146,7 @@ struct RunnerLogsView: View {
         HStack(spacing: 8) {
             if currentRunner?.status == .running {
                 Button(action: {
-                    runnerService.stopRunner(id: runner.id)
+                    Task { await runnerService.stopRunner(id: runner.id) }
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: "stop.fill")
@@ -193,7 +193,7 @@ struct RunnerLogsView: View {
             }
             
             Button(action: {
-                runnerService.clearRunnerLogs(for: runner.id)
+                runnerService.clearOutput(id: runner.id)
                 startError = nil
                 tailer?.reload()
             }) {

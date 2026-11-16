@@ -56,7 +56,7 @@ struct GitHubOrganization: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct GitHubRunner: Sendable, Codable, Identifiable {
+struct GitHubRunner: Sendable, Codable, Identifiable, Equatable {
     let id: Int
     let name: String
     let os: String
@@ -80,7 +80,7 @@ struct GitHubRunner: Sendable, Codable, Identifiable {
     }
 }
 
-struct GitHubRunnerLabel: Sendable, Codable, Identifiable {
+struct GitHubRunnerLabel: Sendable, Codable, Identifiable, Equatable {
     let id: Int
     let name: String
     let type: String

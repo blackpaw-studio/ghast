@@ -52,6 +52,8 @@ final class LocalRunnerModelTests: XCTestCase {
         runner.preJobScript = "echo 'pre-job'"
         runner.postJobScript = "echo 'post-job'"
         runner.status = .running
+        // The encoder derives the persisted `status` from run intent (see LocalRunnerMigrationTests).
+        runner.shouldBeRunning = true
         
         // Encode
         let encoder = JSONEncoder()
