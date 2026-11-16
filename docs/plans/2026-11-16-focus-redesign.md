@@ -322,10 +322,10 @@ Steps:
 
 ### PR 3 accepted risks (review.concurrency, round 1)
 Recorded here instead of fixed; each is unlikely in normal use, or predates this PR.
-- **config.sh exits non-zero after GitHub registered the runner.** The flow treats the step as failed and offers Try Again or Cancel, and Cancel unregisters it. A runner can still be left registered on GitHub with no local record if the user quits instead. Remove from GitHub on the remote row cleans it up.
+- **config.sh exits non-zero after GitHub registered the runner.** The flow treats the step as failed and offers Try Again or Cancel. No local runner was recorded (`runnerID` is nil), so Cancel only moves the folder to the Trash and does not unregister. The runner stays registered on GitHub until Remove from GitHub on its remote row cleans it up.
 - **Leftover `.setup-*` / `.reconfigure-*` folder after a quit or crash mid-flow.** These are hidden and harmless. A later setup never reuses them. A `.reconfigure-*` folder holds the old registration files, so it's worth checking by hand if a reconfigure was interrupted.
 - **404 treated as already gone in `deleteByID`.** A 404 caused by a wrong scope would read as success. The id and scope both come from GitHub's own listing, so this needs a stale row.
-- **Registration and removal tokens are visible in `config.sh` argv** (`ps`) while it runs. This predates PR 3. Follow-up: pass them some other way if the runner ever supports it, or document it.
+- **Registration and removal tokens are visible in `config.sh` argv** (`ps`) while it runs. This predates PR 3. Follow-up: pass tokens via env. The runner already reads `ACTIONS_RUNNER_INPUT_TOKEN`.
 - **A hung `config.sh` blocks Cancel.** Cancel waits for config.sh because its result must be recorded. A hang means the sheet stays on Cancelling until the process exits. Follow-up: a timeout that stops the script and reports it.
 
 ---
