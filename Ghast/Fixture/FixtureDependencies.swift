@@ -63,13 +63,21 @@ struct FixtureDependencies {
 
         let api = FixtureGitHubAPIService()
         let tokenStore = InMemoryFixtureTokenStore(token: launch.screen.isSignedOut ? nil : "fixture-token")
+        let clock = FrozenClock()
+        let launcher = InertRunnerLauncher()
         let dependencies = AppDependencies(
-            runnerService: RunnerService(defaults: defaults, runnersDirectory: runners),
+            runnerService: RunnerService(
+                defaults: defaults,
+                runnersDirectory: runners,
+                clock: clock,
+                launcher: launcher,
+                runsStrayProcessCleanup: false
+            ),
             apiService: api,
             authService: GitHubAuthService(apiService: api, tokenStore: tokenStore),
-            clock: FrozenClock(),
+            clock: clock,
             hostInfo: FixtureHostInfo(),
-            processLauncher: InertRunnerLauncher()
+            processLauncher: launcher
         )
         return FixtureDependencies(
             launch: launch,

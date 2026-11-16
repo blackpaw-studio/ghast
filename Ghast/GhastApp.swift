@@ -36,10 +36,14 @@ struct AppDependencies {
 
     static func live() -> AppDependencies {
         let apiService = GitHubAPIService()
+        let clock = SystemClock()
+        let launcher = ProcessRunnerLauncher()
         return AppDependencies(
-            runnerService: RunnerService(),
+            runnerService: RunnerService(clock: clock, launcher: launcher),
             apiService: apiService,
-            authService: GitHubAuthService(apiService: apiService)
+            authService: GitHubAuthService(apiService: apiService),
+            clock: clock,
+            processLauncher: launcher
         )
     }
 }

@@ -193,7 +193,7 @@ struct RunnerLogsView: View {
             }
             
             Button(action: {
-                runnerService.clearRunnerLogs(for: runner.id)
+                runnerService.clearOutput(id: runner.id)
                 startError = nil
                 tailer?.reload()
             }) {
