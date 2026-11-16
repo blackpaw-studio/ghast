@@ -41,8 +41,9 @@ struct RunnerCommandState: Equatable, Sendable {
 
     private var isLocal: Bool { selected?.runnerLocation == .thisMac }
 
+    /// A Remove or Reconfigure owns the runner's process until it finishes.
     private func lifecycleEnabled(_ action: RunnerToolbarAction) -> Bool {
-        guard let selected else { return false }
+        guard let selected, !isFlowBusy else { return false }
         return selected.status.toolbarButtons(location: selected.runnerLocation)
             .contains { $0.action == action && $0.isEnabled }
     }

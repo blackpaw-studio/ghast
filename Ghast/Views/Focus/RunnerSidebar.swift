@@ -66,7 +66,7 @@ struct RunnerSidebar: View {
     @ViewBuilder
     private func localMenu(_ item: RunnerItem) -> some View {
         if case let .thisMac(localID) = item.location {
-            ForEach(item.status.toolbarButtons(location: .thisMac).filter(\.isEnabled), id: \.action) { button in
+            ForEach(item.status.toolbarButtons(location: .thisMac).filter { $0.isEnabled && !actions.isFlowBusy(localID) }, id: \.action) { button in
                 switch button.action {
                 case .start: Button("Start") { actions.start(localID) }
                 case .stop: Button("Stop") { actions.stop(localID) }

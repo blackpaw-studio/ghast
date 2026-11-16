@@ -68,10 +68,11 @@ struct LocalRunnerDetail: View {
                     hint: RunnerDisplayStatus.errorHint(for: activity),
                     start: { actions.start(runner.id) },
                     reconfigure: { actions.reconfigure(runner.id) },
-                    isReconfigureEnabled: actions.canRunFlows && !actions.isFlowBusy(runner.id)
+                    isReconfigureEnabled: actions.canRunFlows && !actions.isFlowBusy(runner.id),
+                    isStartEnabled: !actions.isFlowBusy(runner.id)
                 )
             case .stopped:
-                HeaderActionRow(hint: nil, start: { actions.start(runner.id) }, reconfigure: nil)
+                HeaderActionRow(hint: nil, start: { actions.start(runner.id) }, reconfigure: nil, isStartEnabled: !actions.isFlowBusy(runner.id))
             default:
                 EmptyView()
             }

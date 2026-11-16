@@ -69,12 +69,15 @@ import Foundation
         #expect(commands.isEnabled(.remove))
     }
 
-    /// One Remove or Reconfigure at a time per runner.
-    @Test func runningFlowDisablesReconfigureAndRemove() {
-        var commands = state(local(.idle))
+    /// One Remove or Reconfigure at a time per runner, and no lifecycle change under it: a
+    /// Start during Reconfigure would run the runner while its registration is set aside.
+    @Test(arguments: [RunnerDisplayStatus.idle, .stopped(at: nil)])
+    func runningFlowDisablesLifecycleReconfigureAndRemove(status: RunnerDisplayStatus) {
+        var commands = state(local(status))
         commands.isFlowBusy = true
-        #expect(!commands.isEnabled(.reconfigure))
-        #expect(!commands.isEnabled(.remove))
+        for command in [RunnerCommand.start, .stop, .restart, .reconfigure, .remove] {
+            #expect(!commands.isEnabled(command), "\(command)")
+        }
         #expect(commands.isEnabled(.showOutput))
     }
 }

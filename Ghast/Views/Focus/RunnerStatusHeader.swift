@@ -50,6 +50,7 @@ struct HeaderActionRow: View {
     /// nil hides the Reconfigure… button.
     let reconfigure: (() -> Void)?
     var isReconfigureEnabled = false
+    var isStartEnabled = true
 
     var body: some View {
         HStack(spacing: FocusMetrics.headerActionSpacing) {
@@ -61,6 +62,7 @@ struct HeaderActionRow: View {
             }
             Button("Start Runner", action: start)
                 .buttonStyle(.borderedProminent)
+                .disabled(!isStartEnabled)
             if let reconfigure {
                 Button("Reconfigure…", action: reconfigure)
                     .buttonStyle(.bordered)

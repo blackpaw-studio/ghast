@@ -35,14 +35,15 @@ struct RunnerActions {
         }
     }
 
-    /// Starts every runner on this Mac that isn't running.
+    /// Starts every runner on this Mac that isn't running, leaving any a flow is working on.
     func startAll() {
-        for runner in runnerService.localRunners where !isRunning(runner.id) { start(runner.id) }
+        for runner in runnerService.localRunners where !isRunning(runner.id) && !isFlowBusy(runner.id) { start(runner.id) }
     }
 
-    /// A user stop of every running runner (unlike quitting, it clears their run intent).
+    /// A user stop of every running runner (unlike quitting, it clears their run intent),
+    /// leaving any a flow is working on.
     func stopAll() {
-        for runner in runnerService.localRunners where isRunning(runner.id) { stop(runner.id) }
+        for runner in runnerService.localRunners where isRunning(runner.id) && !isFlowBusy(runner.id) { stop(runner.id) }
     }
 
     var canStartAll: Bool { runnerService.localRunners.contains { !isRunning($0.id) } }
