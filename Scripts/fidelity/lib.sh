@@ -79,19 +79,54 @@ else:
 ' "$2"
 }
 
-# require_active_window <pid> <CGWindowID>: fidelity captures need the active window state (the
-# mockups show active windows). If the app did not become frontmost by itself, ask Peekaboo to
-# focus it once, then insist.
+# sheet_is_key <pid> <CGWindowID>: prints "true" when a frontmost, key window of the app lies
+# inside the given window's frame: a sheet attached to it.
+sheet_is_key() {
+    peekaboo window list --pid "$1" --json 2>/dev/null | python3 -I -c '
+import json, sys
+want = int(sys.argv[1])
+def walk(node):
+    if isinstance(node, dict):
+        if "window_id" in node:
+            yield node
+        for value in node.values():
+            yield from walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from walk(value)
+windows = list(walk(json.load(sys.stdin)))
+parent = next((w for w in windows if w.get("window_id") == want), None)
+def inside(inner, outer):
+    a, b = inner.get("bounds") or {}, outer.get("bounds") or {}
+    return all(k in a and k in b for k in "xy") and b["x"] <= a["x"] and b["y"] <= a["y"] \
+        and a["x"] + a["width"] <= b["x"] + b["width"] and a["y"] + a["height"] <= b["y"] + b["height"]
+print(str(parent is not None and any(
+    w.get("window_id") != want and w.get("is_frontmost") and w.get("is_key") and inside(w, parent)
+    for w in windows)).lower())
+' "$2"
+}
+
+# window_is_active <pid> <CGWindowID> <allow_sheet>: frontmost and key, or, with a sheet open
+# (allow_sheet=1), its sheet is frontmost and key.
+window_is_active() {
+    [ "$(window_state "$1" "$2")" = "true true" ] && return 0
+    [ "${3:-0}" = "1" ] && [ "$(sheet_is_key "$1" "$2")" = "true" ]
+}
+
+# require_active_window <pid> <CGWindowID> [allow_sheet]: fidelity captures need the active window
+# state (the mockups show active windows). If the app did not become frontmost by itself, ask
+# Peekaboo to focus it once, then insist.
 require_active_window() {
     local state attempt
     for attempt in 1 2 3 4; do
-        state="$(window_state "$1" "$2")"
-        [ "$state" = "true true" ] && return 0
+        window_is_active "$1" "$2" "${3:-0}" && return 0
         peekaboo window focus --window-id "$2" >/dev/null 2>&1 || true
         sleep 1
     done
+    window_is_active "$1" "$2" "${3:-0}" && return 0
     state="$(window_state "$1" "$2")"
-    [ "$state" = "true true" ] || die "window $2 (pid $1) is not frontmost and key (Peekaboo: '$state'); an inactive window would be captured"
+    peekaboo window list --pid "$1" --json > "$OUT_DIR/windows.json" 2>&1 || true
+    die "window $2 (pid $1) is not frontmost and key (Peekaboo: '$state'); an inactive window would be captured; window list in $OUT_DIR/windows.json"
 }
 
 # gray_at <png> <x> <y>: 0-1 luminance of one pixel.

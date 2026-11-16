@@ -16,6 +16,8 @@ struct AppDependencies {
     let fileTrasher: any FileTrasher
     let processLauncher: any RunnerProcessLauncher
     let settings: AppSettings
+    let runnerDownloader: any RunnerDownloader
+    let scriptRunner: any RunnerScriptRunner
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -35,7 +37,9 @@ struct AppDependencies {
         fileTrasher: any FileTrasher = WorkspaceFileTrasher(),
         processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
         settings: AppSettings,
-        remoteStore: RemoteRunnerStore? = nil
+        remoteStore: RemoteRunnerStore? = nil,
+        runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
+        scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner()
     ) {
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
@@ -52,6 +56,23 @@ struct AppDependencies {
         self.fileTrasher = fileTrasher
         self.processLauncher = processLauncher
         self.settings = settings
+        self.runnerDownloader = runnerDownloader
+        self.scriptRunner = scriptRunner
+    }
+
+    /// What New Runner, Remove and Reconfigure run against.
+    var flowServices: RunnerFlowServices {
+        let runnerService = runnerService
+        let activityStore = activityStore
+        return RunnerFlowServices(
+            api: apiService,
+            runnerService: runnerService,
+            downloader: runnerDownloader,
+            registrar: RunnerRegistrar(scripts: scriptRunner),
+            trasher: fileTrasher,
+            sleeper: sleeper,
+            readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) }
+        )
     }
 
     /// The words the Focus views write against this app's clock and host.
@@ -104,6 +125,7 @@ struct GhastApp: App {
                     .environment(dependencies.remoteStore)
                     .environment(\.gitHubAPIService, dependencies.apiService)
                     .environment(\.focusContext, dependencies.focusContext)
+                    .environment(\.runnerFlowServices, dependencies.flowServices)
                     .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
             } else {
                 EmptyView()

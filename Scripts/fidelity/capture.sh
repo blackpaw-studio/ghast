@@ -46,11 +46,18 @@ WINDOW_ID="$(sed -E 's/.* window=([0-9]+).*/\1/' <<<"$READY")"
 RECT="$(sed -E 's/.* rect=([0-9,]+).*/\1/' <<<"$READY")"
 
 OUT_PNG="$OUT_DIR/$SCREEN$APPEARANCE.png"
+# Sheet screens: the sheet is its own window, so capture the main window's rect as a region,
+# and the sheet (not the window under it) holds key.
+case "$SCREEN" in new-runner|new-runner-progress) HAS_SHEET=1 ;; *) HAS_SHEET=0 ;; esac
 # The mockups show active windows, so never capture an inactive one.
-[ "$WINDOW_ID" = "0" ] || require_active_window "$APP_PID" "$WINDOW_ID"
+[ "$WINDOW_ID" = "0" ] || require_active_window "$APP_PID" "$WINDOW_ID" "$HAS_SHEET"
 if [ "$WINDOW_ID" = "0" ]; then
     # Region capture of the whole virtual display, x,y,w,h in global points.
     peek_region "$VD_ORIGIN,1440,900" "$OUT_PNG"
+elif [ "$HAS_SHEET" = "1" ]; then
+    # Give the sheet's slide-in time to settle.
+    sleep 1
+    peek_region "$RECT" "$OUT_PNG"
 else
     peek_window "$WINDOW_ID" "$OUT_PNG"
 fi

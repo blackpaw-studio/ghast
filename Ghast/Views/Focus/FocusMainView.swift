@@ -7,6 +7,7 @@ struct FocusMainView: View {
     @Environment(RemoteRunnerStore.self) private var remoteStore
     @Environment(\.focusContext) private var context
     @Environment(\.mainWindowPreset) private var preset
+    @Environment(\.runnerFlowServices) private var flowServices
     @Environment(\.controlActiveState) private var controlActiveState
 
     @SceneStorage("main.selection") private var storedSelection = ""
@@ -87,7 +88,11 @@ struct FocusMainView: View {
                 }
         }
         .focusedSceneValue(\.mainWindow, commandTarget(for: selected))
-        .sheet(isPresented: $isShowingNewRunner, onDismiss: refreshIfRunnerAdded) { NewRunnerStopgapSheet() }
+        .sheet(isPresented: $isShowingNewRunner, onDismiss: refreshIfRunnerAdded) {
+            if let flowServices {
+                NewRunnerSheet(services: flowServices, preset: preset?.newRunner, finish: finishNewRunner)
+            }
+        }
         .background(WindowVisibilityReader { remoteStore.isVisible = $0 })
         .background(OutputFindResponderInstaller(target: commandTarget(for: selected)))
         // This view exists only while signed in, so the first fetch runs with the token set.
@@ -138,10 +143,18 @@ struct FocusMainView: View {
 
     private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }
 
-    /// The New Runner flow arrives in the next step of the redesign; the old one stands in.
     private func newRunner() {
         runnerIDsBeforeNewRunner = Set(runnerService.localRunners.map(\.id))
         isShowingNewRunner = true
+    }
+
+    /// Closes New Runner; Done selects the new runner on its Output tab.
+    private func finishNewRunner(selecting runnerID: String?) {
+        if let runnerID, runnerService.localRunners.contains(where: { $0.id == runnerID }) {
+            storedSelection = MainSelection.runner(runnerID).storageValue
+            storedTab = DetailTab.output.rawValue
+        }
+        isShowingNewRunner = false
     }
 
     private func refreshIfRunnerAdded() {
@@ -223,6 +236,7 @@ struct FocusMainView: View {
         didApplyPreset = true
         storedTab = preset.tab.rawValue
         storedSelection = (item.map { MainSelection.runner($0.id) } ?? .thisMacEmpty).storageValue
+        if preset.newRunner != nil { newRunner() }
     }
 }
 

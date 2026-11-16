@@ -26,6 +26,8 @@ struct MainWindowPreset: Equatable, Sendable {
     /// The runner to select, by name; nil for the This Mac empty state.
     let runnerName: String?
     let tab: DetailTab
+    /// Opens the New Runner sheet on this state.
+    var newRunner: NewRunnerSheetPreset? = nil
 }
 
 extension EnvironmentValues {

@@ -106,13 +106,20 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 
 | Deviation | Status |
 |---|---|
-| Sheet position: the system attaches the sheet to the window, the mockup floats two sheets side by side | native: sheets are window-attached |
-| Avatar image | native: fixture stand-in |
+| Sheet position: the system attaches the sheet to the window and centres it vertically; the mockup floats two sheets side by side near the top | native: sheets are window-attached |
+| The window under the sheet draws inactive and without the kit's scrim | native: sheet presentation |
+| Avatar image: a monogram drawn as an `NSImage` (menu items can't host views); real avatars load from GitHub | native: fixture stand-in |
+| "Add to" is the system menu popup: filled bezel, sized to its widest item, icon tight to the title | native: `Picker(.menu)` |
+| The Name field selects the suggested name when it takes focus | native: text field focus |
+| Labels field is a SwiftUI token row in a text-field-coloured box, not `NSTokenField`, so the default labels can be fixed | native: no system token field with fixed tokens |
+| "Add Label" text column narrowed to 64 pt because SF tokens run 7 pt wider than the kit's | fixed |
 
 ## new-runner-progress
 
 | Deviation | Status |
 |---|---|
+| The window under the sheet draws inactive and without the kit's scrim | native: sheet presentation |
+| Disabled Done is the system's disabled prominent button, close to the kit's 45% accent | native: button state |
 | Sheet position: the system attaches the sheet to the window | native: sheets are window-attached |
 
 ## settings-general

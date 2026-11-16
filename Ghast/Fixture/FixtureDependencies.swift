@@ -18,6 +18,24 @@ final class FrozenClock: AppClock, @unchecked Sendable {
     }
 }
 
+/// The fixture never downloads a runner: New Runner stops at the download step.
+struct FixtureRunnerDownloader: RunnerDownloader {
+    func install(from url: URL, into folder: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {
+        throw FixtureRefusal()
+    }
+}
+
+/// The fixture never runs `config.sh`, so it can't register or remove a real runner.
+struct FixtureScriptRunner: RunnerScriptRunner {
+    func run(_ arguments: [String], in directory: URL) async throws -> ScriptResult {
+        throw FixtureRefusal()
+    }
+}
+
+struct FixtureRefusal: LocalizedError {
+    var errorDescription: String? { "The design fixture doesn't download or register runners." }
+}
+
 struct FixtureHostInfo: HostInfo {
     let computerName = "Dionysus"
     let architecture = HostArchitecture.arm64
@@ -118,7 +136,9 @@ struct FixtureDependencies {
             clock: clock,
             hostInfo: FixtureHostInfo(),
             processLauncher: launcher,
-            settings: AppSettings(defaults: defaults)
+            settings: AppSettings(defaults: defaults),
+            runnerDownloader: FixtureRunnerDownloader(),
+            scriptRunner: FixtureScriptRunner()
         )
         dependencies.animatesCursor = false
         dependencies.performsDeviceFlowSideEffects = false

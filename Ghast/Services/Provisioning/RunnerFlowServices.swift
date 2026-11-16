@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// The services the New Runner, Remove and Reconfigure flows use. Built once at the
 /// composition root; tests and the design fixture swap in fakes.
@@ -18,4 +19,9 @@ struct RunnerFlowServices {
     var remover: RunnerRemover {
         RunnerRemover(api: api, runnerService: runnerService, registrar: registrar, trasher: trasher)
     }
+}
+
+extension EnvironmentValues {
+    /// Set on the main window; nil in previews and tests that don't run a flow.
+    @Entry var runnerFlowServices: RunnerFlowServices?
 }

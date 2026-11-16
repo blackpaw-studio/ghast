@@ -14,6 +14,27 @@ enum FocusMetrics {
     static let sheetWidth: CGFloat = 500
     static let sheetPadding: CGFloat = 24
 
+    // MARK: New Runner sheet (NewRunner.png, measured)
+    static let sheetTitleGap: CGFloat = 4
+    static let sheetBodyToBox: CGFloat = 20
+    static let sheetTitleToBox: CGFloat = 16
+    static let sheetHelpTop: CGFloat = 6
+    static let sheetAdvancedTop: CGFloat = 18
+    static let sheetFooterTop: CGFloat = 24
+    static let sheetButtonSpacing: CGFloat = 9
+    /// The value column starts 98 pt into the box: 14 inset plus an 84 pt label column.
+    static let newRunnerLabelColumn: CGFloat = 84
+    static let scopeAvatar: CGFloat = 16
+    static let setupStepRowHeight: CGFloat = 44
+    static let setupStepIconGap: CGFloat = 10
+    static let setupStepIcon: CGFloat = 16
+    static let labelFieldHeight: CGFloat = 28
+    static let labelFieldRadius: CGFloat = 7
+    static let labelFieldInset: CGFloat = 4
+    static let labelFieldTextWidth: CGFloat = 64
+    static let labelRemoveGlyph: CGFloat = 8
+    static let labelRemoveGap: CGFloat = 4
+
     // MARK: Main window
     static let sidebarWidth: CGFloat = 248
     /// The kit's floating sidebar sits 8 pt in from the window edge on each side, so the detail

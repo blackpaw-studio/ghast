@@ -1,6 +1,6 @@
 import Foundation
 
-enum HostArchitecture: String, Sendable, Equatable {
+enum HostArchitecture: String, Sendable, Equatable, CaseIterable {
     case arm64
     case x64
 

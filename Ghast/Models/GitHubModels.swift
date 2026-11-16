@@ -35,13 +35,22 @@ struct GitHubRepository: Codable, Identifiable, Equatable, Sendable {
     let isPrivate: Bool
     let owner: GitHubUser
     let htmlURL: String
-    
+    /// The signed-in user's access; GitHub includes it on authenticated repository lists.
+    var permissions: RepositoryPermissions? = nil
+
+    /// Runners can be added only where the user is an admin.
+    var isAdmin: Bool { permissions?.admin == true }
+
     enum CodingKeys: String, CodingKey {
-        case id, name, description, owner
+        case id, name, description, owner, permissions
         case fullName = "full_name"
         case isPrivate = "private"
         case htmlURL = "html_url"
     }
+}
+
+struct RepositoryPermissions: Codable, Equatable, Sendable {
+    let admin: Bool
 }
 
 /// An organization the signed-in user administers.
