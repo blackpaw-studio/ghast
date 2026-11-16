@@ -66,7 +66,6 @@ struct FocusMainView: View {
             )
         } detail: {
             detail(for: selected)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .navigationTitle(MainWindowTitle.title(for: selected))
                 .navigationSubtitle(MainWindowTitle.subtitle(for: selected, hostName: context.hostInfo.computerName))
         }
@@ -80,9 +79,21 @@ struct FocusMainView: View {
 
     @ViewBuilder
     private func detail(for item: RunnerItem?) -> some View {
-        if let item {
-            Text(item.name)
-        } else {
+        switch item?.location {
+        case let .thisMac(localID)?:
+            if let item, let runner = runnerService.localRunners.first(where: { $0.id == localID }) {
+                LocalRunnerDetail(
+                    item: item,
+                    runner: runner,
+                    processState: runnerService.processStates[localID] ?? .stopped,
+                    activity: activityStore.activity(for: localID),
+                    tab: tab.wrappedValue,
+                    actions: actions
+                )
+            }
+        case let .otherMachine(runner)?:
+            if let item { RemoteRunnerDetail(item: item, runner: runner) }
+        case nil:
             Text("No Runners on This Mac")
         }
     }

@@ -38,6 +38,7 @@ final class FixtureStage {
     var mainWindowPreset: MainWindowPreset? { launch.screen.mainWindowPreset }
 
     func shutdown() {
+        restoreAutosavedFrames()
         removeScratch()
     }
 
@@ -106,9 +107,11 @@ final class FixtureStage {
             emit("fixture-error no window appeared within 30 s")
             return
         }
+        Self.stopAutosaving(window)
         if let screen {
             window.setFrame(placement.frame(onScreen: screen.frame), display: true)
         }
+        Self.setSidebarWidth(in: window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         await waitForStableLayout(of: window)
@@ -122,10 +125,46 @@ final class FixtureStage {
         emit("\(Self.readyPrefix) window=\(window.windowNumber) rect=\(rect)")
     }
 
+    /// AppKit writes the main window's frame to the app's real defaults as soon as SwiftUI
+    /// names it, before the fixture can stop it. These are put back as they were on quit.
+    private static let autosaveKeys = [
+        "NSWindow Frame main",
+        "NSSplitView Subview Frames main, SidebarNavigationSplitView",
+    ]
+    private let savedAutosave: [String: Any?] = Dictionary(
+        uniqueKeysWithValues: FixtureStage.autosaveKeys.map { ($0, UserDefaults.standard.object(forKey: $0)) }
+    )
+
+    private func restoreAutosavedFrames() {
+        for (key, value) in savedAutosave {
+            if let value { UserDefaults.standard.set(value, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+    }
+
+    /// AppKit saves window frames and split positions to the app's real defaults; a fixture
+    /// must neither write them nor depend on what an earlier run left there.
+    private static func stopAutosaving(_ window: NSWindow) {
+        window.setFrameAutosaveName("")
+        for splitView in splitViews(in: window.contentView) { splitView.autosaveName = nil }
+    }
+
+    /// The width a first launch gets, whatever a previous run saved.
+    private static func setSidebarWidth(in window: NSWindow) {
+        guard let splitView = splitViews(in: window.contentView).first, splitView.subviews.count > 1 else { return }
+        splitView.setPosition(FocusMetrics.sidebarColumnWidth, ofDividerAt: 0)
+    }
+
+    private static func splitViews(in view: NSView?) -> [NSSplitView] {
+        guard let view else { return [] }
+        let own = (view as? NSSplitView).map { [$0] } ?? []
+        return own + view.subviews.flatMap { splitViews(in: $0) }
+    }
+
     private func waitForContentWindow() async -> NSWindow? {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: Self.readyTimeout)
         while clock.now < deadline {
+            for window in NSApp.windows where window !== backdrop { Self.stopAutosaving(window) }
             if let window = NSApp.windows.first(where: { $0 !== backdrop && $0.canBecomeMain && $0.isVisible }) {
                 return window
             }

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// Every size in the Focus design, named once. Views use these; none carries its own literals.
 /// Values come from the spec's token table, except the three marked "measured", which were
@@ -38,7 +39,30 @@ enum FocusMetrics {
     static let runningHaloWidth: CGFloat = 3
     static let runningHaloOpacity = 0.22
 
+    // MARK: Status header (measured from Main.png and ErrorRunner.png)
+    /// From the content top (64) to the top of the title line.
+    static let headerTop: CGFloat = 17
+    static let headerDotSpacing: CGFloat = 10
+    /// Title, secondary line, tokens and actions all start here, after the dot.
+    static let headerTextIndent: CGFloat = statusDotHeader + headerDotSpacing
+    static let headerTitleSpacing: CGFloat = 5
+    static let headerTokensTop: CGFloat = 14
+    static let headerActionsTop: CGFloat = 16
+    static let headerActionSpacing: CGFloat = 8
+    static let headerHintGap: CGFloat = 16
+    /// From the last header row to the separator.
+    static let headerBottom: CGFloat = 20
+    /// "started 4 min ago" and Uptime refresh this often.
+    static let headerRefreshInterval: TimeInterval = 30
+    static let headerStatsGap: CGFloat = 24
+    static let headerStatsTopOffset: CGFloat = 4
+    static let statSpacing: CGFloat = 21
+    static let statLabelSpacing: CGFloat = 3
+    static let statSeparatorHeight: CGFloat = 28
+    static let statSeparatorTop: CGFloat = 2
+
     // MARK: Rows and tokens
+    static let tokenSpacing: CGFloat = 6
     static let runnerRowPadding = CGSize(width: 8, height: 7)
     /// Measured: the native sidebar row already adds 3 pt above and below its content, so 4 pt
     /// more gives the mockups' 46 pt row pitch.
