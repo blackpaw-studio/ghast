@@ -130,6 +130,8 @@ enum FocusMetrics {
     // MARK: Welcome and empty states
     static let appIconLarge: CGFloat = 96
     static let appIconLargeRadius: CGFloat = 22
+    /// The app icon's whole canvas, whose 824/1024 artwork is `appIconLarge`.
+    static let appIconCanvas: CGFloat = appIconLarge * 1024 / 824
     static let appIconBanner: CGFloat = 32
     static let deviceCodeFontSize: CGFloat = 34
     static let deviceCodeTracking = 0.08
@@ -150,6 +152,40 @@ enum FocusMetrics {
     static let remoteNoteTitleGap: CGFloat = 4
     /// Measured: the remote note sits 35 pt above the centre of the space under the header.
     static let remoteNoteLift: CGFloat = -35
+
+    // MARK: Welcome window (measured from Welcome.png)
+    static let welcomeIconTop: CGFloat = 44
+    static let welcomeIconGap: CGFloat = 20
+    static let welcomeTitleGap: CGFloat = 6
+    static let welcomeFeaturesTop: CGFloat = 29
+    static let welcomeFeatureColumn: CGFloat = 380
+    static let welcomeFeatureGlyph: CGFloat = 32
+    static let welcomeFeatureGlyphGap: CGFloat = 14
+    static let welcomeFeatureSpacing: CGFloat = 16
+    static let welcomeFeatureTextGap: CGFloat = 2
+    static let welcomeButtonTop: CGFloat = 31
+    static let welcomeFootnoteGap: CGFloat = 12
+    static let welcomeFailureGap: CGFloat = 10
+    /// Measured: the kit's large buttons are 22 pt wider than the system's padding on each side.
+    static let largeButtonExtraPadding: CGFloat = 4.5
+    /// Grows a `.large` button to the kit's 36 pt height.
+    static let largeButtonExtraVerticalPadding: CGFloat = 2.5
+    static let deviceKeyGlyph: CGFloat = 32
+    /// SF `key` stands upright; the kit draws it leaning with the bow upper-left.
+    static let deviceKeyRotation: Double = -45
+    static let deviceKeyTop: CGFloat = 86
+    static let deviceTitleGap: CGFloat = 18
+    static let deviceBodyGap: CGFloat = 8
+    static let deviceBodyMaxWidth: CGFloat = 400
+    static let deviceCodeGap: CGFloat = 29
+    static let deviceButtonsGap: CGFloat = 25
+    static let deviceButtonSpacing: CGFloat = 12
+    static let deviceBodyLineSpacing: CGFloat = 2
+    /// Below the 1 pt separator.
+    static let deviceFooterHeight: CGFloat = 67
+    static let deviceFooterInset: CGFloat = 20
+    static let deviceFooterLeadingInset: CGFloat = 24
+    static let deviceFooterSpinnerGap: CGFloat = 8
 
     // MARK: Account
     static let accountAvatar: CGFloat = 64

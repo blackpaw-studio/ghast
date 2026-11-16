@@ -13,6 +13,8 @@ enum FocusType {
     /// Label tokens use Subheadline at weight 500.
     static let token = Font.system(size: 11, weight: .medium)
     static let footnote = Font.system(size: 10)
+    /// The kit's large push buttons (Welcome, device code) set 15 pt text.
+    static let largeButton = Font.system(size: 15)
     static let outputSize: CGFloat = 12
     static let output = Font.system(size: outputSize, design: .monospaced)
     /// Measured: the mockups' mono text advances 7.22 pt a character, the system mono font

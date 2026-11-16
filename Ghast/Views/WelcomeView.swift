@@ -1,225 +1,91 @@
 import SwiftUI
+import AppKit
 
+/// The signed-out window (Welcome.png, left): app icon, three feature rows and Sign In.
 struct WelcomeView: View {
-    @Environment(GitHubAuthService.self) private var authService
-    @Environment(\.openURL) private var openURL
-    @State private var animationOffset: CGFloat = 0
+    /// The last attempt's error, shown under the button, which then reads Try Again.
+    let failure: DeviceFlowError?
+    let signIn: () -> Void
 
-    /// Sign-in in progress or failed: the action panel is taller, so the hero shrinks to fit.
-    private var isCompact: Bool {
-        switch authService.signInState {
-        case .awaitingUser, .failed: return true
-        case .idle, .signedIn: return false
-        }
-    }
-    
+    private static let features: [(glyph: String, title: String, detail: String)] = [
+        ("laptopcomputer", "Your Mac, your runners", "Ghast downloads, registers and runs the official GitHub runner."),
+        ("terminal", "Live output", "Watch each job as it runs, with status at a glance."),
+        ("rectangle.inset.bottomright.filled", "Stays out of the way", "Runners keep working from the menu bar."),
+    ]
+
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Modern gradient background
-                LinearGradient(
-                    colors: [
-                        Color(NSColor.controlBackgroundColor),
-                        Color.blue.opacity(0.03),
-                        Color.purple.opacity(0.02)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-                
-                // Floating background elements
-                ForEach(0..<6, id: \.self) { index in
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.blue.opacity(0.1),
-                                    Color.purple.opacity(0.1)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 60 + CGFloat(index * 20), height: 60 + CGFloat(index * 20))
-                        .offset(
-                            x: geometry.size.width * 0.1 * CGFloat(index + 1) + animationOffset,
-                            y: geometry.size.height * 0.15 * CGFloat(index) + sin(animationOffset * 0.01) * 20
-                        )
-                        .blur(radius: 2)
-                        .animation(
-                            .easeInOut(duration: Double(3 + index))
-                                .repeatForever(autoreverses: true),
-                            value: animationOffset
-                        )
+        VStack(spacing: 0) {
+            // The icon's artwork fills 824 of its 1024 pt canvas: scale the canvas so the
+            // squircle itself is the kit's 96 pt, without moving anything around it.
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: FocusMetrics.appIconCanvas, height: FocusMetrics.appIconCanvas)
+                .frame(width: FocusMetrics.appIconLarge, height: FocusMetrics.appIconLarge)
+                .accessibilityHidden(true)
+                .padding(.top, FocusMetrics.welcomeIconTop)
+            Text("Welcome to Ghast")
+                .font(FocusType.largeTitle)
+                .padding(.top, FocusMetrics.welcomeIconGap)
+            Text("Run GitHub Actions jobs on this Mac.")
+                .font(FocusType.title3.weight(.regular))
+                .foregroundStyle(.secondary)
+                .padding(.top, FocusMetrics.welcomeTitleGap)
+            VStack(alignment: .leading, spacing: FocusMetrics.welcomeFeatureSpacing) {
+                ForEach(Self.features, id: \.title) { feature in
+                    FeatureRow(glyph: feature.glyph, title: feature.title, detail: feature.detail)
                 }
-                
-                // Main content
-                VStack(spacing: isCompact ? 20 : 28) {
-                    Spacer(minLength: 0)
-                    
-                    // Hero section with modern design
-                    VStack(spacing: isCompact ? 12 : 16) {
-                        // App icon with glow effect
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    RadialGradient(
-                                        colors: [
-                                            Color.blue.opacity(0.3),
-                                            Color.blue.opacity(0.1),
-                                            Color.clear
-                                        ],
-                                        center: .center,
-                                        startRadius: 0,
-                                        endRadius: 80
-                                    )
-                                )
-                                .frame(width: iconSize * 4 / 3, height: iconSize * 4 / 3)
-                                .blur(radius: 20)
-                            
-                            Image(nsImage: NSApp.applicationIconImage)
-                                .resizable()
-                                .frame(width: iconSize, height: iconSize)
-                                .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
-                        }
-                        
-                        // Title and description
-                        VStack(spacing: isCompact ? 8 : 12) {
-                            VStack(spacing: 4) {
-                                Text("Welcome to Ghast")
-                                    .font(.system(size: isCompact ? 36 : 40, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.center)
-                                
-                                HStack(spacing: 0) {
-                                    Text("G")
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.blue)
-                                    Text("it")
-                                        .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundStyle(.blue.opacity(0.7))
-                                    Text("H")
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.blue)
-                                    Text("ub ")
-                                        .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundStyle(.blue.opacity(0.7))
-                                    Text("A")
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.blue)
-                                    Text("ctions ")
-                                        .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundStyle(.blue.opacity(0.7))
-                                    Text("S")
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.blue)
-                                    Text("elf-Hosted ")
-                                        .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundStyle(.blue.opacity(0.7))
-                                    Text("T")
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.blue)
-                                    Text("ool")
-                                        .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundStyle(.blue.opacity(0.7))
-                                }
-                            }
-                            
-                            Text("Effortlessly manage your self-hosted GitHub Actions runners. Monitor status, view logs, and control your CI/CD infrastructure from one beautiful interface.")
-                                .font(.system(size: 16, weight: .regular, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: 560)
-                        }
-                    }
-                    
-                    // Action section: sign-in button, Device Flow code, or failure
-                    VStack(spacing: isCompact ? 14 : 24) {
-                        switch authService.signInState {
-                        case .idle, .signedIn:
-                            signInButton
-                        case .awaitingUser(let code):
-                            DeviceCodePanel(
-                                code: code,
-                                onOpenGitHub: { openURL(code.verificationURI) },
-                                onCopy: { DeviceFlowPresenter.copyToPasteboard(code.userCode) },
-                                onCancel: { authService.cancelSignIn() }
-                            )
-                        case .failed(let error):
-                            SignInFailurePanel(error: error, onTryAgain: startSignIn)
-                        }
-
-                        requirementsNote
-                    }
-                    .presentsDeviceFlow(authService.signInState)
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 40)
-                .padding(.vertical, 24)
             }
-        }
-        .onAppear {
-            withAnimation(.linear(duration: 30).repeatForever(autoreverses: false)) {
-                animationOffset = 1000
+            .frame(width: FocusMetrics.welcomeFeatureColumn, alignment: .leading)
+            .padding(.top, FocusMetrics.welcomeFeaturesTop)
+            Button(action: signIn) { LargeButtonTitle(failure == nil ? "Sign In with GitHub" : "Try Again") }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, FocusMetrics.welcomeButtonTop)
+            if let failure {
+                Text(failure.userMessage)
+                    .font(FocusType.callout)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: FocusMetrics.welcomeFeatureColumn)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, FocusMetrics.welcomeFailureGap)
             }
+            Text("Ghast asks for access to your repositories and organization runners.")
+                .font(FocusType.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.top, FocusMetrics.welcomeFootnoteGap)
+            Spacer(minLength: 0)
         }
-    }
-    
-    private var iconSize: CGFloat { isCompact ? 72 : 96 }
-
-    private var signInButton: some View {
-        Button(action: startSignIn) {
-            HStack(spacing: 12) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                Text("Sign In with GitHub")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-            }
-            .foregroundStyle(.white)
-            .frame(minWidth: 240)
-            .padding(.vertical, 14)
-            .background(
-                LinearGradient(
-                    colors: [Color.blue, Color.purple],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .clipShape(Capsule())
-            .shadow(color: Color.blue.opacity(0.4), radius: 12, x: 0, y: 6)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var requirementsNote: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "info.circle.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.blue)
-                Text("Admin access to repositories required")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Ghast needs admin permissions to manage self-hosted runners")
-                .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundStyle(.secondary.opacity(0.8))
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 32)
-    }
-
-    private func startSignIn() {
-        Task { await authService.signIn() }
+        .frame(width: FocusMetrics.welcomeWindow.width, height: FocusMetrics.welcomeWindow.height)
     }
 }
 
-#Preview {
-    WelcomeView()
-        .environment(GitHubAuthService(apiService: GitHubAPIService()))
+/// A 32 pt accent glyph beside a Headline title and a Callout line.
+private struct FeatureRow: View {
+    let glyph: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: FocusMetrics.welcomeFeatureGlyphGap) {
+            Image(systemName: glyph)
+                .font(.system(size: FocusMetrics.welcomeFeatureGlyph * 0.75, weight: .regular))
+                .foregroundStyle(.tint)
+                .frame(width: FocusMetrics.welcomeFeatureGlyph, height: FocusMetrics.welcomeFeatureGlyph)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: FocusMetrics.welcomeFeatureTextGap) {
+                Text(title).font(FocusType.headline)
+                Text(detail)
+                    .font(FocusType.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+#Preview("Welcome") {
+    WelcomeView(failure: nil, signIn: {})
 }

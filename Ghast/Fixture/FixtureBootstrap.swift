@@ -21,6 +21,7 @@ enum FixtureBootstrap {
                 prepare: {
                     await dependencies.seedProcessStates()
                     await dependencies.appDependencies.startServices()
+                    await dependencies.startSignInIfNeeded()
                 }
             )
             return Result(dependencies: dependencies, stage: stage)

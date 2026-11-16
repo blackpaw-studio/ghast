@@ -18,6 +18,8 @@ struct AppDependencies {
     let settings: AppSettings
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
+    /// False in the design fixture: no clipboard writes or browser opens during sign-in.
+    var performsDeviceFlowSideEffects = true
     /// How runner folders are written; the design fixture shows its scratch folder as the
     /// real runners folder.
     var displayPath: @Sendable (String) -> String = { ($0 as NSString).abbreviatingWithTildeInPath }
@@ -54,7 +56,14 @@ struct AppDependencies {
 
     /// The words the Focus views write against this app's clock and host.
     var focusContext: FocusContext {
-        FocusContext(clock: clock, hostInfo: hostInfo, animatesCursor: animatesCursor, sleeper: sleeper, displayPath: displayPath)
+        FocusContext(
+            clock: clock,
+            hostInfo: hostInfo,
+            animatesCursor: animatesCursor,
+            sleeper: sleeper,
+            performsDeviceFlowSideEffects: performsDeviceFlowSideEffects,
+            displayPath: displayPath
+        )
     }
 
     /// Starts the always-on services: output tailing for every local runner. GitHub's runner
@@ -62,6 +71,7 @@ struct AppDependencies {
     /// isn't applied yet at launch. Never called under test.
     func startServices() async {
         activityStore.observe(runnerService)
+        await authService.checkStoredAuthentication()
     }
 
     static func live() -> AppDependencies {
@@ -82,7 +92,7 @@ struct AppDependencies {
 @main
 struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    static let mainWindowID = "main"
+    static let mainWindowID = AuthWindow.mainID
     
     var body: some Scene {
         Window("Ghast", id: Self.mainWindowID) {
@@ -101,6 +111,17 @@ struct GhastApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultSize(FocusMetrics.mainWindowSize)
+        .defaultLaunchBehavior(appDelegate.launchesSignedIn ? .presented : .suppressed)
+        Window("Welcome to Ghast", id: AuthWindow.welcomeID) {
+            if !isRunningTests() {
+                WelcomeWindowRoot(authService: appDelegate.dependencies.authService)
+                    .environment(\.focusContext, appDelegate.dependencies.focusContext)
+            }
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(FocusMetrics.welcomeWindow)
+        .defaultLaunchBehavior(appDelegate.launchesSignedIn ? .suppressed : .presented)
         .commands {
             MainWindowCommands()
             CommandGroup(after: .appInfo) {
@@ -162,6 +183,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     
+    /// Whether launch opens the main window (a token is stored) or Welcome. Decided once; the
+    /// windows swap themselves as auth changes. Under test, neither window has content.
+    private(set) lazy var launchesSignedIn: Bool = {
+        let isUnderTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        return isUnderTest || dependencies.authService.hasStoredToken
+    }()
+
     /// The selection the design fixture opens on; nil on a normal launch.
     var mainWindowPreset: MainWindowPreset? {
         #if DEBUG

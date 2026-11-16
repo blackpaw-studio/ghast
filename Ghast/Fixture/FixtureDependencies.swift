@@ -35,6 +35,24 @@ final class InMemoryFixtureTokenStore: TokenStore, @unchecked Sendable {
     func delete() throws { lock.withLock { token = nil } }
 }
 
+/// Hands out the kit's code and then waits for an approval that never comes. No network.
+struct FixtureDeviceFlowClient: DeviceFlowClienting {
+    static let code = DeviceCode(
+        deviceCode: "fixture-device-code",
+        userCode: "WDJB-MJHT",
+        verificationURI: URL(string: "https://github.com/login/device")!,
+        expiresIn: 900,
+        interval: 5
+    )
+
+    func requestCode(scopes: [String]) async throws -> DeviceCode { Self.code }
+
+    func pollForToken(_ code: DeviceCode) async throws -> String {
+        try await Task.sleep(for: .seconds(24 * 60 * 60))
+        throw DeviceFlowError.expired
+    }
+}
+
 /// Never starts a process. A runner named in `exitCodes` "exits" with that code the moment it is
 /// launched; every other runner "keeps running". Safe to stop: its pid is one no process can have.
 struct ScriptedRunnerLauncher: RunnerProcessLauncher {
@@ -96,13 +114,14 @@ struct FixtureDependencies {
                 runsStrayProcessCleanup: false
             ),
             apiService: api,
-            authService: GitHubAuthService(apiService: api, tokenStore: tokenStore),
+            authService: GitHubAuthService(apiService: api, deviceFlow: FixtureDeviceFlowClient(), tokenStore: tokenStore),
             clock: clock,
             hostInfo: FixtureHostInfo(),
             processLauncher: launcher,
             settings: AppSettings(defaults: defaults)
         )
         dependencies.animatesCursor = false
+        dependencies.performsDeviceFlowSideEffects = false
         let scratchRunners = runners.path
         dependencies.displayPath = { path in
             path.hasPrefix(scratchRunners) ? "~/.ghast/runners" + path.dropFirst(scratchRunners.count) : path
@@ -135,6 +154,17 @@ struct FixtureDependencies {
             await Self.waitForExit(of: runner.id, in: service)
         }
         clock?.set(FrozenClock.kitNow())
+    }
+
+    /// The device-code screen is a sign-in waiting for approval.
+    func startSignInIfNeeded() async {
+        guard launch.screen == .deviceCode else { return }
+        let auth = appDependencies.authService
+        Task { await auth.signIn() }
+        for _ in 0..<1_000 {
+            if case .awaitingUser = auth.signInState { return }
+            await Task.yield()
+        }
     }
 
     /// The launcher reports an exit from a task on the main actor; yield until it has landed.

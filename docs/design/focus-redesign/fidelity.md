@@ -87,13 +87,20 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 
 | Deviation | Status |
 |---|---|
-| (none seeded) | open |
+| App icon is Ghast's real artwork; the kit draws a stand-in ghost squircle | native: shipped app icon |
+| Traffic lights sit where the hidden title bar puts them, a few points higher and left of the kit | native: window chrome |
+| Zoom button is greyed because the window is fixed-size (`.contentSize`) | native: window chrome |
+| Feature glyphs are SF `laptopcomputer`, `terminal`, `rectangle.inset.bottomright.filled`; the laptop screen is tinted and the third is the nearest match to the kit's | native: SF Symbols |
+| Window background is the system window color, a touch warmer than the kit in dark mode | native: window material |
+| Sign In button height and footnote position | fixed |
 
 ## device-code
 
 | Deviation | Status |
 |---|---|
-| (none seeded) | open |
+| Key glyph is SF `key` turned 45° to the kit's angle; its bit is a notch rather than the kit's teeth | native: SF Symbols |
+| Traffic lights and greyed zoom button, as on welcome | native: window chrome |
+| Button heights (36 pt) and gap above the buttons | fixed |
 
 ## new-runner
 
