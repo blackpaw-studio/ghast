@@ -37,7 +37,8 @@ APP_LOG="$OUT_DIR/app-$SCREEN$APPEARANCE.log"
 APP_ARGS=(-GhastDesignFixture "$SCREEN")
 [ -n "$APPEARANCE" ] && APP_ARGS+=(-GhastAppearance dark)
 "$APP_BINARY" "${APP_ARGS[@]}" > "$APP_LOG" 2>&1 &
-track_pid $!
+APP_PID=$!
+track_pid "$APP_PID"
 
 READY="$(wait_for_line "$APP_LOG" '^fixture-(ready|error)' 30)" || die "fixture never became ready within 30 s; see $APP_LOG"
 case "$READY" in fixture-error*) die "$READY" ;; esac
@@ -45,6 +46,8 @@ WINDOW_ID="$(sed -E 's/.* window=([0-9]+).*/\1/' <<<"$READY")"
 RECT="$(sed -E 's/.* rect=([0-9,]+).*/\1/' <<<"$READY")"
 
 OUT_PNG="$OUT_DIR/$SCREEN$APPEARANCE.png"
+# The mockups show active windows, so never capture an inactive one.
+[ "$WINDOW_ID" = "0" ] || require_active_window "$APP_PID" "$WINDOW_ID"
 if [ "$WINDOW_ID" = "0" ]; then
     # Region capture of the whole virtual display, x,y,w,h in global points.
     peek_region "$VD_ORIGIN,1440,900" "$OUT_PNG"

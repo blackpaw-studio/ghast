@@ -57,6 +57,48 @@ peek_region() {
     [ -s "$2" ] || die "peekaboo wrote no image for region $1"
 }
 
+# window_state <pid> <CGWindowID>: prints "<is_frontmost> <is_key>" (true/false) as Peekaboo sees it.
+window_state() {
+    peekaboo window list --pid "$1" --json 2>/dev/null | python3 -I -c '
+import json, sys
+want = int(sys.argv[1])
+def walk(node):
+    if isinstance(node, dict):
+        if node.get("window_id") == want:
+            yield node
+        for value in node.values():
+            yield from walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from walk(value)
+for window in walk(json.load(sys.stdin)):
+    print(str(window.get("is_frontmost")).lower(), str(window.get("is_key")).lower())
+    break
+else:
+    print("missing missing")
+' "$2"
+}
+
+# require_active_window <pid> <CGWindowID>: fidelity captures need the active window state (the
+# mockups show active windows). If the app did not become frontmost by itself, ask Peekaboo to
+# focus it once, then insist.
+require_active_window() {
+    local state
+    state="$(window_state "$1" "$2")"
+    if [ "$state" != "true true" ]; then
+        peekaboo window focus --window-id "$2" >/dev/null 2>&1 || true
+        sleep 1
+        state="$(window_state "$1" "$2")"
+    fi
+    [ "$state" = "true true" ] || die "window $2 (pid $1) is not frontmost and key (Peekaboo: '$state'); an inactive window would be captured"
+}
+
+# gray_at <png> <x> <y>: 0-1 luminance of one pixel.
+gray_at() { magick "$1" -colorspace Gray -format "%[fx:u.p{$2,$3}]" info:; }
+
+# rgb_at <png> <x> <y>: "R G B" of one pixel, 0-255.
+rgb_at() { magick "$1" -format "%[fx:round(255*u.p{$2,$3}.r)] %[fx:round(255*u.p{$2,$3}.g)] %[fx:round(255*u.p{$2,$3}.b)]" info:; }
+
 # build_tool <name> <swiftc args...>: compiles into $BIN_DIR when the sources are newer.
 build_tool() {
     local name="$1"; shift

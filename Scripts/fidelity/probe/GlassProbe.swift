@@ -1,11 +1,16 @@
-// Throwaway probe: does `screencapture -l` capture Liquid Glass at 2x with backdrop sampling?
+// Throwaway probe: does a Peekaboo capture of an active Liquid Glass window come out at 2x with
+// the glass sampling its own content?
 //
-// Shows a NavigationSplitView (sidebar, glass toolbar groups) in front of a full-screen window
-// painted with high-contrast stripes, on the 1440 x 900 pt HiDPI display. If the sidebar glass
-// samples its backdrop, the stripes appear blurred behind it.
+// Shows a NavigationSplitView (inset sidebar, glass toolbar capsules) whose detail area is a tall
+// scroll view of high-contrast stripes, scrolled so they pass under a toolbar capsule. macOS 26
+// glass samples the window's own content under it (not windows behind it), so the capsule should
+// show those stripes blurred. A full-screen striped window sits behind it only to give the
+// window a busy desktop.
 //
-// Prints:  probe-ready window=<n> backdrop=<n> rect=<x>,<y>,<w>,<h>
-// where rect is the window's actual frame in global top-left display coordinates (for a region capture).
+// Prints:  probe-ready window=<n> backdrop=<n> rect=<x>,<y>,<w>,<h> capsule=<x>,<y>,<w>,<h>
+//          active=<0|1> key=<0|1> pid=<pid>
+// rect is the window's actual frame in global top-left display coordinates (for a region
+// capture); capsule is the probe capsule's content frame in points from the window's top-left.
 import SwiftUI
 import AppKit
 
@@ -22,6 +27,31 @@ struct GlassProbeApp: App {
                 .frame(width: probeSize.width, height: probeSize.height)
         }
         .windowResizability(.contentSize)
+    }
+}
+
+/// Where the probe capsule's content sits, in points from the window's top-left. Set by the view.
+@MainActor var probeCapsuleFrame = CGRect.zero
+
+/// High-contrast diagonal stripes, tall enough to scroll.
+struct StripesView: View {
+    var body: some View {
+        Canvas { context, size in
+            let stripe: CGFloat = 24
+            var x = -size.height
+            var dark = false
+            while x < size.width {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x + stripe, y: 0))
+                path.addLine(to: CGPoint(x: x + stripe + size.height, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: size.height))
+                path.closeSubpath()
+                context.fill(path, with: .color(dark ? .black : .white))
+                x += stripe
+                dark.toggle()
+            }
+        }
     }
 }
 
@@ -44,9 +74,14 @@ struct ProbeContent: View {
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(248)
         } detail: {
-            Text("Detail").font(.largeTitle).foregroundStyle(.secondary)
-                .navigationTitle("runner-1")
-                .navigationSubtitle("org · This Mac")
+            // Stripes run under the toolbar: the content scrolls beneath the glass capsules.
+            ScrollView {
+                StripesView().frame(height: 4000)
+            }
+            .defaultScrollAnchor(.center)
+            .ignoresSafeArea(.container, edges: .top)
+            .navigationTitle("runner-1")
+            .navigationSubtitle("org · This Mac")
         }
         .toolbar {
             ToolbarItemGroup {
@@ -55,7 +90,10 @@ struct ProbeContent: View {
             }
             ToolbarSpacer(.fixed)
             ToolbarItem {
-                Button { } label: { Image(systemName: "plus") }
+                // An icon-free capsule, so the glass over the stripes is measured on its own.
+                Color.clear
+                    .frame(width: 90, height: 20)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { probeCapsuleFrame = $0 }
             }
         }
     }
@@ -123,14 +161,17 @@ final class ProbeDelegate: NSObject, NSApplicationDelegate {
         window.setFrame(frame, display: true)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
-        try? await Task.sleep(for: .seconds(1))
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        try? await Task.sleep(for: .seconds(1.5))
         // Report the window's real frame, not the requested one: SwiftUI sizes the window to its
         // content plus the title bar, so the two differ. Global top-left coordinates are
         // measured from the primary display's top edge.
         let actual = window.frame
         let primaryHeight = NSScreen.screens[0].frame.height
         let top = primaryHeight - actual.maxY
-        print("probe-ready window=\(window.windowNumber) backdrop=\(backdrop.windowNumber) rect=\(Int(actual.minX)),\(Int(top)),\(Int(actual.width)),\(Int(actual.height))")
+        let capsule = probeCapsuleFrame
+        let capsuleText = [capsule.minX, capsule.minY, capsule.width, capsule.height].map { String(Int($0.rounded())) }.joined(separator: ",")
+        print("probe-ready window=\(window.windowNumber) backdrop=\(backdrop.windowNumber) rect=\(Int(actual.minX)),\(Int(top)),\(Int(actual.width)),\(Int(actual.height)) capsule=\(capsuleText) active=\(NSApp.isActive ? 1 : 0) key=\(window.isKeyWindow ? 1 : 0) pid=\(ProcessInfo.processInfo.processIdentifier)")
         fflush(stdout)
     }
 }
