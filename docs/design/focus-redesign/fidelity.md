@@ -122,6 +122,12 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 | Disabled Done is the system's disabled prominent button, close to the kit's 45% accent | native: button state |
 | Sheet position: the system attaches the sheet to the window | native: sheets are window-attached |
 
+## confirmation alerts (no mockup)
+
+| Deviation | Status |
+|---|---|
+| Remove Runner, Remove from This Mac Only, Reconfigure and Remove from GitHub use the system alert with the spec's wording; the kit draws none of them (captures: `build/fidelity/alert-*.png`) | native: system alerts |
+
 ## settings-general
 
 | Deviation | Status |
