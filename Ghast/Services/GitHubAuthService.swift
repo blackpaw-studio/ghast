@@ -178,6 +178,11 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         self.signInState = .signedIn
     }
     
+    /// A token is in the store. It may still turn out to be invalid (see `checkExistingAuth`).
+    var hasStoredToken: Bool {
+        ((try? tokenStore.read()) ?? nil) != nil
+    }
+
     func checkExistingAuth() async {
         do {
             guard let token = try tokenStore.read() else { return }

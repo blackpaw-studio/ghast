@@ -98,7 +98,11 @@ extension FixtureScreen {
     /// What the main window opens on for this screen; nil for screens without it.
     var mainWindowPreset: MainWindowPreset? {
         switch self {
-        case .main, .newRunner, .newRunnerProgress: return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output)
+        case .main: return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output)
+        case .newRunner:
+            return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output, newRunner: .configure(customLabels: ["xcode"]))
+        case .newRunnerProgress:
+            return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output, newRunner: .progress(FixtureWorld.setupProgress))
         case .configuration: return MainWindowPreset(runnerName: "dionysus-xcode", tab: .configuration)
         case .remote: return MainWindowPreset(runnerName: "helios-linux", tab: .output)
         case .error: return MainWindowPreset(runnerName: "ghast-release", tab: .output)

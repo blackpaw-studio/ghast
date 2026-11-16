@@ -26,6 +26,21 @@ struct FixtureSafetyTests {
         #expect(fixture.defaults.data(forKey: "localRunners") != nil)
     }
 
+    @Test("never downloads a runner or runs config.sh")
+    func flowsCannotTouchGitHubRegistrations() async {
+        let fixture = makeFixture()
+        defer { fixture.tearDown() }
+        let services = fixture.appDependencies.flowServices
+        let folder = fixture.runnersDirectory
+
+        await #expect(throws: FixtureRefusal.self) {
+            try await services.downloader.install(from: URL(string: "https://example.invalid/runner.tar.gz")!, into: folder) { _ in }
+        }
+        await #expect(throws: FixtureRefusal.self) {
+            try await services.registrar.unregister(in: folder, token: "fixture")
+        }
+    }
+
     @Test("keeps runners in a scratch folder, never ~/.ghast")
     func runnersFolderIsScratch() {
         let fixture = makeFixture()

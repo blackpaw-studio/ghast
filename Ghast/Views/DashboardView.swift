@@ -50,9 +50,6 @@ struct DashboardView: View {
                 await loadRunnerStats()
             }
         }
-        .sheet(isPresented: $showingNewRunnerFlow) {
-            NewRunnerFlowView(repositories: appState.repositories)
-        }
     }
     
     private var heroSection: some View {

@@ -62,9 +62,22 @@ import Foundation
         #expect(RunnerCommand.allCases.filter(commands.isEnabled).isEmpty)
     }
 
-    @Test func flowsArrivingLaterStayDisabled() {
-        let commands = state(local(.stopped(at: nil)))
-        #expect(!commands.isEnabled(.reconfigure))
-        #expect(!commands.isEnabled(.remove))
+    @Test(arguments: [RunnerDisplayStatus.idle, .stopped(at: nil), .starting])
+    func localRunnerCanBeReconfiguredAndRemovedInAnyState(status: RunnerDisplayStatus) {
+        let commands = state(local(status))
+        #expect(commands.isEnabled(.reconfigure))
+        #expect(commands.isEnabled(.remove))
+    }
+
+    /// One Remove or Reconfigure at a time per runner, and no lifecycle change under it: a
+    /// Start during Reconfigure would run the runner while its registration is set aside.
+    @Test(arguments: [RunnerDisplayStatus.idle, .stopped(at: nil)])
+    func runningFlowDisablesLifecycleReconfigureAndRemove(status: RunnerDisplayStatus) {
+        var commands = state(local(status))
+        commands.isFlowBusy = true
+        for command in [RunnerCommand.start, .stop, .restart, .reconfigure, .remove] {
+            #expect(!commands.isEnabled(command), "\(command)")
+        }
+        #expect(commands.isEnabled(.showOutput))
     }
 }

@@ -21,22 +21,12 @@ struct ContentView: View {
                 FocusMainView()
                     .environment(authService)
             } else {
-                // The Focus welcome window arrives with the sign-in flows.
-                WelcomeView()
-                    .environment(authService)
-                    .frame(minWidth: 1200, minHeight: 650)
+                // Signed out: this window closes and Welcome opens (see `AuthWindowSwitch`).
+                Color.clear
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            // Check for stored authentication when app starts
-            Task {
-                await authService.checkStoredAuthentication()
-            }
-        }
-        .onChange(of: authService.isAuthenticated) { _, newValue in
-            print("🔐 UI: isAuthenticated changed to \(newValue)")
-        }
+        .switchesWindowsOnAuthChange(authService, in: .main)
     }
 }
 

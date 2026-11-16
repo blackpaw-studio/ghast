@@ -60,20 +60,20 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 |---|---|
 | Job-script switches are the system small switch, not the kit's 38 × 22 | native: `Toggle(.switch)` `.controlSize(.small)` |
 | Environment variable rows are centred; the mockup's text sits about 1.75 pt off-centre | fixed: capture is centred, mockup drift ignored |
-| "Remove Runner…" renders dimmed (disabled) until the PR 3 flows | open: enabled in PR 3 |
+| "Remove Runner…" renders dimmed (disabled) until the PR 3 flows | fixed (PR 3 · 3.7) |
 | "Restart the runner to apply changes." footer shows only after an edit while running; the PNG shows a running runner without it | fixed: PNG wins |
 
 ## remote
 
 | Deviation | Status |
 |---|---|
-| "Remove from GitHub…" in the ellipsis menu is disabled until PR 3 | open: enabled in PR 3 |
+| "Remove from GitHub…" in the ellipsis menu is disabled until PR 3 | fixed (PR 3 · 3.7) |
 
 ## error
 
 | Deviation | Status |
 |---|---|
-| "Reconfigure…" renders dimmed (disabled) until the PR 3 flows | open: enabled in PR 3 |
+| "Reconfigure…" renders dimmed (disabled) until the PR 3 flows | fixed (PR 3 · 3.7) |
 | "Runner listener exited with error code 1" is red | fixed: parser rule (2.9) |
 
 ## first-run
@@ -87,26 +87,46 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 
 | Deviation | Status |
 |---|---|
-| (none seeded) | open |
+| App icon is Ghast's real artwork; the kit draws a stand-in ghost squircle | native: shipped app icon |
+| Traffic lights sit where the hidden title bar puts them, a few points higher and left of the kit | native: window chrome |
+| Zoom button is greyed because the window is fixed-size (`.contentSize`) | native: window chrome |
+| Feature glyphs are SF `laptopcomputer`, `terminal`, `rectangle.inset.bottomright.filled`; the laptop screen is tinted and the third is the nearest match to the kit's | native: SF Symbols |
+| Window background is the system window color, a touch warmer than the kit in dark mode | native: window material |
+| Sign In button height and footnote position | fixed |
 
 ## device-code
 
 | Deviation | Status |
 |---|---|
-| (none seeded) | open |
+| Key glyph is SF `key` turned 45° to the kit's angle; its bit is a notch rather than the kit's teeth | native: SF Symbols |
+| Traffic lights and greyed zoom button, as on welcome | native: window chrome |
+| Button heights (36 pt) and gap above the buttons | fixed |
 
 ## new-runner
 
 | Deviation | Status |
 |---|---|
-| Sheet position: the system attaches the sheet to the window, the mockup floats two sheets side by side | native: sheets are window-attached |
-| Avatar image | native: fixture stand-in |
+| Sheet position: the system attaches the sheet to the window and centres it vertically; the mockup floats two sheets side by side near the top | native: sheets are window-attached |
+| The window under the sheet draws inactive and without the kit's scrim | native: sheet presentation |
+| Avatar image: a monogram drawn as an `NSImage` (menu items can't host views); real avatars load from GitHub | native: fixture stand-in |
+| "Add to" is the system menu popup: filled bezel, sized to its widest item, icon tight to the title | native: `Picker(.menu)` |
+| The Name field selects the suggested name when it takes focus | native: text field focus |
+| Labels field is a SwiftUI token row in a text-field-coloured box, not `NSTokenField`, so the default labels can be fixed | native: no system token field with fixed tokens |
+| "Add Label" text column narrowed to 64 pt because SF tokens run 7 pt wider than the kit's | fixed |
 
 ## new-runner-progress
 
 | Deviation | Status |
 |---|---|
+| The window under the sheet draws inactive and without the kit's scrim | native: sheet presentation |
+| Disabled Done is the system's disabled prominent button, close to the kit's 45% accent | native: button state |
 | Sheet position: the system attaches the sheet to the window | native: sheets are window-attached |
+
+## confirmation alerts (no mockup)
+
+| Deviation | Status |
+|---|---|
+| Remove Runner, Remove from This Mac Only, Reconfigure and Remove from GitHub use the system alert with the spec's wording; the kit draws none of them (captures: `build/fidelity/alert-*.png`) | native: system alerts |
 
 ## settings-general
 

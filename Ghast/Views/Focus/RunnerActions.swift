@@ -6,6 +6,8 @@ import os
 @MainActor
 struct RunnerActions {
     let runnerService: RunnerService
+    /// Remove and Reconfigure; nil where no flow can run (snapshots).
+    var flows: RunnerFlowCoordinator? = nil
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "runner-actions")
 
     func start(_ localID: String) {
@@ -33,14 +35,15 @@ struct RunnerActions {
         }
     }
 
-    /// Starts every runner on this Mac that isn't running.
+    /// Starts every runner on this Mac that isn't running, leaving any a flow is working on.
     func startAll() {
-        for runner in runnerService.localRunners where !isRunning(runner.id) { start(runner.id) }
+        for runner in runnerService.localRunners where !isRunning(runner.id) && !isFlowBusy(runner.id) { start(runner.id) }
     }
 
-    /// A user stop of every running runner (unlike quitting, it clears their run intent).
+    /// A user stop of every running runner (unlike quitting, it clears their run intent),
+    /// leaving any a flow is working on.
     func stopAll() {
-        for runner in runnerService.localRunners where isRunning(runner.id) { stop(runner.id) }
+        for runner in runnerService.localRunners where isRunning(runner.id) && !isFlowBusy(runner.id) { stop(runner.id) }
     }
 
     var canStartAll: Bool { runnerService.localRunners.contains { !isRunning($0.id) } }
@@ -64,5 +67,25 @@ struct RunnerActions {
     func openOnGitHub(_ item: RunnerItem) {
         guard let id = item.gitHubRunnerID, let url = item.scope.runnerSettingsURL(gitHubRunnerID: id) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: Flows (each asks first)
+
+    var canRunFlows: Bool { flows != nil }
+
+    func isFlowBusy(_ localID: String) -> Bool { flows?.isBusy(localID) ?? false }
+
+    func reconfigure(_ localID: String) {
+        flows?.requestReconfigure(localID: localID)
+    }
+
+    /// Without GitHub's id, removal looks the runner up by name.
+    func remove(_ localID: String, gitHubRunnerID: Int? = nil) {
+        flows?.requestRemove(localID: localID, gitHubRunnerID: gitHubRunnerID)
+    }
+
+    func removeFromGitHub(_ item: RunnerItem) {
+        guard let id = item.gitHubRunnerID else { return }
+        flows?.requestRemoveFromGitHub(name: item.name, scope: item.scope, gitHubRunnerID: id)
     }
 }

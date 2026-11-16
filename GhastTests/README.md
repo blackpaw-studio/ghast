@@ -29,7 +29,6 @@ When you need to record new reference snapshots (e.g., after UI changes):
    xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/ContentViewSnapshotTests
    xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/NewRunnerFlowSnapshotTests
    xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/LocalRunnersViewSnapshotTests
-   xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/AddRunnerViewSnapshotTests
    ```
 
 3. **Reset the recording flag:**
@@ -46,9 +45,7 @@ When you need to record new reference snapshots (e.g., after UI changes):
 ## What Gets Tested
 
 - **ContentView/MainAppView**: Main app layout and sidebar width
-- **NewRunnerFlowView**: Repository selection dialog at different sizes
 - **LocalRunnersView**: Runner list with sidebar layout
-- **AddRunnerView**: Runner configuration sheets
 
 ## Snapshot Location
 

@@ -12,7 +12,8 @@ enum FixtureWorld {
         description: nil,
         isPrivate: false,
         owner: GitHubUser(id: 10, login: "blackpaw-studio", avatarURL: "", name: nil, email: nil),
-        htmlURL: "https://github.com/blackpaw-studio/ghast"
+        htmlURL: "https://github.com/blackpaw-studio/ghast",
+        permissions: RepositoryPermissions(admin: true)
     )
     static let organizationScope = RunnerScope.organization(login: organization.login)
     static let repositoryScope = RunnerScope.repository(fullName: repository.fullName)
@@ -31,6 +32,18 @@ enum FixtureWorld {
         GitHubRunner(id: 1003, name: "helios-linux", os: "Linux", status: "online", busy: false, labels: labels(["self-hosted", "Linux", "X64"])),
         GitHubRunner(id: 1004, name: "iris-gpu", os: "Linux", status: "offline", busy: false, labels: labels(["self-hosted", "Linux", "X64", "gpu"])),
     ]
+
+    /// New Runner's "Setting Up" screen, frozen at "Start runner".
+    static let setupProgress = SetupProgress(
+        runnerName: "dionysus-3",
+        scopeName: organization.login,
+        version: "2.329.0",
+        states: [
+            .download: .done(detail: "182 MB"),
+            .register: .done(detail: nil),
+            .start: .active(detail: SetupProgress.connectingDetail),
+        ]
+    )
 
     static let repositoryRunners: [GitHubRunner] = [
         GitHubRunner(id: 2001, name: "ghast-release", os: "macOS", status: "offline", busy: false, labels: labels(["self-hosted", "macOS", "ARM64"])),
@@ -79,6 +92,10 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
     }
 
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {}
+
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] {
+        [GitHubRunnerGroup(id: 1, name: "Default", isDefault: true)]
+    }
 
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         [GitHubRunnerApplication(

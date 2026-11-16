@@ -10,6 +10,8 @@ struct FocusContext: Sendable {
     /// False in the design fixture, so a capture never catches the cursor mid-blink.
     var animatesCursor = true
     var sleeper: Sleeper = { try await Task.sleep(for: $0) }
+    /// False in the design fixture: a device code is never copied or opened in the browser.
+    var performsDeviceFlowSideEffects = true
     /// How a runner folder is written ("~/.ghast/runners/dionysus-xcode").
     var displayPath: @Sendable (String) -> String = { ($0 as NSString).abbreviatingWithTildeInPath }
 
@@ -24,6 +26,8 @@ struct MainWindowPreset: Equatable, Sendable {
     /// The runner to select, by name; nil for the This Mac empty state.
     let runnerName: String?
     let tab: DetailTab
+    /// Opens the New Runner sheet on this state.
+    var newRunner: NewRunnerSheetPreset? = nil
 }
 
 extension EnvironmentValues {

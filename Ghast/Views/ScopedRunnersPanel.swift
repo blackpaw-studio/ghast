@@ -2,10 +2,9 @@ import SwiftUI
 
 /// The runner page shared by repositories and organizations: a caller-supplied header,
 /// runner stats, local runners for `scope`, remote runners not matched by a local one
-/// (by name), removal, and the Add Runner sheet.
+/// (by name) and removal. Legacy: unreachable since the Focus window replaced it.
 struct ScopedRunnersPanel<Header: View>: View {
     let scope: RunnerScope
-    /// Passed to `AddRunnerView` for its public/private icon.
     var repository: GitHubRepository? = nil
     /// Builds the header; call the closure to open Add Runner.
     @ViewBuilder let header: (_ addRunner: @escaping () -> Void) -> Header
@@ -57,13 +56,6 @@ struct ScopedRunnersPanel<Header: View>: View {
             )
         }
         .navigationTitle("")
-        .sheet(isPresented: $showingAddRunner) {
-            AddRunnerView(scope: scope, repository: repository) {
-                Task {
-                    await loadRunners()
-                }
-            }
-        }
         .task(id: scope) {
             await loadRunners()
         }

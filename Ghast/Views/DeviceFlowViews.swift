@@ -92,10 +92,11 @@ struct SignInFailurePanel: View {
 struct DeviceFlowPresenter: ViewModifier {
     let signInState: SignInState
     @Environment(\.openURL) private var openURL
+    @Environment(\.focusContext) private var context
 
     func body(content: Content) -> some View {
         content.onChange(of: signInState) { _, state in
-            guard case .awaitingUser(let code) = state else { return }
+            guard context.performsDeviceFlowSideEffects, case .awaitingUser(let code) = state else { return }
             Self.copyToPasteboard(code.userCode)
             openURL(code.verificationURI)
         }

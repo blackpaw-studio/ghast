@@ -46,7 +46,12 @@ struct MainWindowCommands: Commands {
             command("Copy All Output", .copyAllOutput).keyboardShortcut("c", modifiers: [.command, .option])
             Divider()
             command("Reconfigure…", .reconfigure)
-            command("Remove Runner…", .remove).keyboardShortcut(.delete)
+            Button("Remove Runner…") {
+                guard !TextEditingKeyRouting.deleteToLineStartIfEditing() else { return }
+                target?.perform(.remove)
+            }
+            .disabled(!(target?.state.isEnabled(.remove) ?? false))
+            .keyboardShortcut(.delete)
         }
         CommandGroup(replacing: .singleWindowList) {
             Button("Ghast") { openWindow(id: GhastApp.mainWindowID) }.keyboardShortcut("0")

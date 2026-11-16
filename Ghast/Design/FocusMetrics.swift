@@ -14,6 +14,27 @@ enum FocusMetrics {
     static let sheetWidth: CGFloat = 500
     static let sheetPadding: CGFloat = 24
 
+    // MARK: New Runner sheet (NewRunner.png, measured)
+    static let sheetTitleGap: CGFloat = 4
+    static let sheetBodyToBox: CGFloat = 20
+    static let sheetTitleToBox: CGFloat = 16
+    static let sheetHelpTop: CGFloat = 6
+    static let sheetAdvancedTop: CGFloat = 18
+    static let sheetFooterTop: CGFloat = 24
+    static let sheetButtonSpacing: CGFloat = 9
+    /// The value column starts 98 pt into the box: 14 inset plus an 84 pt label column.
+    static let newRunnerLabelColumn: CGFloat = 84
+    static let scopeAvatar: CGFloat = 16
+    static let setupStepRowHeight: CGFloat = 44
+    static let setupStepIconGap: CGFloat = 10
+    static let setupStepIcon: CGFloat = 16
+    static let labelFieldHeight: CGFloat = 28
+    static let labelFieldRadius: CGFloat = 7
+    static let labelFieldInset: CGFloat = 4
+    static let labelFieldTextWidth: CGFloat = 64
+    static let labelRemoveGlyph: CGFloat = 8
+    static let labelRemoveGap: CGFloat = 4
+
     // MARK: Main window
     static let sidebarWidth: CGFloat = 248
     /// The kit's floating sidebar sits 8 pt in from the window edge on each side, so the detail
@@ -130,6 +151,8 @@ enum FocusMetrics {
     // MARK: Welcome and empty states
     static let appIconLarge: CGFloat = 96
     static let appIconLargeRadius: CGFloat = 22
+    /// The app icon's whole canvas, whose 824/1024 artwork is `appIconLarge`.
+    static let appIconCanvas: CGFloat = appIconLarge * 1024 / 824
     static let appIconBanner: CGFloat = 32
     static let deviceCodeFontSize: CGFloat = 34
     static let deviceCodeTracking = 0.08
@@ -150,6 +173,40 @@ enum FocusMetrics {
     static let remoteNoteTitleGap: CGFloat = 4
     /// Measured: the remote note sits 35 pt above the centre of the space under the header.
     static let remoteNoteLift: CGFloat = -35
+
+    // MARK: Welcome window (measured from Welcome.png)
+    static let welcomeIconTop: CGFloat = 44
+    static let welcomeIconGap: CGFloat = 20
+    static let welcomeTitleGap: CGFloat = 6
+    static let welcomeFeaturesTop: CGFloat = 29
+    static let welcomeFeatureColumn: CGFloat = 380
+    static let welcomeFeatureGlyph: CGFloat = 32
+    static let welcomeFeatureGlyphGap: CGFloat = 14
+    static let welcomeFeatureSpacing: CGFloat = 16
+    static let welcomeFeatureTextGap: CGFloat = 2
+    static let welcomeButtonTop: CGFloat = 31
+    static let welcomeFootnoteGap: CGFloat = 12
+    static let welcomeFailureGap: CGFloat = 10
+    /// Measured: the kit's large buttons are 22 pt wider than the system's padding on each side.
+    static let largeButtonExtraPadding: CGFloat = 4.5
+    /// Grows a `.large` button to the kit's 36 pt height.
+    static let largeButtonExtraVerticalPadding: CGFloat = 2.5
+    static let deviceKeyGlyph: CGFloat = 32
+    /// SF `key` stands upright; the kit draws it leaning with the bow upper-left.
+    static let deviceKeyRotation: Double = -45
+    static let deviceKeyTop: CGFloat = 86
+    static let deviceTitleGap: CGFloat = 18
+    static let deviceBodyGap: CGFloat = 8
+    static let deviceBodyMaxWidth: CGFloat = 400
+    static let deviceCodeGap: CGFloat = 29
+    static let deviceButtonsGap: CGFloat = 25
+    static let deviceButtonSpacing: CGFloat = 12
+    static let deviceBodyLineSpacing: CGFloat = 2
+    /// Below the 1 pt separator.
+    static let deviceFooterHeight: CGFloat = 67
+    static let deviceFooterInset: CGFloat = 20
+    static let deviceFooterLeadingInset: CGFloat = 24
+    static let deviceFooterSpinnerGap: CGFloat = 8
 
     // MARK: Account
     static let accountAvatar: CGFloat = 64

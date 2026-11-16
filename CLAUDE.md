@@ -80,9 +80,9 @@ Alternatively record without editing files: `TEST_RUNNER_SNAPSHOT_RECORD_MODE=tr
 Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authentication issues.
 
 ### Local Runner Workflow
-1. User creates runner via GitHub API (gets registration token)
-2. User downloads and configures runner binary locally
-3. User registers runner path with Ghast via `AddRunnerView`
+1. User opens the New Runner sheet (`NewRunnerSheet`) and picks scope, name, labels and group
+2. `RunnerSetupFlow` downloads the runner, moves it into place, gets a registration token and runs `config.sh`
+3. The registered runner is added to `RunnerService`; Remove, Reconfigure and Remove from GitHub go through `RunnerFlowCoordinator`, each behind a confirmation
 4. Ghast manages runner lifecycle via `Process` and streams logs via Combine
 5. Real-time log viewing in `RunnerLogsView` with automatic scroll-to-bottom
 

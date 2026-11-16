@@ -36,6 +36,8 @@ class RunnerService {
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     @ObservationIgnored private let runnersBaseDirectory: URL
+    /// Where every managed runner keeps its folder.
+    var runnersDirectory: URL { runnersBaseDirectory }
     
     /// - Parameters:
     ///   - restartDelay: Seconds the wrapper waits before restarting a runner that updated itself.
@@ -63,50 +65,6 @@ class RunnerService {
         discoverExistingRunners()
     }
     
-    // MARK: - Automatic Runner Setup
-    
-    /// Automatically downloads, extracts, configures and creates a new runner
-    func createManagedRunner(
-        name: String,
-        scope: RunnerScope,
-        application: GitHubRunnerApplication,
-        registrationToken: String,
-        labels: [String] = []
-    ) async throws -> LocalRunner {
-        let runnerDir = runnersBaseDirectory.appendingPathComponent(name)
-        
-        // Create runner directory
-        try FileManager.default.createDirectory(at: runnerDir, withIntermediateDirectories: true)
-        
-        // Download runner package
-        let archiveURL = try await downloadRunnerPackage(from: application.downloadURL, to: runnerDir)
-        
-        // Extract archive
-        try await extractRunnerPackage(archiveURL: archiveURL, to: runnerDir)
-        
-        // Configure runner
-        try await configureRunner(
-            at: runnerDir,
-            scope: scope,
-            token: registrationToken,
-            name: name,
-            labels: labels
-        )
-        
-        // Create LocalRunner instance
-        let runner = LocalRunner(
-            name: name,
-            scope: scope,
-            path: runnerDir.path,
-            labels: labels
-        )
-        
-        // Add to managed runners
-        addLocalRunner(runner)
-        
-        return runner
-    }
-    
     private func createRunnersDirectoryIfNeeded() {
         do {
             try FileManager.default.createDirectory(at: runnersBaseDirectory, withIntermediateDirectories: true)
@@ -117,218 +75,34 @@ class RunnerService {
         }
     }
     
-    private func downloadRunnerPackage(from urlString: String, to directory: URL) async throws -> URL {
-        guard let url = URL(string: urlString) else {
-            throw RunnerError.invalidDownloadURL
-        }
-        
-        let (data, _) = try await URLSession.shared.data(from: url)
-        
-        let archiveURL = directory.appendingPathComponent("actions-runner.tar.gz")
-        try data.write(to: archiveURL)
-        
-        return archiveURL
-    }
-    
-    private func extractRunnerPackage(archiveURL: URL, to directory: URL) async throws {
-        let process = Process()
-        process.currentDirectoryPath = directory.path
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = ["xzf", archiveURL.lastPathComponent]
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        if process.terminationStatus != 0 {
-            throw RunnerError.extractionFailed
-        }
-        
-        // Clean up archive file
-        try FileManager.default.removeItem(at: archiveURL)
-        
-        // Clear quarantine on entire directory first
-        try await clearQuarantineRecursively(for: directory)
-        
-        // Set executable permissions on all runner binaries
-        try await setExecutablePermissions(in: directory)
-    }
-    
-    private func setExecutablePermissions(in directory: URL) async throws {
-        let fileManager = FileManager.default
-        
-        // List of known executable files in GitHub Actions runner
-        let executableFiles = [
-            "config.sh",
-            "run.sh", 
-            "env.sh",
-            "bin/Runner.Listener",
-            "bin/Runner.Worker",
-            "bin/Runner.PluginHost",
-            "externals/node16/bin/node",
-            "externals/node20/bin/node"
-        ]
-        
-        for executablePath in executableFiles {
-            let fullPath = directory.appendingPathComponent(executablePath)
-            if fileManager.fileExists(atPath: fullPath.path) {
-                do {
-                    // Set executable permissions
-                    try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fullPath.path)
-                    
-                    // Clear quarantine attribute to avoid Gatekeeper issues
-                    try await clearQuarantineAttribute(for: fullPath)
-                    
-                    #if DEBUG
-                    print("🏃 Set executable permissions for: \(executablePath)")
-                    #endif
-                } catch {
-                    #if DEBUG
-                    print("🏃 Warning: Failed to set permissions for \(executablePath): \(error)")
-                    #endif
-                }
-            }
-        }
-        
-        // Also find and set permissions for any other executable files in bin directory
-        let binDirectory = directory.appendingPathComponent("bin")
-        if fileManager.fileExists(atPath: binDirectory.path) {
-            do {
-                let binContents = try fileManager.contentsOfDirectory(at: binDirectory, includingPropertiesForKeys: nil)
-                for binFile in binContents {
-                    do {
-                        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binFile.path)
-                        try await clearQuarantineAttribute(for: binFile)
-                    } catch {
-                        // Silently continue if we can't set permissions on some files
-                    }
-                }
-            } catch {
-                #if DEBUG
-                print("🏃 Warning: Could not scan bin directory: \(error)")
-                #endif
-            }
-        }
-    }
-    
-    private func clearQuarantineRecursively(for directory: URL) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        process.arguments = ["-rd", "com.apple.quarantine", directory.path]
-        
-        // Capture output to avoid showing expected errors
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        
-        do {
-            try process.run()
-            process.waitUntilExit()
-            #if DEBUG
-            print("🏃 Cleared quarantine attributes from runner directory")
-            #endif
-            // Don't throw on non-zero exit - files might not have quarantine attribute
-        } catch {
-            #if DEBUG
-            print("🏃 Warning: Could not clear quarantine attributes: \(error)")
-            #endif
-        }
-    }
-    
-    private func clearQuarantineAttribute(for fileURL: URL) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        process.arguments = ["-d", "com.apple.quarantine", fileURL.path]
-        
-        // Capture output to avoid showing expected errors
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        
-        do {
-            try process.run()
-            process.waitUntilExit()
-            // Don't throw on non-zero exit - file might not have quarantine attribute
-        } catch {
-            // Silently ignore errors - quarantine attribute might not exist
-        }
-    }
-    
     /// Arguments for a non-interactive `config.sh` registering against `url`.
-    static func configArguments(url: String, token: String, name: String, labels: [String]) -> [String] {
+    nonisolated static func configArguments(
+        url: String,
+        token: String,
+        name: String,
+        labels: [String],
+        runnerGroup: String? = nil,
+        workFolder: String = LocalRunner.defaultWorkFolder,
+        replace: Bool = false
+    ) -> [String] {
         let base = [
             "./config.sh",
             "--url", url,
             "--token", token,
             "--name", name,
             "--unattended",  // Non-interactive mode
+            "--work", workFolder,
         ]
-        return labels.isEmpty ? base : base + ["--labels", labels.joined(separator: ",")]
+        let labelArguments = labels.isEmpty ? [] : ["--labels", labels.joined(separator: ",")]
+        let groupArguments = runnerGroup.map { ["--runnergroup", $0] } ?? []
+        return base + labelArguments + groupArguments + (replace ? ["--replace"] : [])
     }
 
-    private func configureRunner(
-        at directory: URL,
-        scope: RunnerScope,
-        token: String,
-        name: String,
-        labels: [String]
-    ) async throws {
-        // Check if config.sh exists
-        let configPath = directory.appendingPathComponent("config.sh")
-        guard FileManager.default.fileExists(atPath: configPath.path) else {
-            #if DEBUG
-            print("🏃 Config script not found at: \(configPath.path)")
-            #endif
-            throw RunnerError.configurationFailed()
-        }
-        
-        // Make config.sh executable
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: configPath.path)
-        
-        let process = Process()
-        process.currentDirectoryPath = directory.path
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        
-        let arguments = Self.configArguments(url: scope.configURL, token: token, name: name, labels: labels)
-        process.arguments = arguments
-        
-        // Capture output for debugging
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        
-        #if DEBUG
-        print("🏃 Running configuration command: \(arguments.joined(separator: " "))")
-        print("🏃 Working directory: \(directory.path)")
-        #endif
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        // Read output
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
-        
-        #if DEBUG
-        print("🏃 Configuration output: \(output)")
-        if !errorOutput.isEmpty {
-            print("🏃 Configuration error: \(errorOutput)")
-        }
-        #endif
-        
-        if process.terminationStatus != 0 {
-            #if DEBUG
-            print("🏃 Configuration failed with exit code: \(process.terminationStatus)")
-            #endif
-            throw RunnerError.configurationFailed()
-        }
+    /// Arguments for `config.sh remove`, which unregisters the runner and deletes its local config.
+    nonisolated static func removeArguments(token: String) -> [String] {
+        ["./config.sh", "remove", "--token", token]
     }
-    
+
     // MARK: - Local Runner Management
     
     func addLocalRunner(_ runner: LocalRunner) {

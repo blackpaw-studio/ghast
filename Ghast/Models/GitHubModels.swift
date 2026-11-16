@@ -35,13 +35,22 @@ struct GitHubRepository: Codable, Identifiable, Equatable, Sendable {
     let isPrivate: Bool
     let owner: GitHubUser
     let htmlURL: String
-    
+    /// The signed-in user's access; GitHub includes it on authenticated repository lists.
+    var permissions: RepositoryPermissions? = nil
+
+    /// Runners can be added only where the user is an admin.
+    var isAdmin: Bool { permissions?.admin == true }
+
     enum CodingKeys: String, CodingKey {
-        case id, name, description, owner
+        case id, name, description, owner, permissions
         case fullName = "full_name"
         case isPrivate = "private"
         case htmlURL = "html_url"
     }
+}
+
+struct RepositoryPermissions: Codable, Equatable, Sendable {
+    let admin: Bool
 }
 
 /// An organization the signed-in user administers.
@@ -63,7 +72,17 @@ struct GitHubRunner: Sendable, Codable, Identifiable, Equatable {
     let status: String
     let busy: Bool
     let labels: [GitHubRunnerLabel]
-    
+    /// The organization runner group it belongs to; GitHub may leave it out.
+    var runnerGroupID: Int? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, os, status, busy, labels
+        case runnerGroupID = "runner_group_id"
+    }
+
+    /// Labels the user added (GitHub's `custom` type), not the ones the runner adds itself.
+    var customLabels: [String] { labels.filter { $0.type == "custom" }.map(\.name) }
+
     var isOnline: Bool {
         status == "online"
     }
@@ -178,5 +197,16 @@ enum GitHubAPIError: Error, LocalizedError, Sendable {
         case .serverError(let code), .httpStatus(let code), .rateLimited(let code, _, _): code
         default: nil
         }
+    }
+}
+/// An organization's runner group (`GET /orgs/{org}/actions/runner-groups`).
+struct GitHubRunnerGroup: Sendable, Codable, Identifiable, Equatable {
+    let id: Int
+    let name: String
+    let isDefault: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case isDefault = "default"
     }
 }

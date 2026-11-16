@@ -1,0 +1,336 @@
+import SwiftUI
+import os
+
+/// New Runner, step one: where the runner goes, its name and labels.
+struct NewRunnerConfigureView: View {
+    let initialCustomLabels: [String]
+    let create: (NewRunnerRequest) -> Void
+    let cancel: () -> Void
+
+    @Environment(RunnerService.self) private var runnerService
+    @Environment(RemoteRunnerStore.self) private var remoteStore
+    @Environment(GitHubAuthService.self) private var authService
+    @Environment(\.gitHubAPIService) private var api
+    @Environment(\.focusContext) private var context
+    @Environment(\.openSettings) private var openSettings
+
+    @State private var repositories: [GitHubRepository] = []
+    @State private var scope: RunnerScope?
+    @State private var name = ""
+    @State private var isNameEdited = false
+    @State private var labels: LabelTokenList?
+    @State private var fetchedNames: [RunnerScope: [String]] = [:]
+    @State private var runnerGroups: [GitHubRunnerGroup] = []
+    @State private var runnerGroup: String?
+    @State private var workFolder = LocalRunner.defaultWorkFolder
+    @State private var isAdvancedExpanded = false
+    @State private var avatars = ScopeAvatarImages()
+    @FocusState private var isNameFocused: Bool
+
+    private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "new-runner")
+
+    private var choices: NewRunnerScopeChoices {
+        NewRunnerScopeChoices(organizations: remoteStore.adminOrganizations, repositories: repositories)
+    }
+
+    private var tokens: LabelTokenList {
+        labels ?? LabelTokenList(architecture: context.hostInfo.architecture, custom: initialCustomLabels)
+    }
+
+    /// Runner names GitHub lists in `scope`: the main window's last fetch, or this sheet's own.
+    private func gitHubNames(in scope: RunnerScope) -> [String] {
+        if let names = fetchedNames[scope] { return names }
+        switch remoteStore.fetches[scope] {
+        case let .loaded(runners, _)?: return runners.map(\.name)
+        case let .failed(_, lastGood)?: return lastGood?.runners.map(\.name) ?? []
+        case nil: return []
+        }
+    }
+
+    private var validation: NewRunnerName.Validation? {
+        scope.map { NewRunnerName.validate(name, scope: $0, localRunners: runnerService.localRunners, gitHubNames: gitHubNames(in: $0)) }
+    }
+
+    private var canCreate: Bool {
+        NewRunnerName.canCreate(name: name, scope: scope, localRunners: runnerService.localRunners, gitHubNames: scope.map(gitHubNames) ?? [])
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("New Runner").font(FocusType.title2)
+            Text("Ghast downloads the GitHub Actions runner, registers it, and starts it on this Mac.")
+                .font(FocusType.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, FocusMetrics.sheetTitleGap)
+            form.padding(.top, FocusMetrics.sheetBodyToBox)
+            help.padding(.top, FocusMetrics.sheetHelpTop)
+            advanced.padding(.top, FocusMetrics.sheetAdvancedTop)
+            footer.padding(.top, FocusMetrics.sheetFooterTop)
+        }
+        .task { await loadRepositories() }
+        .task(id: scope) { await loadScopeDetails() }
+        .onAppear {
+            isNameFocused = true
+            if scope == nil { choose(choices.first?.scope) }
+        }
+        .onChange(of: choices) { _, new in
+            avatars.load(new.all)
+            if scope == nil { choose(new.first?.scope) }
+        }
+    }
+
+    // MARK: Form
+
+    private var form: some View {
+        VStack(spacing: 0) {
+            row("Add to") {
+                HStack {
+                    Spacer(minLength: 0)
+                    scopePicker.fixedSize()
+                }
+            }
+            FocusFormDivider()
+            row("Name") {
+                TextField("Name", text: nameBinding, prompt: Text("Runner name"))
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .focused($isNameFocused)
+            }
+            FocusFormDivider()
+            row("Labels") {
+                LabelTokenField(labels: Binding(get: { tokens }, set: { labels = $0 }))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: FocusMetrics.formBoxRadius, style: .continuous)
+                .fill(FocusColor.group)
+        )
+    }
+
+    private func row<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(spacing: 0) {
+            Text(label)
+                .font(FocusType.body)
+                .frame(width: FocusMetrics.newRunnerLabelColumn, alignment: .leading)
+            value().frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, FocusMetrics.formRowInset)
+        .frame(minHeight: FocusMetrics.formRowHeight)
+    }
+
+    private var scopePicker: some View {
+        Picker("Add to", selection: scopeMenuBinding) {
+            if !choices.organizations.isEmpty {
+                Section("Organizations") {
+                    ForEach(choices.organizations) { scopeItem($0) }
+                }
+            }
+            if !choices.repositories.isEmpty {
+                Section("Repositories") {
+                    ForEach(choices.repositories) { scopeItem($0) }
+                }
+            }
+            if authService.needsScopeUpgrade {
+                Divider()
+                Text("Organizations need more access").tag(ScopeMenuItem.note).disabled(true)
+                Text("Grant Access in Settings…").tag(ScopeMenuItem.grantAccess)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+    }
+
+    private func scopeItem(_ choice: NewRunnerScopeChoice) -> some View {
+        Label {
+            Text(choice.name) + Text(" \(choice.kind)").foregroundStyle(.secondary)
+        } icon: {
+            Image(nsImage: avatars.image(for: choice))
+        }
+        .tag(ScopeMenuItem.scope(choice.scope))
+    }
+
+    @ViewBuilder
+    private var help: some View {
+        if let scope, let message = validation?.message(scope: scope, name: name) {
+            Text(message)
+                .font(FocusType.callout)
+                .foregroundStyle(.red)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+        } else {
+            Text(scope.map { "Names must be unique in \($0.displayName). Default labels are added for you." }
+                 ?? "Default labels are added for you.")
+                .font(FocusType.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+        }
+    }
+
+    // MARK: Advanced
+
+    private var advanced: some View {
+        DisclosureGroup(isExpanded: $isAdvancedExpanded) {
+            VStack(spacing: 0) {
+                row("Architecture") {
+                    Picker("Architecture", selection: architectureBinding) {
+                        ForEach(HostArchitecture.allCases, id: \.self) { Text($0.runnerLabel).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                if scope?.isOrganization == true {
+                    FocusFormDivider()
+                    row("Runner group") {
+                        Picker("Runner group", selection: $runnerGroup) {
+                            ForEach(runnerGroups, id: \.name) { Text($0.name).tag(Optional($0.name)) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                        .disabled(runnerGroups.isEmpty)
+                    }
+                }
+                FocusFormDivider()
+                row("Work folder") {
+                    TextField("Work folder", text: $workFolder)
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: FocusMetrics.formBoxRadius, style: .continuous)
+                    .fill(FocusColor.group)
+            )
+            .padding(.top, FocusMetrics.formHelpTop)
+            if tokens.architecture == .x64 && context.hostInfo.architecture == .arm64 {
+                Text("X64 runners run under Rosetta.")
+                    .font(FocusType.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, FocusMetrics.formRowInset)
+                    .padding(.top, FocusMetrics.sheetHelpTop)
+            }
+        } label: {
+            HStack(spacing: FocusMetrics.formCaptionGap) {
+                Text("Advanced").font(FocusType.body)
+                Text("Architecture, runner group, work folder")
+                    .font(FocusType.body)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(spacing: FocusMetrics.sheetButtonSpacing) {
+            Spacer()
+            Button("Cancel", role: .cancel, action: cancel)
+                .keyboardShortcut(.cancelAction)
+            Button("Create Runner", action: submit)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCreate || workFolder.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .controlSize(.large)
+        .buttonBorderShape(.capsule)
+    }
+
+    private func submit() {
+        guard canCreate, let scope else { return }
+        let group = scope.isOrganization ? runnerGroups.first { $0.name == runnerGroup } : nil
+        create(NewRunnerRequest(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            scope: scope,
+            labels: tokens,
+            // The default group needs no `--runnergroup`.
+            runnerGroup: group.flatMap { $0.isDefault ? nil : $0.name },
+            workFolder: workFolder.trimmingCharacters(in: .whitespaces)
+        ))
+    }
+
+    // MARK: State
+
+    private enum ScopeMenuItem: Hashable {
+        case scope(RunnerScope)
+        case note
+        case grantAccess
+    }
+
+    private var scopeMenuBinding: Binding<ScopeMenuItem> {
+        Binding(
+            get: { scope.map(ScopeMenuItem.scope) ?? .note },
+            set: { item in
+                switch item {
+                case let .scope(new): choose(new)
+                case .grantAccess: openSettings()
+                case .note: break
+                }
+            }
+        )
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(get: { name }, set: { name = $0; isNameEdited = true })
+    }
+
+    private var architectureBinding: Binding<HostArchitecture> {
+        Binding(get: { tokens.architecture }, set: { labels = tokens.with(architecture: $0) })
+    }
+
+    private func choose(_ new: RunnerScope?) {
+        guard new != scope else { return }
+        scope = new
+        suggestName()
+    }
+
+    /// Fills in `{host}-{n}` until the user types a name of their own.
+    private func suggestName() {
+        guard !isNameEdited, let scope else { return }
+        name = NewRunnerName.suggested(
+            hostName: context.hostInfo.computerName,
+            scope: scope,
+            localRunners: runnerService.localRunners,
+            gitHubNames: gitHubNames(in: scope)
+        )
+    }
+
+    private func loadRepositories() async {
+        do {
+            repositories = try await api.fetchRepositories()
+        } catch {
+            if !error.isCancellation {
+                Self.logger.error("Couldn't load repositories: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// The scope's runner names (for clashes) and, for organizations, its runner groups.
+    private func loadScopeDetails() async {
+        guard let scope else { return }
+        do {
+            let runners = try await api.fetchRunners(in: scope)
+            fetchedNames[scope] = runners.map(\.name)
+            suggestName()
+        } catch {
+            if !error.isCancellation {
+                Self.logger.error("Couldn't list runners in \(scope.displayName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        guard case let .organization(login) = scope else {
+            runnerGroups = []
+            runnerGroup = nil
+            return
+        }
+        do {
+            let groups = try await api.fetchRunnerGroups(org: login)
+            guard self.scope == scope else { return }
+            runnerGroups = groups
+            runnerGroup = (groups.first(where: \.isDefault) ?? groups.first)?.name
+        } catch {
+            if !error.isCancellation {
+                Self.logger.error("Couldn't list runner groups in \(login, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+}

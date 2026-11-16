@@ -75,6 +75,10 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
         return try await send(request)
     }
 
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] {
+        try await fetchAllPages(path: "/orgs/\(org)/actions/runner-groups", query: []) { (page: RunnerGroupsResponse) in page.runnerGroups }
+    }
+
     /// `{scope prefix}/actions/runners[/{suffix}]`.
     private static func runnersPath(_ scope: RunnerScope, _ suffix: String? = nil) -> String {
         let base = "\(scope.apiPathPrefix)/actions/runners"
@@ -208,5 +212,13 @@ private struct RunnersResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case totalCount = "total_count"
         case runners
+    }
+}
+
+private struct RunnerGroupsResponse: Decodable {
+    let runnerGroups: [GitHubRunnerGroup]
+
+    enum CodingKeys: String, CodingKey {
+        case runnerGroups = "runner_groups"
     }
 }

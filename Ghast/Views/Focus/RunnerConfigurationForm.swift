@@ -29,14 +29,15 @@ struct RunnerConfigurationForm: View {
                 runnerSection
                 environmentSection
                 scriptsSection
-                Button("Remove Runner…", role: .destructive) {}
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.red)
-                    .font(FocusType.body)
-                    .padding(.horizontal, FocusMetrics.formRowInset)
-                    .padding(.top, FocusMetrics.formRemoveTop - FocusMetrics.formSectionGap)
-                    // Removing arrives with the runner flows.
-                    .disabled(true)
+                Button("Remove Runner…", role: .destructive) {
+                    actions.remove(runner.id, gitHubRunnerID: item.gitHubRunnerID)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.red)
+                .font(FocusType.body)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+                .padding(.top, FocusMetrics.formRemoveTop - FocusMetrics.formSectionGap)
+                .disabled(!actions.canRunFlows || actions.isFlowBusy(runner.id))
                 if draft.needsRestart && isRunning {
                     restartNote
                 }

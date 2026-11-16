@@ -7,6 +7,8 @@ struct FocusMainView: View {
     @Environment(RemoteRunnerStore.self) private var remoteStore
     @Environment(\.focusContext) private var context
     @Environment(\.mainWindowPreset) private var preset
+    @Environment(\.runnerFlowServices) private var flowServices
+    @Environment(RunnerFlowCoordinator.self) private var flows: RunnerFlowCoordinator?
     @Environment(\.controlActiveState) private var controlActiveState
 
     @SceneStorage("main.selection") private var storedSelection = ""
@@ -87,7 +89,12 @@ struct FocusMainView: View {
                 }
         }
         .focusedSceneValue(\.mainWindow, commandTarget(for: selected))
-        .sheet(isPresented: $isShowingNewRunner, onDismiss: refreshIfRunnerAdded) { NewRunnerStopgapSheet() }
+        .sheet(isPresented: $isShowingNewRunner, onDismiss: refreshIfRunnerAdded) {
+            if let flowServices {
+                NewRunnerSheet(services: flowServices, preset: preset?.newRunner, finish: finishNewRunner)
+            }
+        }
+        .runnerFlowAlerts(flows)
         .background(WindowVisibilityReader { remoteStore.isVisible = $0 })
         .background(OutputFindResponderInstaller(target: commandTarget(for: selected)))
         // This view exists only while signed in, so the first fetch runs with the token set.
@@ -136,12 +143,20 @@ struct FocusMainView: View {
         outputPanes.pane(for: localID)
     }
 
-    private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }
+    private var actions: RunnerActions { RunnerActions(runnerService: runnerService, flows: flows) }
 
-    /// The New Runner flow arrives in the next step of the redesign; the old one stands in.
     private func newRunner() {
         runnerIDsBeforeNewRunner = Set(runnerService.localRunners.map(\.id))
         isShowingNewRunner = true
+    }
+
+    /// Closes New Runner; Done selects the new runner on its Output tab.
+    private func finishNewRunner(selecting runnerID: String?) {
+        if let runnerID, runnerService.localRunners.contains(where: { $0.id == runnerID }) {
+            storedSelection = MainSelection.runner(runnerID).storageValue
+            storedTab = DetailTab.output.rawValue
+        }
+        isShowingNewRunner = false
     }
 
     private func refreshIfRunnerAdded() {
@@ -160,7 +175,8 @@ struct FocusMainView: View {
             canStopAll: actions.canStopAll,
             hasOutput: !lines.isEmpty,
             hasFindQuery: localID.map { !outputPane(for: $0).query.isEmpty } ?? false,
-            isSheetOpen: isShowingNewRunner
+            isSheetOpen: isShowingNewRunner,
+            isFlowBusy: localID.map(actions.isFlowBusy) ?? false
         )
     }
 
@@ -198,7 +214,8 @@ struct FocusMainView: View {
         case .openOnGitHub: item.map(actions.openOnGitHub)
         case .copyAllOutput:
             localID.map { actions.copy(OutputLine.copyText(activityStore.activity(for: $0).lines)) }
-        case .reconfigure, .remove: break
+        case .reconfigure: localID.map(actions.reconfigure)
+        case .remove: localID.map { actions.remove($0, gitHubRunnerID: item?.gitHubRunnerID) }
         }
     }
 
@@ -223,6 +240,7 @@ struct FocusMainView: View {
         didApplyPreset = true
         storedTab = preset.tab.rawValue
         storedSelection = (item.map { MainSelection.runner($0.id) } ?? .thisMacEmpty).storageValue
+        if preset.newRunner != nil { newRunner() }
     }
 }
 
