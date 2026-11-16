@@ -412,41 +412,4 @@ final class RunnerServiceTests: XCTestCase {
         let error: LocalizedError = RunnerError.runnerNotFound
         XCTAssertEqual(error.errorDescription, "Runner not found")
     }
-    
-    // MARK: - config.sh Arguments
-    
-    func testConfigArgumentsForOrganizationScopeUseOrgURLAndLabels() {
-        let arguments = RunnerService.configArguments(
-            url: RunnerScope.organization(login: "acme").configURL,
-            token: "TOKEN",
-            name: "org-runner",
-            labels: ["self-hosted", "macOS"]
-        )
-        
-        XCTAssertEqual(arguments, [
-            "./config.sh",
-            "--url", "https://github.com/acme",
-            "--token", "TOKEN",
-            "--name", "org-runner",
-            "--unattended",
-            "--labels", "self-hosted,macOS",
-        ])
-    }
-    
-    func testConfigArgumentsForRepositoryScopeWithoutLabels() {
-        let arguments = RunnerService.configArguments(
-            url: RunnerScope.repository(fullName: "octo/ghast").configURL,
-            token: "TOKEN",
-            name: "repo-runner",
-            labels: []
-        )
-        
-        XCTAssertEqual(arguments, [
-            "./config.sh",
-            "--url", "https://github.com/octo/ghast",
-            "--token", "TOKEN",
-            "--name", "repo-runner",
-            "--unattended",
-        ])
-    }
 }

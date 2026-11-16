@@ -80,6 +80,10 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
 
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {}
 
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] {
+        [GitHubRunnerGroup(id: 1, name: "Default", isDefault: true)]
+    }
+
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         [GitHubRunnerApplication(
             os: "osx",

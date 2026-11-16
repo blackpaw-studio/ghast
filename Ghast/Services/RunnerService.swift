@@ -256,15 +256,31 @@ class RunnerService {
     }
     
     /// Arguments for a non-interactive `config.sh` registering against `url`.
-    static func configArguments(url: String, token: String, name: String, labels: [String]) -> [String] {
+    nonisolated static func configArguments(
+        url: String,
+        token: String,
+        name: String,
+        labels: [String],
+        runnerGroup: String? = nil,
+        workFolder: String = LocalRunner.defaultWorkFolder,
+        replace: Bool = false
+    ) -> [String] {
         let base = [
             "./config.sh",
             "--url", url,
             "--token", token,
             "--name", name,
             "--unattended",  // Non-interactive mode
+            "--work", workFolder,
         ]
-        return labels.isEmpty ? base : base + ["--labels", labels.joined(separator: ",")]
+        let labelArguments = labels.isEmpty ? [] : ["--labels", labels.joined(separator: ",")]
+        let groupArguments = runnerGroup.map { ["--runnergroup", $0] } ?? []
+        return base + labelArguments + groupArguments + (replace ? ["--replace"] : [])
+    }
+
+    /// Arguments for `config.sh remove`, which unregisters the runner and deletes its local config.
+    nonisolated static func removeArguments(token: String) -> [String] {
+        ["./config.sh", "remove", "--token", token]
     }
 
     private func configureRunner(

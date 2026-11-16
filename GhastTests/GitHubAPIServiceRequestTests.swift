@@ -184,6 +184,25 @@ import Foundation
         #expect(apps.map(\.architecture) == ["arm64"])
     }
 
+    // MARK: Runner groups
+
+    @Test func fetchRunnerGroupsListsTheOrganizationsGroups() async throws {
+        let body = #"{"total_count":2,"runner_groups":[{"id":1,"name":"Default","default":true},{"id":4,"name":"macOS builders","default":false}]}"#
+        let (service, transport) = makeService([.json(body)])
+
+        let groups = try await service.fetchRunnerGroups(org: "acme")
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.path == "/orgs/acme/actions/runner-groups")
+        #expect(query(request) == ["page": "1", "per_page": "100"])
+        expectStandardHeaders(request)
+        #expect(groups == [
+            GitHubRunnerGroup(id: 1, name: "Default", isDefault: true),
+            GitHubRunnerGroup(id: 4, name: "macOS builders", isDefault: false),
+        ])
+    }
+
     // MARK: Organizations
 
     static func membershipJSON(login: String, id: Int, role: String) -> String {

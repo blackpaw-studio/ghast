@@ -14,6 +14,7 @@ protocol GitHubAPIServiceProtocol {
     func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication]
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup]
 }
 
 /// Inert default for the environment key: never touches the network or a token.
@@ -40,6 +41,7 @@ struct UnconfiguredGitHubAPIService: GitHubAPIServiceProtocol {
     func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken { throw unconfigured("createRemoveToken") }
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws { throw unconfigured("deleteRunner") }
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] { throw unconfigured("fetchRunnerApplications") }
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] { throw unconfigured("fetchRunnerGroups") }
 }
 
 /// Environment key for injecting API service

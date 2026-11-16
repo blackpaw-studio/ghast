@@ -180,3 +180,14 @@ enum GitHubAPIError: Error, LocalizedError, Sendable {
         }
     }
 }
+/// An organization's runner group (`GET /orgs/{org}/actions/runner-groups`).
+struct GitHubRunnerGroup: Sendable, Codable, Identifiable, Equatable {
+    let id: Int
+    let name: String
+    let isDefault: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case isDefault = "default"
+    }
+}

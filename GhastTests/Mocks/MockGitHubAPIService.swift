@@ -110,6 +110,13 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         // Successfully "deleted"
     }
     
+    var mockRunnerGroups: [GitHubRunnerGroup] = [GitHubRunnerGroup(id: 1, name: "Default", isDefault: true)]
+
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] {
+        if shouldThrowError { throw GitHubAPIError.unauthorized }
+        return mockRunnerGroups
+    }
+
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         if shouldThrowError {
             throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
