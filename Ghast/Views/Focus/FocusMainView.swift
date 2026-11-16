@@ -7,12 +7,14 @@ struct FocusMainView: View {
     @Environment(RemoteRunnerStore.self) private var remoteStore
     @Environment(\.focusContext) private var context
     @Environment(\.mainWindowPreset) private var preset
+    @Environment(\.controlActiveState) private var controlActiveState
 
     @SceneStorage("main.selection") private var storedSelection = ""
     @SceneStorage("main.tab") private var storedTab = DetailTab.output.rawValue
     @State private var didApplyPreset = false
     /// Find and follow state per runner, kept while the window lives.
     @State private var outputPanes = OutputPaneRegistry()
+    @State private var isShowingNewRunner = false
 
     private var catalog: RunnerCatalog {
         RunnerCatalog.merge(
@@ -70,6 +72,26 @@ struct FocusMainView: View {
             detail(for: selected)
                 .navigationTitle(MainWindowTitle.title(for: selected))
                 .navigationSubtitle(MainWindowTitle.subtitle(for: selected, hostName: context.hostInfo.computerName))
+                .toolbar {
+                    MainToolbar(
+                        item: selected,
+                        tab: tab,
+                        state: commandState(for: selected),
+                        perform: { perform($0, on: selected) },
+                        actions: actions
+                    )
+                }
+        }
+        .focusedSceneValue(\.mainWindow, MainWindowCommandTarget(
+            state: commandState(for: selected),
+            perform: { perform($0, on: selected) }
+        ))
+        .sheet(isPresented: $isShowingNewRunner) { NewRunnerStopgapSheet() }
+        .background(WindowVisibilityReader { remoteStore.isVisible = $0 })
+        .task { await remoteStore.pollWhileAlive(sleeper: context.sleeper) }
+        .onChange(of: controlActiveState) { _, state in
+            guard state == .key else { return }
+            Task { await remoteStore.refresh(.activation) }
         }
         .frame(minWidth: FocusMetrics.mainWindowMinSize.width, minHeight: FocusMetrics.mainWindowMinSize.height)
         .onChange(of: catalog) { old, new in
@@ -111,7 +133,61 @@ struct FocusMainView: View {
     private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }
 
     /// The New Runner flow arrives in the next step of the redesign; the old one stands in.
-    private func newRunner() {}
+    private func newRunner() { isShowingNewRunner = true }
+
+    // MARK: Commands
+
+    private func commandState(for item: RunnerItem?) -> RunnerCommandState {
+        let localID = item.flatMap(Self.localID)
+        let lines = localID.map { activityStore.activity(for: $0).lines } ?? []
+        return RunnerCommandState(
+            selected: item,
+            canStartAll: actions.canStartAll,
+            canStopAll: actions.canStopAll,
+            hasOutput: !lines.isEmpty,
+            hasFindQuery: localID.map { !outputPane(for: $0).query.isEmpty } ?? false,
+            isSheetOpen: isShowingNewRunner
+        )
+    }
+
+    /// Runs a toolbar or menu command against the selection. Callers check `isEnabled` first.
+    private func perform(_ command: RunnerCommand, on item: RunnerItem?) {
+        let localID = item.flatMap(Self.localID)
+        let pane = localID.map(outputPane(for:))
+        switch command {
+        case .newRunner: newRunner()
+        case .showOutput: storedTab = DetailTab.output.rawValue
+        case .showConfiguration: storedTab = DetailTab.configuration.rawValue
+        case .follow:
+            storedTab = DetailTab.output.rawValue
+            pane?.follow.follow()
+        case .clearOutput: localID.map { runnerService.clearOutput(id: $0) }
+        case .find:
+            storedTab = DetailTab.output.rawValue
+            pane?.showFind()
+        case .findNext:
+            storedTab = DetailTab.output.rawValue
+            pane?.findNext()
+        case .findPrevious:
+            storedTab = DetailTab.output.rawValue
+            pane?.findPrevious()
+        case .start: localID.map(actions.start)
+        case .stop: localID.map(actions.stop)
+        case .restart: localID.map(actions.restart)
+        case .startAll: actions.startAll()
+        case .stopAll: actions.stopAll()
+        case .showInFinder: localID.map(actions.showInFinder)
+        case .openOnGitHub: item.map(actions.openOnGitHub)
+        case .copyAllOutput:
+            localID.map { actions.copy(OutputLine.copyText(activityStore.activity(for: $0).lines)) }
+        case .reconfigure, .remove: break
+        }
+    }
+
+    private static func localID(_ item: RunnerItem) -> String? {
+        if case let .thisMac(localID) = item.location { return localID }
+        return nil
+    }
 
     private func selectedItem(in catalog: RunnerCatalog) -> RunnerItem? {
         guard case let .runner(id) = selection else { return nil }

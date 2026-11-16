@@ -82,9 +82,10 @@ struct AppDependencies {
 @main
 struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    static let mainWindowID = "main"
     
     var body: some Scene {
-        Window("Ghast", id: "main") {
+        Window("Ghast", id: Self.mainWindowID) {
             if !isRunningTests() {
                 let dependencies = appDelegate.dependencies
                 ContentView(authService: dependencies.authService)
@@ -101,7 +102,7 @@ struct GhastApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(FocusMetrics.mainWindowSize)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            MainWindowCommands()
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: appDelegate.updaterController.updater)
             }
