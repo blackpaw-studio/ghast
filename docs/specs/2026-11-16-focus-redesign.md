@@ -632,6 +632,9 @@ transport, sleeper, file trasher).
 ## Open questions (owner's call)
 1. ~~Errored runner's word in the menu bar~~ Resolved: the menu shows
    "Exited" with the red dot (MenuBar.png re-rendered), matching the sidebar.
+Approved by Evan 2026-11-16 with the recommended defaults for 2 and 3:
+regular Dock app; ship as 2.0, macOS 15 users stay on 1.1.0.
+
 2. **Dock icon.** Keep Ghast a regular Dock app (current, recommended), or
    switch to menu-bar-only (accessory) when the menu bar extra is on and no
    window is open?
