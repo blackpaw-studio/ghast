@@ -94,7 +94,7 @@ struct RemoteRunnerDetail: View {
             ) { EmptyView() }
             .padding(.horizontal, FocusMetrics.contentInset)
             ContentSeparator()
-            Spacer(minLength: 0)
+            RemoteOutputNote()
         }
         .focusContentLayer()
     }

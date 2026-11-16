@@ -73,6 +73,7 @@ struct FocusMainView: View {
         }
         .frame(minWidth: FocusMetrics.mainWindowMinSize.width, minHeight: FocusMetrics.mainWindowMinSize.height)
         .onChange(of: catalog) { old, new in
+            applyPreset()
             let resolved = MainSelection(storageValue: storedSelection).resolved(in: new, previous: old)
             if resolved.storageValue != storedSelection { storedSelection = resolved.storageValue }
         }
@@ -99,7 +100,7 @@ struct FocusMainView: View {
         case let .otherMachine(runner)?:
             if let item { RemoteRunnerDetail(item: item, runner: runner) }
         case nil:
-            Text("No Runners on This Mac")
+            ThisMacEmptyView(newRunner: newRunner)
         }
     }
 
@@ -117,13 +118,16 @@ struct FocusMainView: View {
         return catalog.item(id)
     }
 
+    /// Applies the fixture's preset once its runner is listed (remote runners arrive after the
+    /// first GitHub fetch).
     private func applyPreset() {
         guard let preset, !didApplyPreset else { return }
-        didApplyPreset = true
-        storedTab = preset.tab.rawValue
         let item = preset.runnerName.flatMap { name in
             (catalog.thisMac + catalog.otherMachines).first { $0.name == name }
         }
+        guard preset.runnerName == nil || item != nil else { return }
+        didApplyPreset = true
+        storedTab = preset.tab.rawValue
         storedSelection = (item.map { MainSelection.runner($0.id) } ?? .thisMacEmpty).storageValue
     }
 }

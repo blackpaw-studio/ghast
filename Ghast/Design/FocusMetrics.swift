@@ -132,8 +132,21 @@ enum FocusMetrics {
     static let deviceCodeTracking = 0.08
     static let deviceCodePadding = CGSize(width: 28, height: 16)
     static let deviceCodeRadius: CGFloat = 12
-    static let emptyStateGlyph: CGFloat = 56
+    static let emptyStateGlyph: CGFloat = 44
+    static let emptyStatePlus: CGFloat = 13
+    static let emptyStatePlusOffset: CGFloat = -5
     static let emptyStateBodyMaxWidth: CGFloat = 380
+    static let emptyGlyphGap: CGFloat = 22
+    static let emptyTitleGap: CGFloat = 8
+    static let emptyButtonGap: CGFloat = 23
+    static let emptyLinkGap: CGFloat = 16
+    /// Measured: the empty state sits 18 pt above the centre of the content area.
+    static let emptyStateLift: CGFloat = -16
+    static let remoteNoteGlyph: CGFloat = 25
+    static let remoteNoteGlyphGap: CGFloat = 14
+    static let remoteNoteTitleGap: CGFloat = 4
+    /// Measured: the remote note sits 35 pt above the centre of the space under the header.
+    static let remoteNoteLift: CGFloat = -35
 
     // MARK: Account
     static let accountAvatar: CGFloat = 64

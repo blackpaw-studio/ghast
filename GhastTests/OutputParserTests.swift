@@ -40,6 +40,8 @@ struct OutputParserTests {
         ("An error occurred: Not configured", .error),
         ("Unhandled exception. System.IO.IOException", .error),
         ("Runner listener exit with terminated error, stop the service", .error),
+        // ErrorRunner.png marks the listener's own exit line as an error.
+        ("Runner listener exited with error code 1", .error),
         ("Listening for Jobs", .plain),
         ("Current runner version: '2.329.0'", .plain),
         ("Just some output", .plain),
