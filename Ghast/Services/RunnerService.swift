@@ -9,7 +9,7 @@ class RunnerService {
         .appendingPathComponent(".ghast")
         .appendingPathComponent("runners")
     
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var store: RunnerStore
     @ObservationIgnored private let clock: any AppClock
     @ObservationIgnored private let launcher: any RunnerProcessLauncher
     @ObservationIgnored private let restartDelay: Int
@@ -46,7 +46,7 @@ class RunnerService {
         restartDelay: Int = RunnerWrapperScript.defaultRestartDelay,
         runsStrayProcessCleanup: Bool = true
     ) {
-        self.defaults = defaults
+        self.store = RunnerStore(defaults: defaults)
         self.clock = clock
         self.launcher = launcher
         self.restartDelay = restartDelay
@@ -366,6 +366,7 @@ class RunnerService {
         // Clear the array and persist the empty state
         localRunners.removeAll()
         processStates.removeAll()
+        store.discardKeptRecords()
         saveRunners()
     }
     
@@ -646,8 +647,7 @@ class RunnerService {
     
     private func saveRunners() {
         do {
-            let data = try JSONEncoder().encode(localRunners)
-            defaults.set(data, forKey: "localRunners")
+            try store.save(localRunners)
         } catch {
             #if DEBUG
             print("Failed to save runners: \(error)")
@@ -656,28 +656,25 @@ class RunnerService {
     }
     
     func loadRunners() {
-        guard let data = defaults.data(forKey: "localRunners") else { return }
+        localRunners = store.load()
         
-        do {
-            localRunners = try JSONDecoder().decode([LocalRunner].self, from: data)
-            
-            // Reset all runners to stopped status on app startup since processes don't persist
-            for index in localRunners.indices {
-                if localRunners[index].status == .running {
-                    localRunners[index].status = .stopped
-                }
+        // Reset all runners to stopped status on app startup since processes don't persist
+        for index in localRunners.indices {
+            if localRunners[index].status == .running {
+                localRunners[index].status = .stopped
             }
-            processStates = Dictionary(uniqueKeysWithValues: localRunners.map { ($0.id, RunnerProcessState.restored(from: $0.lastExit)) })
-            saveRunners()
-            
-            #if DEBUG
-            print("🏃 Loaded \(localRunners.count) runners")
-            #endif
-        } catch {
-            #if DEBUG
-            print("Failed to load runners: \(error)")
-            #endif
         }
+        processStates = Dictionary(uniqueKeysWithValues: localRunners.map { ($0.id, RunnerProcessState.restored(from: $0.lastExit)) })
+        saveRunners()
+        
+        #if DEBUG
+        print("🏃 Loaded \(localRunners.count) runners")
+        #endif
+    }
+    
+    /// A path with symlinks resolved, so `/var/…` and `/private/var/…` compare equal.
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
     
     /// Discovers existing runners in the .ghast/runners directory that aren't tracked
@@ -710,7 +707,8 @@ class RunnerService {
                 
                 // Check if runner is already tracked
                 let runnerName = runnerDir.lastPathComponent
-                if localRunners.contains(where: { $0.path == runnerDir.path }) {
+                let trackedPaths = Set(localRunners.map(\.path)).union(store.keptPaths).map(Self.canonicalPath)
+                if trackedPaths.contains(Self.canonicalPath(runnerDir.path)) {
                     continue
                 }
                 
