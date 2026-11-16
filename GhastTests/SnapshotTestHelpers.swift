@@ -25,6 +25,39 @@ enum SnapshotTestHelpers {
         testName: String = #function,
         line: UInt = #line
     ) {
+        let hostingController = makeHostingController(of: view, width: width, height: height, runnerService: runnerService)
+        assertImage(of: hostingController, record: record, file: file, testName: testName, line: line)
+    }
+    
+    /// Like `assertSnapshot`, but first lets the view's `.task` work finish against
+    /// immediately-returning mocks, so the image shows loaded data rather than a spinner.
+    /// Only yields; never sleeps.
+    static func assertSettledSnapshot<V: View>(
+        of view: V,
+        width: CGFloat,
+        height: CGFloat,
+        runnerService: RunnerService? = nil,
+        record: Bool? = nil,
+        file: StaticString = #filePath,
+        testName: String = #function,
+        line: UInt = #line
+    ) async {
+        let hostingController = makeHostingController(of: view, width: width, height: height, runnerService: runnerService)
+        for _ in 0..<settlePasses {
+            await Task.yield()
+        }
+        hostingController.view.layoutSubtreeIfNeeded()
+        assertImage(of: hostingController, record: record, file: file, testName: testName, line: line)
+    }
+    
+    private static let settlePasses = 20
+    
+    private static func makeHostingController<V: View>(
+        of view: V,
+        width: CGFloat,
+        height: CGFloat,
+        runnerService: RunnerService?
+    ) -> NSViewController {
         // Create a container view that provides the sizing context without hard framing
         let containerView = view
             .environment(runnerService ?? makeTestRunnerService())
@@ -40,7 +73,16 @@ enum SnapshotTestHelpers {
         
         // Force layout to ensure proper sizing
         hostingController.view.layoutSubtreeIfNeeded()
-        
+        return hostingController
+    }
+    
+    private static func assertImage(
+        of hostingController: NSViewController,
+        record: Bool?,
+        file: StaticString,
+        testName: String,
+        line: UInt
+    ) {
         // Use environment variable if record parameter is not explicitly set
         let shouldRecord = isRecordingSnapshots || (record ?? false)
         

@@ -59,6 +59,8 @@ struct MainAppView: View {
                 DashboardView()
             case .repository(let repo):
                 RepositoryDetailView(repository: repo)
+            case .organization(let organization):
+                OrganizationDetailView(organization: organization)
             case .localRunners:
                 LocalRunnersView()
             case .settings:
@@ -196,10 +198,16 @@ class AppState {
     var repositories: [GitHubRepository] = []
     var isLoadingRepositories = false
     var selectedRepository: GitHubRepository?
+    /// Organizations the user administers; empty until loaded, or while the token lacks `admin:org`.
+    var organizations: [GitHubOrganization] = []
+    var isLoadingOrganizations = false
+    /// The admin:org scope banner was dismissed for this launch.
+    var isScopeBannerDismissed = false
     
     enum SelectedView: Equatable {
         case dashboard
         case repository(GitHubRepository)
+        case organization(GitHubOrganization)
         case localRunners
         case settings
     }

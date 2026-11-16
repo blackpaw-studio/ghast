@@ -72,27 +72,7 @@ struct RepositoryDetailView: View {
                 Spacer()
                 
                 // Add runner button
-                Button(action: addRunner) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Add Runner")
-                            .font(.system(.body, design: .rounded, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.blue, Color.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .clipShape(Capsule())
-                    .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
-                }
-                .buttonStyle(.plain)
+                AddRunnerHeaderButton(action: addRunner)
             }
         }
         .padding(.horizontal, 24)

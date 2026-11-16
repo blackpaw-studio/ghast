@@ -91,6 +91,26 @@ final class SidebarViewSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 380, height: 700)
     }
     
+    func testSidebarViewWithOrganizations() {
+        let organizations = [
+            GitHubOrganization(login: "acme", id: 10, avatarURL: ""),
+            GitHubOrganization(login: "blackpaw-labs", id: 11, avatarURL: ""),
+        ]
+        appState.repositories = createMockRepositories()
+        appState.organizations = organizations
+        appState.selectedView = .organization(organizations[0])
+        // The sidebar reloads organizations on appear; return the same list.
+        mockAPIService.mockOrganizations = organizations
+        
+        let view = SidebarView()
+            .environment(authService)
+            .environment(appState)
+            .environment(\.gitHubAPIService, mockAPIService)
+            .frame(width: 380, height: 700)
+        
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 380, height: 700)
+    }
+    
     // MARK: - Navigation State Tests
     
     func testSidebarViewLocalRunnersSelected() {
