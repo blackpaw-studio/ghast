@@ -1147,7 +1147,7 @@ class RunnerService {
 struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
-    let repository: String
+    let scope: RunnerScope
     let path: String
     var labels: [String]
     var status: RunnerStatus
@@ -1155,11 +1155,14 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     var environmentVariables: [String: String]
     var preJobScript: String?
     var postJobScript: String?
-    
-    init(name: String, repository: String, path: String, labels: [String] = []) {
+
+    /// Repository full name or organization login (see `RunnerScope.displayName`).
+    var repository: String { scope.displayName }
+
+    init(name: String, scope: RunnerScope, path: String, labels: [String] = []) {
         self.id = UUID().uuidString
         self.name = name
-        self.repository = repository
+        self.scope = scope
         self.path = path
         self.labels = labels
         self.status = .stopped
@@ -1168,7 +1171,53 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         self.preJobScript = nil
         self.postJobScript = nil
     }
-    
+
+    /// A repository-level runner for `repository` (`owner/repo`).
+    init(name: String, repository: String, path: String, labels: [String] = []) {
+        self.init(name: name, scope: .repository(fullName: repository), path: path, labels: labels)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, scope, repository, path, labels, status, createdAt
+        case environmentVariables, preJobScript, postJobScript
+    }
+
+    /// Runners saved before scopes existed carry only `repository`; they decode as
+    /// `.repository(fullName:)`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        if let scope = try container.decodeIfPresent(RunnerScope.self, forKey: .scope) {
+            self.scope = scope
+        } else {
+            scope = .repository(fullName: try container.decode(String.self, forKey: .repository))
+        }
+        path = try container.decode(String.self, forKey: .path)
+        labels = try container.decode([String].self, forKey: .labels)
+        status = try container.decode(RunnerStatus.self, forKey: .status)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        environmentVariables = try container.decode([String: String].self, forKey: .environmentVariables)
+        preJobScript = try container.decodeIfPresent(String.self, forKey: .preJobScript)
+        postJobScript = try container.decodeIfPresent(String.self, forKey: .postJobScript)
+    }
+
+    /// Also writes `repository`, so a build from before scopes can still read the list.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(repository, forKey: .repository)
+        try container.encode(path, forKey: .path)
+        try container.encode(labels, forKey: .labels)
+        try container.encode(status, forKey: .status)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(environmentVariables, forKey: .environmentVariables)
+        try container.encodeIfPresent(preJobScript, forKey: .preJobScript)
+        try container.encodeIfPresent(postJobScript, forKey: .postJobScript)
+    }
+
     // Custom equality based on ID only
     static func == (lhs: LocalRunner, rhs: LocalRunner) -> Bool {
         return lhs.id == rhs.id

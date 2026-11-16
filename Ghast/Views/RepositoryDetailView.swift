@@ -11,7 +11,7 @@ struct RepositoryDetailView: View {
     
     // Local runners for this repository
     private var localRunners: [LocalRunner] {
-        runnerService.localRunners.filter { $0.repository == repository.fullName }
+        runnerService.localRunners.filter { $0.scope == repository.runnerScope }
     }
     
     // Remote runners excluding those that have local counterparts
