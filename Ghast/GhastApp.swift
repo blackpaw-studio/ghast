@@ -6,6 +6,7 @@ import Sparkle
 @MainActor
 struct AppDependencies {
     let runnerService: RunnerService
+    let activityStore: RunnerActivityStore
     let apiService: any GitHubAPIServiceProtocol
     let authService: GitHubAuthService
     let clock: any AppClock
@@ -16,6 +17,7 @@ struct AppDependencies {
 
     init(
         runnerService: RunnerService,
+        activityStore: RunnerActivityStore = RunnerActivityStore(),
         apiService: any GitHubAPIServiceProtocol,
         authService: GitHubAuthService,
         clock: any AppClock = SystemClock(),
@@ -25,6 +27,7 @@ struct AppDependencies {
         processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher()
     ) {
         self.runnerService = runnerService
+        self.activityStore = activityStore
         self.apiService = apiService
         self.authService = authService
         self.clock = clock

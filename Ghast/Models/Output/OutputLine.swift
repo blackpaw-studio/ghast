@@ -14,6 +14,8 @@ struct OutputLine: Sendable, Equatable, Identifiable {
     /// Position in the whole log since the parser started, so ids stay stable as old lines
     /// fall off the 5,000-line window.
     let id: Int
+    /// Where the line starts in the log file, so output before a "Clear" point can be hidden.
+    let byteOffset: UInt64
     /// The wrapper's ISO timestamp. nil for legacy `HH:MM:SS` lines (their date is unknown) and
     /// for lines with no prefix.
     let timestamp: Date?

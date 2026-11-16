@@ -139,6 +139,20 @@ struct OutputParserTests {
         #expect(resumed.offset == UInt64((first + partial + " done\n").utf8.count))
     }
 
+    @Test("each line records where it starts in the file, blank lines and CRLF included")
+    func lineByteOffsets() {
+        let first = "2026-11-16T10:00:00-0500 one\r\n"
+        let blank = "\n"
+        let second = "2026-11-16T10:00:01-0500 two\n"
+        let state = parse(first + blank + second)
+
+        #expect(state.activity.lines.map(\.byteOffset) == [0, UInt64((first + blank).utf8.count)])
+
+        let third = "2026-11-16T10:00:02-0500 three\n"
+        let more = parse(third, into: state)
+        #expect(more.activity.lines.last?.byteOffset == UInt64((first + blank + second).utf8.count))
+    }
+
     @Test("advances the offset by exactly the bytes it consumed")
     func incrementalOffsets() {
         let one = line("10:00:00", "one")
@@ -148,14 +162,6 @@ struct OutputParserTests {
         let after2 = parse(two, into: after1)
         #expect(after2.offset == UInt64((one + two).utf8.count))
         #expect(after2.activity.lines.map(\.text) == ["one", "two"])
-    }
-
-    @Test("restarts from zero when the file shrank")
-    func truncation() {
-        let state = parse(line("10:00:00", "old") + line("10:00:01", "older"))
-        #expect(OutputParser.resetIfTruncated(state, fileSize: state.offset) == state)
-        #expect(OutputParser.resetIfTruncated(state, fileSize: state.offset + 10) == state)
-        #expect(OutputParser.resetIfTruncated(state, fileSize: 3) == .initial)
     }
 
     @Test("survives bytes that are not UTF-8")

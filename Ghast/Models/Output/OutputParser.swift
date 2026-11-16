@@ -29,8 +29,10 @@ enum OutputParser {
         let complete = data[data.startIndex...lastNewline]
 
         var next = state
+        var lineStart = state.offset
         for rawLine in complete.split(separator: newline, omittingEmptySubsequences: false).dropLast() {
-            apply(rawLine, to: &next)
+            apply(rawLine, startingAt: lineStart, to: &next)
+            lineStart += UInt64(rawLine.count) + 1  // the line and its newline
         }
         next.offset += UInt64(complete.count)
         if next.activity.lines.count > lineCap {
@@ -39,14 +41,9 @@ enum OutputParser {
         return next
     }
 
-    /// A file that shrank was truncated or replaced: start over from byte 0.
-    static func resetIfTruncated(_ state: ParserState, fileSize: UInt64) -> ParserState {
-        fileSize < state.offset ? .initial : state
-    }
-
     // MARK: - Lines
 
-    private static func apply(_ rawLine: Data.SubSequence, to state: inout ParserState) {
+    private static func apply(_ rawLine: Data.SubSequence, startingAt byteOffset: UInt64, to state: inout ParserState) {
         var bytes = rawLine
         if bytes.last == UInt8(ascii: "\r") { bytes = bytes.dropLast() }
         let decoded = String(decoding: bytes, as: UTF8.self)
@@ -61,6 +58,7 @@ enum OutputParser {
         updateActivity(&state.activity, text: text, kind: kind, at: stamped.date)
         state.activity.lines.append(OutputLine(
             id: state.nextLineID,
+            byteOffset: byteOffset,
             timestamp: stamped.date,
             clockText: stamped.clock,
             text: text,
