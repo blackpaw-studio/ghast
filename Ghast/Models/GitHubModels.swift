@@ -72,7 +72,17 @@ struct GitHubRunner: Sendable, Codable, Identifiable, Equatable {
     let status: String
     let busy: Bool
     let labels: [GitHubRunnerLabel]
-    
+    /// The organization runner group it belongs to; GitHub may leave it out.
+    var runnerGroupID: Int? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, os, status, busy, labels
+        case runnerGroupID = "runner_group_id"
+    }
+
+    /// Labels the user added (GitHub's `custom` type), not the ones the runner adds itself.
+    var customLabels: [String] { labels.filter { $0.type == "custom" }.map(\.name) }
+
     var isOnline: Bool {
         status == "online"
     }

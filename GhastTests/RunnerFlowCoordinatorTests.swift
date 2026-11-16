@@ -94,6 +94,9 @@ import Foundation
 
     @Test func reconfigureAsksThenReregistersWithReplace() async throws {
         let runner = try runner()
+        try ReconfigureTests.runnerFile(agentName: runner.name).write(to: URL(fileURLWithPath: runner.path).appendingPathComponent(".runner"))
+        h.api.runners[FlowHarness.org] = [ReconfigureTests.gitHubRecord(name: runner.name, groupID: 1)]
+        h.api.runnerGroups["blackpaw-studio"] = ReconfigureTests.groups
         let flows = coordinator()
 
         flows.requestReconfigure(localID: runner.id)

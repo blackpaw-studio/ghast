@@ -154,6 +154,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     var deleteError: Error?
     var runnersError: Error?
     var runners: [RunnerScope: [GitHubRunner]] = [:]
+    var runnerGroups: [String: [GitHubRunnerGroup]] = [:]
     var applications = [
         GitHubRunnerApplication(os: "osx", architecture: "arm64", downloadURL: "https://example.invalid/actions-runner-osx-arm64-2.329.0.tar.gz", filename: "actions-runner-osx-arm64-2.329.0.tar.gz"),
         GitHubRunnerApplication(os: "osx", architecture: "x64", downloadURL: "https://example.invalid/actions-runner-osx-x64-2.329.0.tar.gz", filename: "actions-runner-osx-x64-2.329.0.tar.gz"),
@@ -202,7 +203,10 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
         return applications
     }
 
-    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] { [] }
+    func fetchRunnerGroups(org: String) async throws -> [GitHubRunnerGroup] {
+        log.append("runner-groups \(org)")
+        return runnerGroups[org] ?? []
+    }
 }
 
 /// Stands in for the activity store: the test writes what the runner's log said.
