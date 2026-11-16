@@ -10,14 +10,18 @@ struct RunnerConfigurationForm: View {
     let actions: RunnerActions
     @Environment(\.focusContext) private var context
 
-    @State private var editor = EnvironmentVariableEditor(rows: [])
+    @State private var draft: RunnerConfigurationDraft
     @State private var selectedVariable: EnvironmentVariableDraft.ID?
-    @State private var preScript = ScriptDraft()
-    @State private var postScript = ScriptDraft()
-    @State private var debouncer: SaveDebouncer?
-    /// Set by an edit while the runner runs: the change applies on the next start.
-    @State private var needsRestart = false
     @FocusState private var focusedVariable: EnvironmentVariableDraft.ID?
+
+    init(item: RunnerItem, runner: LocalRunner, isRunning: Bool, runnerService: RunnerService, actions: RunnerActions, sleeper: @escaping Sleeper) {
+        self.item = item
+        self.runner = runner
+        self.isRunning = isRunning
+        self.runnerService = runnerService
+        self.actions = actions
+        _draft = State(initialValue: RunnerConfigurationDraft(runnerService: runnerService, sleeper: sleeper))
+    }
 
     var body: some View {
         ScrollView {
@@ -33,7 +37,7 @@ struct RunnerConfigurationForm: View {
                     .padding(.top, FocusMetrics.formRemoveTop - FocusMetrics.formSectionGap)
                     // Removing arrives with the runner flows.
                     .disabled(true)
-                if needsRestart && isRunning {
+                if draft.needsRestart && isRunning {
                     restartNote
                 }
             }
@@ -44,8 +48,8 @@ struct RunnerConfigurationForm: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .focusContentLayer()
-        .task(id: runner.id) { load() }
-        .onDisappear { debouncer?.flush() }
+        .task(id: runner.id) { draft.load(runner) }
+        .onDisappear { draft.flush() }
     }
 
     // MARK: Runner
@@ -93,7 +97,7 @@ struct RunnerConfigurationForm: View {
     private var environmentSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             FocusFormSection(caption: "Environment Variables") {
-                ForEach(Array(editor.rows.enumerated()), id: \.element.id) { index, row in
+                ForEach(Array(draft.editor.rows.enumerated()), id: \.element.id) { index, row in
                     if index > 0 { FocusFormDivider() }
                     variableRow(row)
                 }
@@ -109,7 +113,7 @@ struct RunnerConfigurationForm: View {
     }
 
     private func variableRow(_ row: EnvironmentVariableDraft) -> some View {
-        let issue = editor.issue(for: row)
+        let issue = draft.editor.issue(for: row)
         return HStack(spacing: 0) {
             TextField("NAME", text: binding(for: row.id, \.name))
                 .frame(width: FocusMetrics.environmentNameColumn, alignment: .leading)
@@ -128,7 +132,7 @@ struct RunnerConfigurationForm: View {
         .font(FocusType.output)
         .tracking(FocusType.outputTracking)
         .focused($focusedVariable, equals: row.id)
-        .onSubmit { debouncer?.flush() }
+        .onSubmit { draft.flush() }
         .padding(.horizontal, FocusMetrics.formRowInset)
         .frame(height: FocusMetrics.environmentRowHeight)
         .onChange(of: focusedVariable) { _, focused in
@@ -140,7 +144,7 @@ struct RunnerConfigurationForm: View {
         HStack(spacing: 0) {
             Button {
                 let row = EnvironmentVariableDraft(name: "", value: "")
-                editor.rows.append(row)
+                draft.editor.rows.append(row)
                 focusedVariable = row.id
             } label: {
                 Image(systemName: "plus").frame(width: FocusMetrics.addRemoveButtonWidth, height: FocusMetrics.addRemoveHeight)
@@ -149,9 +153,9 @@ struct RunnerConfigurationForm: View {
             .accessibilityLabel("Add Variable")
             FocusColor.separator.frame(width: 1, height: FocusMetrics.addRemoveDividerHeight)
             Button {
-                editor.rows.removeAll { $0.id == selectedVariable }
+                draft.editor.rows.removeAll { $0.id == selectedVariable }
                 selectedVariable = nil
-                saveSoon()
+                draft.saveSoon()
             } label: {
                 Image(systemName: "minus").frame(width: FocusMetrics.addRemoveButtonWidth, height: FocusMetrics.addRemoveHeight)
             }
@@ -173,11 +177,11 @@ struct RunnerConfigurationForm: View {
 
     private func binding(for id: EnvironmentVariableDraft.ID, _ field: WritableKeyPath<EnvironmentVariableDraft, String>) -> Binding<String> {
         Binding(
-            get: { editor.rows.first { $0.id == id }?[keyPath: field] ?? "" },
+            get: { draft.editor.rows.first { $0.id == id }?[keyPath: field] ?? "" },
             set: { newValue in
-                guard let index = editor.rows.firstIndex(where: { $0.id == id }) else { return }
-                editor.rows[index][keyPath: field] = newValue
-                saveSoon()
+                guard let index = draft.editor.rows.firstIndex(where: { $0.id == id }) else { return }
+                draft.editor.rows[index][keyPath: field] = newValue
+                draft.saveSoon()
             }
         )
     }
@@ -186,23 +190,23 @@ struct RunnerConfigurationForm: View {
 
     private var scriptsSection: some View {
         FocusFormSection(caption: "Job Scripts") {
-            scriptRows("Run a script before each job", draft: $preScript)
+            scriptRows("Run a script before each job", script: $draft.preScript)
             FocusFormDivider()
-            scriptRows("Run a script after each job", draft: $postScript)
+            scriptRows("Run a script after each job", script: $draft.postScript)
         }
     }
 
     @ViewBuilder
-    private func scriptRows(_ label: String, draft: Binding<ScriptDraft>) -> some View {
+    private func scriptRows(_ label: String, script: Binding<ScriptDraft>) -> some View {
         FocusFormRow(label: label, height: FocusMetrics.formToggleRowHeight) {
-            Toggle(label, isOn: draft.isEnabled)
+            Toggle(label, isOn: script.isEnabled)
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()
-                .onChange(of: draft.wrappedValue.isEnabled) { saveSoon() }
+                .onChange(of: script.wrappedValue.isEnabled) { draft.saveSoon() }
         }
-        if draft.wrappedValue.isEnabled {
-            TextEditor(text: draft.text)
+        if script.wrappedValue.isEnabled {
+            TextEditor(text: script.text)
                 .font(FocusType.output)
                 .tracking(FocusType.outputTracking)
                 .lineSpacing(FocusMetrics.scriptLineSpacing)
@@ -221,7 +225,7 @@ struct RunnerConfigurationForm: View {
                 )
                 .padding(.horizontal, FocusMetrics.formRowInset)
                 .padding(.bottom, FocusMetrics.formRowInset)
-                .onChange(of: draft.wrappedValue.text) { saveSoon() }
+                .onChange(of: script.wrappedValue.text) { draft.saveSoon() }
                 .accessibilityLabel(label)
         }
     }
@@ -232,45 +236,11 @@ struct RunnerConfigurationForm: View {
                 .font(FocusType.callout)
                 .foregroundStyle(.secondary)
             Button("Restart") {
-                needsRestart = false
+                draft.needsRestart = false
                 actions.restart(runner.id)
             }
         }
         .padding(.horizontal, FocusMetrics.formRowInset)
-    }
-
-    // MARK: Saving
-
-    private func load() {
-        debouncer = SaveDebouncer(sleeper: context.sleeper)
-        editor = EnvironmentVariableEditor(variables: runner.environmentVariables)
-        preScript = ScriptDraft(runner.preJobScript)
-        postScript = ScriptDraft(runner.postJobScript)
-        needsRestart = false
-    }
-
-    private func saveSoon() {
-        let id = runner.id
-        let variables = editor.savedVariables
-        let pre = preScript.savedScript
-        let post = postScript.savedScript
-        debouncer?.schedule {
-            guard let current = runnerService.localRunners.first(where: { $0.id == id }) else { return }
-            var changed = false
-            if current.environmentVariables != variables {
-                runnerService.updateRunnerEnvironmentVariables(id: id, environmentVariables: variables)
-                changed = true
-            }
-            if current.preJobScript != pre {
-                runnerService.updateRunnerPreJobScript(id: id, script: pre)
-                changed = true
-            }
-            if current.postJobScript != post {
-                runnerService.updateRunnerPostJobScript(id: id, script: post)
-                changed = true
-            }
-            if changed { needsRestart = true }
-        }
     }
 }
 

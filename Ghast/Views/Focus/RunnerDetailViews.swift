@@ -36,7 +36,8 @@ struct LocalRunnerDetail: View {
                     runner: runner,
                     isRunning: actions.isRunning(runner.id),
                     runnerService: runnerService,
-                    actions: actions
+                    actions: actions,
+                    sleeper: context.sleeper
                 )
             }
         }
