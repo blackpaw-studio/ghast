@@ -320,6 +320,14 @@ Steps:
 - Verify: `$T -only-testing:GhastTests/NewRunnerNameTests -only-testing:GhastTests/LabelTokenTests -only-testing:GhastTests/RunnerSetupFlowTests -only-testing:GhastTests/RemoveRunnerTests -only-testing:GhastTests/ReconfigureTests -only-testing:GhastTests/GitHubAPIServiceRequestTests -only-testing:GhastTests/FocusFlowSnapshotTests`, plus the capture loop for those 4 screens.
 - Gate: full suite with `heavy $T`. Evan does one live round trip (Owner action C).
 
+### PR 3 accepted risks (review.concurrency, round 1)
+Recorded here instead of fixed; each is unlikely in normal use, or predates this PR.
+- **config.sh exits non-zero after GitHub registered the runner.** The flow treats the step as failed and offers Try Again or Cancel, and Cancel unregisters it. A runner can still be left registered on GitHub with no local record if the user quits instead. Remove from GitHub on the remote row cleans it up.
+- **Leftover `.setup-*` / `.reconfigure-*` folder after a quit or crash mid-flow.** These are hidden and harmless. A later setup never reuses them. A `.reconfigure-*` folder holds the old registration files, so it's worth checking by hand if a reconfigure was interrupted.
+- **404 treated as already gone in `deleteByID`.** A 404 caused by a wrong scope would read as success. The id and scope both come from GitHub's own listing, so this needs a stale row.
+- **Registration and removal tokens are visible in `config.sh` argv** (`ps`) while it runs. This predates PR 3. Follow-up: pass them some other way if the runner ever supports it, or document it.
+- **A hung `config.sh` blocks Cancel.** Cancel waits for config.sh because its result must be recorded. A hang means the sheet stays on Cancelling until the process exits. Follow-up: a timeout that stops the script and reports it.
+
 ---
 
 ## PR 4 · Settings and background (brief: `implement.design`, high; 4.1–4.3 first, test-first)
