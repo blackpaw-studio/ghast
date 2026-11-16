@@ -33,13 +33,29 @@ import Foundation
     @Test func fetchCurrentUserUsesStoredToken() async throws {
         let (service, transport) = makeService([.json(Self.userJSON)])
 
-        let user = try await service.fetchCurrentUser(token: nil)
+        let authenticated = try await service.fetchCurrentUser(token: nil)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "GET")
         #expect(request.url?.absoluteString == "https://api.github.com/user")
         expectStandardHeaders(request)
-        #expect(user.login == "octocat")
+        #expect(authenticated.user.login == "octocat")
+    }
+
+    @Test func fetchCurrentUserParsesGrantedScopesHeader() async throws {
+        let (service, _) = makeService([.json(Self.userJSON, headers: ["X-OAuth-Scopes": "repo, user:email, admin:org"])])
+
+        let authenticated = try await service.fetchCurrentUser(token: nil)
+
+        #expect(authenticated.grantedScopes == ["repo", "user:email", "admin:org"])
+    }
+
+    @Test func fetchCurrentUserWithoutScopesHeaderReportsUnknownScopes() async throws {
+        let (service, _) = makeService([.json(Self.userJSON)])
+
+        let authenticated = try await service.fetchCurrentUser(token: nil)
+
+        #expect(authenticated.grantedScopes == nil)
     }
 
     @Test func fetchCurrentUserWithExplicitTokenSendsThatToken() async throws {

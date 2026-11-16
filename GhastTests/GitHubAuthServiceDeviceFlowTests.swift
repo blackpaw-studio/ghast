@@ -126,12 +126,14 @@ final class StateLog {
 @MainActor
 @Suite struct GitHubAuthServiceDeviceFlowTests {
     static let user = GitHubUser(id: 1, login: "octocat", avatarURL: "", name: nil, email: nil)
+    static let allScopes: Set<String> = ["repo", "user:email", "admin:org"]
+    static let authenticated = AuthenticatedUser(user: user, grantedScopes: allScopes)
 
     func makeService(
         _ client: any DeviceFlowClienting,
         store: InMemoryTokenStore = InMemoryTokenStore(),
         used: TokenUseLog? = nil,
-        fetchUser: @escaping @MainActor (String) async throws -> GitHubUser = { _ in GitHubAuthServiceDeviceFlowTests.user }
+        fetchUser: @escaping @MainActor (String) async throws -> AuthenticatedUser = { _ in GitHubAuthServiceDeviceFlowTests.authenticated }
     ) -> GitHubAuthService {
         let used = used ?? TokenUseLog()
         return GitHubAuthService(apiService: MockGitHubAPIService(), deviceFlow: client, tokenStore: store, fetchUser: fetchUser, useToken: { used.use($0) })
@@ -163,7 +165,7 @@ final class StateLog {
         #expect(log.states == [.idle, .awaitingUser(FakeDeviceFlowClient.code), .signedIn])
         #expect(service.isAuthenticated)
         #expect(service.currentUser?.login == "octocat")
-        #expect(await client.requestedScopes == [["repo", "user:email"]])
+        #expect(await client.requestedScopes == [["repo", "user:email", "admin:org"]])
     }
 
     @Test func signInPersistsTokenAndHandsItToAPI() async {
@@ -208,12 +210,88 @@ final class StateLog {
         var received: String?
         let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")])) { token in
             received = token
-            return Self.user
+            return Self.authenticated
         }
 
         await service.signIn()
 
         #expect(received == "gho_abc")
+    }
+
+    // MARK: admin:org scope upgrade
+
+    @Test func requestsAdminOrgScope() {
+        #expect(GitHubAuthService.scopes == ["repo", "user:email", "admin:org"])
+    }
+
+    /// Stored token "old" lacks `admin:org` unless `oldScopes` says otherwise; any other token has every scope.
+    func makeStoredTokenService(
+        oldScopes: Set<String>?,
+        polls: [FakeDeviceFlowClient.Poll] = [],
+        store: InMemoryTokenStore = InMemoryTokenStore(token: "old")
+    ) -> GitHubAuthService {
+        makeService(FakeDeviceFlowClient(polls: polls), store: store) { token in
+            AuthenticatedUser(user: Self.user, grantedScopes: token == "old" ? oldScopes : Self.allScopes)
+        }
+    }
+
+    @Test func storedTokenWithAdminOrgNeedsNoUpgrade() async {
+        let service = makeStoredTokenService(oldScopes: Self.allScopes)
+
+        await service.checkExistingAuth()
+
+        #expect(service.isAuthenticated)
+        #expect(!service.needsScopeUpgrade)
+    }
+
+    @Test func storedTokenWithoutAdminOrgNeedsUpgradeButStaysSignedIn() async {
+        let store = InMemoryTokenStore(token: "old")
+        let used = TokenUseLog()
+        let service = makeService(FakeDeviceFlowClient(polls: []), store: store, used: used) { _ in
+            AuthenticatedUser(user: Self.user, grantedScopes: ["repo", "user:email"])
+        }
+
+        await service.checkExistingAuth()
+
+        #expect(service.needsScopeUpgrade)
+        #expect(service.isAuthenticated)
+        #expect(store.token == "old")
+        #expect(store.deleteCount == 0)
+        #expect(used.tokens == ["old"])
+    }
+
+    @Test func missingScopesHeaderCountsAsLackingAdminOrg() async {
+        let service = makeStoredTokenService(oldScopes: nil)
+
+        await service.checkExistingAuth()
+
+        #expect(service.needsScopeUpgrade)
+        #expect(service.isAuthenticated)
+    }
+
+    @Test func successfulReSignInClearsScopeUpgrade() async {
+        let store = InMemoryTokenStore(token: "old")
+        let service = makeStoredTokenService(oldScopes: ["repo"], polls: [.token("new")], store: store)
+        await service.checkExistingAuth()
+        #expect(service.needsScopeUpgrade)
+
+        await service.signIn()
+
+        #expect(!service.needsScopeUpgrade)
+        #expect(store.token == "new")
+    }
+
+    @Test func failedReSignInKeepsOldTokenAndFlag() async {
+        let store = InMemoryTokenStore(token: "old")
+        let service = makeStoredTokenService(oldScopes: ["repo"], polls: [.failure(.denied)], store: store)
+        await service.checkExistingAuth()
+
+        await service.signIn()
+
+        #expect(service.signInState == .failed(.denied))
+        #expect(service.needsScopeUpgrade)
+        #expect(service.isAuthenticated)
+        #expect(store.token == "old")
     }
 
     @Test(arguments: [DeviceFlowError.expired, .denied, .disabled, .network("offline"), .unexpected("boom")])
@@ -287,7 +365,7 @@ final class StateLog {
         let store = InMemoryTokenStore()
         let service = makeService(FakeDeviceFlowClient(polls: [.token("gho_abc")]), store: store) { _ in
             await gate.wait()
-            return Self.user
+            return Self.authenticated
         }
 
         let signIn = Task { await service.signIn() }
@@ -313,7 +391,7 @@ final class StateLog {
                 await gate.wait()
                 throw URLError(.notConnectedToInternet)
             }
-            return Self.user
+            return Self.authenticated
         }
 
         let first = Task { await service.signIn() }

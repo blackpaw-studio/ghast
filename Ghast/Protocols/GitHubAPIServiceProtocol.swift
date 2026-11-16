@@ -6,7 +6,7 @@ import os
 @MainActor
 protocol GitHubAPIServiceProtocol {
     func setAccessToken(_ token: String)
-    func fetchCurrentUser(token: String?) async throws -> GitHubUser
+    func fetchCurrentUser(token: String?) async throws -> AuthenticatedUser
     func fetchRepositories() async throws -> [GitHubRepository]
     func fetchAdminOrganizations() async throws -> [GitHubOrganization]
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner]
@@ -32,7 +32,7 @@ struct UnconfiguredGitHubAPIService: GitHubAPIServiceProtocol {
     func setAccessToken(_ token: String) {
         Self.logger.fault("GitHubAPIService not injected; setAccessToken called on the unconfigured default")
     }
-    func fetchCurrentUser(token: String?) async throws -> GitHubUser { throw unconfigured("fetchCurrentUser") }
+    func fetchCurrentUser(token: String?) async throws -> AuthenticatedUser { throw unconfigured("fetchCurrentUser") }
     func fetchRepositories() async throws -> [GitHubRepository] { throw unconfigured("fetchRepositories") }
     func fetchAdminOrganizations() async throws -> [GitHubOrganization] { throw unconfigured("fetchAdminOrganizations") }
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] { throw unconfigured("fetchRunners") }

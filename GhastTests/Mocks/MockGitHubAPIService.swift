@@ -29,12 +29,16 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         accessTokens.append(token)
     }
     
-    func fetchCurrentUser(token: String? = nil) async throws -> GitHubUser {
+    func fetchCurrentUser(token: String? = nil) async throws -> AuthenticatedUser {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
         
-        return GitHubUser(
+        return AuthenticatedUser(user: mockUser, grantedScopes: Set(GitHubAuthService.scopes))
+    }
+
+    private var mockUser: GitHubUser {
+        GitHubUser(
             id: 12345,
             login: "testuser",
             avatarURL: "https://example.com/avatar.png",

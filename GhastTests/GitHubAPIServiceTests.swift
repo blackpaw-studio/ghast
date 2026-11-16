@@ -221,7 +221,7 @@ extension GitHubAPIServiceTests {
         }
         
         service.setAccessToken(token)
-        let user = try await service.fetchCurrentUser()
+        let user = try await service.fetchCurrentUser().user
         
         XCTAssertNotNil(user.id)
         XCTAssertFalse(user.login.isEmpty)

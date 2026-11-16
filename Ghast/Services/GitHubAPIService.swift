@@ -20,9 +20,12 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
 
     // MARK: - User APIs
 
-    func fetchCurrentUser(token: String? = nil) async throws -> GitHubUser {
+    func fetchCurrentUser(token: String? = nil) async throws -> AuthenticatedUser {
         let request = makeRequest(method: "GET", path: "/user", token: token)
-        return try await send(request)
+        let (data, response) = try await perform(request)
+        let user: GitHubUser = try decode(data)
+        let scopes = AuthenticatedUser.scopes(fromHeader: response.value(forHTTPHeaderField: "X-OAuth-Scopes"))
+        return AuthenticatedUser(user: user, grantedScopes: scopes)
     }
 
     // MARK: - Repository APIs
@@ -122,7 +125,10 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     }
 
     private func send<Response: Decodable>(_ request: URLRequest) async throws -> Response {
-        let data = try await perform(request)
+        try decode(try await perform(request).data)
+    }
+
+    private func decode<Response: Decodable>(_ data: Data) throws -> Response {
         do {
             return try JSONDecoder().decode(Response.self, from: data)
         } catch {
@@ -130,9 +136,10 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
         }
     }
 
-    /// Sends the request and returns the body of a 2xx response. Cancellation passes
-    /// through untouched so callers can tell it apart from a failure.
-    private func perform(_ request: URLRequest) async throws -> Data {
+    /// Sends the request and returns the body and response of a 2xx reply. Cancellation
+    /// passes through untouched so callers can tell it apart from a failure.
+    @discardableResult
+    private func perform(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data
         let response: HTTPURLResponse
         do {
@@ -144,7 +151,7 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
         guard (200..<300).contains(response.statusCode) else {
             throw Self.error(forStatus: response.statusCode)
         }
-        return data
+        return (data, response)
     }
 
     private static func error(forStatus status: Int) -> GitHubAPIError {

@@ -13,7 +13,8 @@ enum SignInState: Equatable, Sendable {
 @MainActor
 @Observable
 class GitHubAuthService: GitHubAuthServiceProtocol {
-    static let scopes = ["repo", "user:email"]
+    static let scopes = ["repo", "user:email", "admin:org"]
+    private static let organizationScope = "admin:org"
 
     var isAuthenticated = false {
         didSet {
@@ -25,6 +26,9 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     var currentUser: GitHubUser?
     var signInState: SignInState = .idle
     var isCheckingStoredAuth = true // Start with true to prevent login screen flash
+    /// The signed-in token was granted without `admin:org` (or GitHub didn't say);
+    /// organization features stay hidden until a fresh sign-in.
+    private(set) var needsScopeUpgrade = false
 
     /// Derived from `signInState` for views that only need "is a sign-in in flight".
     var isLoading: Bool { isAuthenticating }
@@ -37,7 +41,7 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
 
     private let deviceFlow: any DeviceFlowClienting
     private let tokenStore: any TokenStore
-    private let fetchUser: @MainActor (String) async throws -> GitHubUser
+    private let fetchUser: @MainActor (String) async throws -> AuthenticatedUser
     private let useToken: @MainActor (String) -> Void
     private var signInTask: Task<Void, Never>?
     /// Identity of the sign-in attempt allowed to touch state, Keychain and the API
@@ -58,7 +62,7 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         apiService: any GitHubAPIServiceProtocol,
         deviceFlow: any DeviceFlowClienting = DeviceFlowClient(),
         tokenStore: any TokenStore = KeychainTokenStore(),
-        fetchUser: (@MainActor (String) async throws -> GitHubUser)? = nil,
+        fetchUser: (@MainActor (String) async throws -> AuthenticatedUser)? = nil,
         useToken: (@MainActor (String) -> Void)? = nil
     ) {
         self.deviceFlow = deviceFlow
@@ -123,13 +127,12 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
 
             let token = try await deviceFlow.pollForToken(code)
             guard isCurrent(attempt) else { return }
-            let user = try await fetchUser(token)
+            let authenticated = try await fetchUser(token)
             guard isCurrent(attempt) else { return }
 
             try tokenStore.write(token)
             useToken(token)
-            currentUser = user
-            isAuthenticated = true
+            apply(authenticated)
             signInState = .signedIn
         } catch {
             guard isCurrent(attempt) else { return }
@@ -154,6 +157,7 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         cancelSignIn()
         isAuthenticated = false
         currentUser = nil
+        needsScopeUpgrade = false
         signInState = .idle
         do {
             try tokenStore.delete()
@@ -162,6 +166,13 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         }
     }
     
+    /// Marks the user signed in. A missing scopes header counts as lacking `admin:org`.
+    private func apply(_ authenticated: AuthenticatedUser) {
+        currentUser = authenticated.user
+        isAuthenticated = true
+        needsScopeUpgrade = authenticated.grantedScopes?.contains(Self.organizationScope) != true
+    }
+
     func simulateSuccessfulAuth(user: GitHubUser) {
         self.currentUser = user
         self.isAuthenticated = true
@@ -172,9 +183,8 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         do {
             guard let token = try tokenStore.read() else { return }
 
-            let user = try await fetchUser(token)
-            currentUser = user
-            isAuthenticated = true
+            let authenticated = try await fetchUser(token)
+            apply(authenticated)
             useToken(token)
         } catch {
             // Token is invalid or keychain access failed, remove it silently
