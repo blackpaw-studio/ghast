@@ -288,7 +288,7 @@ struct RepositoryDetailView: View {
                     
                     VStack(spacing: 8) {
                         ForEach(filteredRemoteRunners) { runner in
-                            ModernRemoteRunnerCard(runner: runner, repository: repository) {
+                            ModernRemoteRunnerCard(runner: runner, scope: repository.runnerScope) {
                                 Task {
                                     await loadRunners()
                                 }
@@ -406,7 +406,7 @@ struct RepositoryDetailView: View {
     private func loadRunners() async {
         isLoadingRunners = true
         do {
-            let fetchedRunners = try await apiService.fetchRunners(for: repository)
+            let fetchedRunners = try await apiService.fetchRunners(in: repository.runnerScope)
             await MainActor.run {
                 self.runners = fetchedRunners
                 self.isLoadingRunners = false
@@ -626,7 +626,7 @@ struct ModernLocalRunnerCard: View {
 
 struct ModernRemoteRunnerCard: View {
     let runner: GitHubRunner
-    let repository: GitHubRepository
+    let scope: RunnerScope
     let onRunnerDeleted: () -> Void
     @State private var isHovered = false
     @State private var showingDeleteConfirmation = false
@@ -814,7 +814,7 @@ struct ModernRemoteRunnerCard: View {
     private func deleteRunner() async {
         isDeleting = true
         do {
-            try await apiService.deleteRunner(runnerId: runner.id, from: repository)
+            try await apiService.deleteRunner(runnerId: runner.id, from: scope)
             await MainActor.run {
                 onRunnerDeleted()
                 isDeleting = false

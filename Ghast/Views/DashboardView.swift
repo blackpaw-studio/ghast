@@ -376,7 +376,7 @@ struct DashboardView: View {
         // Load stats from first 10 repositories to avoid too many API calls
         for repository in appState.repositories.prefix(10) {
             do {
-                let runners = try await apiService.fetchRunners(for: repository)
+                let runners = try await apiService.fetchRunners(in: repository.runnerScope)
                 total += runners.count
                 active += runners.filter { $0.isOnline }.count
                 busy += runners.filter { $0.busy }.count

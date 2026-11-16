@@ -52,7 +52,7 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRepositories
     }
     
-    func fetchRunners(for repository: GitHubRepository) async throws -> [GitHubRunner] {
+    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
@@ -61,7 +61,7 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRunners
     }
     
-    func createRegistrationToken(for repository: GitHubRepository) async throws -> GitHubRunnerRegistrationToken {
+    func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
@@ -72,15 +72,7 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         )
     }
     
-    func fetchOrganizationRunners(org: String) async throws -> [GitHubRunner] {
-        if shouldThrowError {
-            throw GitHubAPIError.unauthorized
-        }
-        
-        return mockRunners
-    }
-    
-    func createRemoveToken(for repository: GitHubRepository) async throws -> GitHubRunnerRemoveToken {
+    func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
@@ -91,14 +83,14 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         )
     }
     
-    func deleteRunner(runnerId: Int, from repository: GitHubRepository) async throws {
+    func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {
         if shouldThrowError {
             throw GitHubAPIError.notFound
         }
         // Successfully "deleted"
     }
     
-    func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication] {
+    func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         if shouldThrowError {
             throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
         }

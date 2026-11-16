@@ -50,36 +50,36 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
 
     // MARK: - Runner APIs
 
-    func fetchRunners(for repository: GitHubRepository) async throws -> [GitHubRunner] {
-        let request = makeRequest(method: "GET", path: "/repos/\(repository.fullName)/actions/runners")
+    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
+        let request = makeRequest(method: "GET", path: Self.runnersPath(scope))
         let response: RunnersResponse = try await send(request)
         return response.runners
     }
 
-    func fetchOrganizationRunners(org: String) async throws -> [GitHubRunner] {
-        let request = makeRequest(method: "GET", path: "/orgs/\(org)/actions/runners")
-        let response: RunnersResponse = try await send(request)
-        return response.runners
-    }
-
-    func createRegistrationToken(for repository: GitHubRepository) async throws -> GitHubRunnerRegistrationToken {
-        let request = makeRequest(method: "POST", path: "/repos/\(repository.fullName)/actions/runners/registration-token")
+    func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
+        let request = makeRequest(method: "POST", path: Self.runnersPath(scope, "registration-token"))
         return try await send(request)
     }
 
-    func createRemoveToken(for repository: GitHubRepository) async throws -> GitHubRunnerRemoveToken {
-        let request = makeRequest(method: "POST", path: "/repos/\(repository.fullName)/actions/runners/remove-token")
+    func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken {
+        let request = makeRequest(method: "POST", path: Self.runnersPath(scope, "remove-token"))
         return try await send(request)
     }
 
-    func deleteRunner(runnerId: Int, from repository: GitHubRepository) async throws {
-        let request = makeRequest(method: "DELETE", path: "/repos/\(repository.fullName)/actions/runners/\(runnerId)")
+    func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {
+        let request = makeRequest(method: "DELETE", path: Self.runnersPath(scope, String(runnerId)))
         _ = try await perform(request)
     }
 
-    func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication] {
-        let request = makeRequest(method: "GET", path: "/repos/\(repository.fullName)/actions/runners/downloads")
+    func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
+        let request = makeRequest(method: "GET", path: Self.runnersPath(scope, "downloads"))
         return try await send(request)
+    }
+
+    /// `{scope prefix}/actions/runners[/{suffix}]`.
+    private static func runnersPath(_ scope: RunnerScope, _ suffix: String? = nil) -> String {
+        let base = "\(scope.apiPathPrefix)/actions/runners"
+        return suffix.map { "\(base)/\($0)" } ?? base
     }
 
     // MARK: - Transport

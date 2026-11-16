@@ -8,12 +8,11 @@ protocol GitHubAPIServiceProtocol {
     func setAccessToken(_ token: String)
     func fetchCurrentUser(token: String?) async throws -> GitHubUser
     func fetchRepositories() async throws -> [GitHubRepository]
-    func fetchRunners(for repository: GitHubRepository) async throws -> [GitHubRunner]
-    func fetchOrganizationRunners(org: String) async throws -> [GitHubRunner]
-    func createRegistrationToken(for repository: GitHubRepository) async throws -> GitHubRunnerRegistrationToken
-    func createRemoveToken(for repository: GitHubRepository) async throws -> GitHubRunnerRemoveToken
-    func deleteRunner(runnerId: Int, from repository: GitHubRepository) async throws
-    func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication]
+    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner]
+    func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken
+    func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken
+    func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws
+    func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication]
 }
 
 /// Inert default for the environment key: never touches the network or a token.
@@ -34,12 +33,11 @@ struct UnconfiguredGitHubAPIService: GitHubAPIServiceProtocol {
     }
     func fetchCurrentUser(token: String?) async throws -> GitHubUser { throw unconfigured("fetchCurrentUser") }
     func fetchRepositories() async throws -> [GitHubRepository] { throw unconfigured("fetchRepositories") }
-    func fetchRunners(for repository: GitHubRepository) async throws -> [GitHubRunner] { throw unconfigured("fetchRunners") }
-    func fetchOrganizationRunners(org: String) async throws -> [GitHubRunner] { throw unconfigured("fetchOrganizationRunners") }
-    func createRegistrationToken(for repository: GitHubRepository) async throws -> GitHubRunnerRegistrationToken { throw unconfigured("createRegistrationToken") }
-    func createRemoveToken(for repository: GitHubRepository) async throws -> GitHubRunnerRemoveToken { throw unconfigured("createRemoveToken") }
-    func deleteRunner(runnerId: Int, from repository: GitHubRepository) async throws { throw unconfigured("deleteRunner") }
-    func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication] { throw unconfigured("fetchRunnerApplications") }
+    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] { throw unconfigured("fetchRunners") }
+    func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken { throw unconfigured("createRegistrationToken") }
+    func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken { throw unconfigured("createRemoveToken") }
+    func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws { throw unconfigured("deleteRunner") }
+    func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] { throw unconfigured("fetchRunnerApplications") }
 }
 
 /// Environment key for injecting API service

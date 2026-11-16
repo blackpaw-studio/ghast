@@ -808,7 +808,7 @@ struct AddRunnerView: View {
             }
             
             // Generate registration token
-            let token = try await apiService.createRegistrationToken(for: repository)
+            let token = try await apiService.createRegistrationToken(for: repository.runnerScope)
             
             // Extract labels
             let labels = runnerLabels.components(separatedBy: ",")
@@ -841,7 +841,7 @@ struct AddRunnerView: View {
     
     private func loadRunnerApplications() async {
         do {
-            let applications = try await apiService.fetchRunnerApplications(for: repository)
+            let applications = try await apiService.fetchRunnerApplications(for: repository.runnerScope)
             await MainActor.run {
                 self.runnerApplications = applications
                 
