@@ -268,6 +268,9 @@ struct FlowHarness {
         let flow = h.flow()
         flow.start()
         #expect(await eventually { h.log.all.contains("config dionysus-3") })
+        // config.sh may already have registered the runner on GitHub, and Cancel would then
+        // unregister it, so Cancel asks first from the moment config.sh starts.
+        #expect(flow.requiresCancelConfirmation)
 
         let cancelling = Task { await flow.cancel() }
         #expect(await eventually { flow.phase == .cancelling })
@@ -277,6 +280,15 @@ struct FlowHarness {
         #expect(Array(h.log.all.suffix(3)) == ["remove-token blackpaw-studio", "config remove dionysus-3", "trash dionysus-3"])
         #expect(!h.log.all.contains("launch dionysus-3"))
         #expect(h.service.localRunners.isEmpty)
+    }
+
+    @Test func aFailedConfigNeedsNoConfirmationToCancel() async throws {
+        await h.scripts.set(config: ScriptResult(status: 1, output: "Http response code: Unauthorized"))
+        let flow = h.flow()
+        flow.start()
+        #expect(await eventually { flow.phase == .failed(.register) })
+
+        #expect(!flow.requiresCancelConfirmation)
     }
 
     @Test func cancelWhenGitHubRefusesAsksBeforeRemovingFromThisMacOnly() async throws {

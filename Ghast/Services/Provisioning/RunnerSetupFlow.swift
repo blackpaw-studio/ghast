@@ -50,7 +50,10 @@ final class RunnerSetupFlow {
     /// The new runner's id once registered.
     private(set) var runnerID: String?
     /// Cancelling now would unregister a runner on GitHub, which needs the user's go-ahead.
-    var requiresCancelConfirmation: Bool { runnerID != nil }
+    /// That holds from the moment config.sh starts: it may register before it returns.
+    var requiresCancelConfirmation: Bool { runnerID != nil || isRunningConfig }
+    /// config.sh is running; its outcome on GitHub isn't known yet.
+    private var isRunningConfig = false
 
     @ObservationIgnored private let request: NewRunnerRequest
     @ObservationIgnored private let services: RunnerFlowServices
@@ -161,6 +164,8 @@ final class RunnerSetupFlow {
         let folder = try moveIntoPlace()
         let token = try await services.api.createRegistrationToken(for: request.scope)
         // Not cancellable from here: once config.sh runs, its result must be recorded.
+        isRunningConfig = true
+        defer { isRunningConfig = false }
         try await services.registrar.register(request.registration, token: token.token, in: folder)
         var runner = LocalRunner(name: request.name, scope: request.scope, path: folder.path, labels: request.labels.all)
         runner.runnerGroup = request.registration.runnerGroup

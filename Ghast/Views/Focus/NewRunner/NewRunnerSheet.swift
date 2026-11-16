@@ -78,7 +78,8 @@ struct NewRunnerSheet: View {
     private var cancelTitle: String { "Remove “\(runnerName)”?" }
 
     private var cancelMessage: String {
-        "\(runnerName) is already registered with \(scopeName). Cancelling stops it, removes it from \(scopeName) on GitHub, and moves its folder to the Trash."
+        let status = flow?.runnerID == nil ? "may already be registered" : "is already registered"
+        return "\(runnerName) \(status) with \(scopeName). Cancelling stops it, removes it from \(scopeName) on GitHub, and moves its folder to the Trash."
     }
 
     private var localOnlyTitle: String {
