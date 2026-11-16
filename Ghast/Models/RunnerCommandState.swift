@@ -18,6 +18,8 @@ struct RunnerCommandState: Equatable, Sendable {
     var hasOutput: Bool
     var hasFindQuery: Bool
     var isSheetOpen: Bool
+    /// A Remove or Reconfigure is under way for the selection.
+    var isFlowBusy = false
 
     /// A sheet disables everything, so ⌘. reaches its Cancel button.
     func isEnabled(_ command: RunnerCommand) -> Bool {
@@ -33,8 +35,7 @@ struct RunnerCommandState: Equatable, Sendable {
         case .start: return lifecycleEnabled(.start)
         case .stop: return lifecycleEnabled(.stop)
         case .restart: return lifecycleEnabled(.restart)
-        // Reconfigure and Remove arrive with the runner flows.
-        case .reconfigure, .remove: return false
+        case .reconfigure, .remove: return isLocal && !isFlowBusy
         }
     }
 

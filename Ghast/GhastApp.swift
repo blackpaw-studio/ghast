@@ -16,8 +16,10 @@ struct AppDependencies {
     let fileTrasher: any FileTrasher
     let processLauncher: any RunnerProcessLauncher
     let settings: AppSettings
-    let runnerDownloader: any RunnerDownloader
-    let scriptRunner: any RunnerScriptRunner
+    /// What New Runner, Remove and Reconfigure run against.
+    let flowServices: RunnerFlowServices
+    /// Remove, Reconfigure and Remove from GitHub, with their confirmations.
+    let flowCoordinator: RunnerFlowCoordinator
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -56,15 +58,8 @@ struct AppDependencies {
         self.fileTrasher = fileTrasher
         self.processLauncher = processLauncher
         self.settings = settings
-        self.runnerDownloader = runnerDownloader
-        self.scriptRunner = scriptRunner
-    }
-
-    /// What New Runner, Remove and Reconfigure run against.
-    var flowServices: RunnerFlowServices {
-        let runnerService = runnerService
-        let activityStore = activityStore
-        return RunnerFlowServices(
+        let resolvedRemoteStore = self.remoteStore
+        let flowServices = RunnerFlowServices(
             api: apiService,
             runnerService: runnerService,
             downloader: runnerDownloader,
@@ -73,7 +68,10 @@ struct AppDependencies {
             sleeper: sleeper,
             readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) }
         )
+        self.flowServices = flowServices
+        flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }
     }
+
 
     /// The words the Focus views write against this app's clock and host.
     var focusContext: FocusContext {
@@ -126,6 +124,7 @@ struct GhastApp: App {
                     .environment(\.gitHubAPIService, dependencies.apiService)
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.runnerFlowServices, dependencies.flowServices)
+                    .environment(dependencies.flowCoordinator)
                     .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
             } else {
                 EmptyView()

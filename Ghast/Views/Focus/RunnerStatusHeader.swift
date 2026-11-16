@@ -47,7 +47,7 @@ struct RunnerStatusHeader<Actions: View>: View {
 struct HeaderActionRow: View {
     let hint: String?
     let start: () -> Void
-    /// nil hides the Reconfigure… button; a disabled closure is passed until the flow exists.
+    /// nil hides the Reconfigure… button.
     let reconfigure: (() -> Void)?
     var isReconfigureEnabled = false
 

@@ -60,20 +60,20 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 |---|---|
 | Job-script switches are the system small switch, not the kit's 38 × 22 | native: `Toggle(.switch)` `.controlSize(.small)` |
 | Environment variable rows are centred; the mockup's text sits about 1.75 pt off-centre | fixed: capture is centred, mockup drift ignored |
-| "Remove Runner…" renders dimmed (disabled) until the PR 3 flows | open: enabled in PR 3 |
+| "Remove Runner…" renders dimmed (disabled) until the PR 3 flows | fixed (PR 3 · 3.7) |
 | "Restart the runner to apply changes." footer shows only after an edit while running; the PNG shows a running runner without it | fixed: PNG wins |
 
 ## remote
 
 | Deviation | Status |
 |---|---|
-| "Remove from GitHub…" in the ellipsis menu is disabled until PR 3 | open: enabled in PR 3 |
+| "Remove from GitHub…" in the ellipsis menu is disabled until PR 3 | fixed (PR 3 · 3.7) |
 
 ## error
 
 | Deviation | Status |
 |---|---|
-| "Reconfigure…" renders dimmed (disabled) until the PR 3 flows | open: enabled in PR 3 |
+| "Reconfigure…" renders dimmed (disabled) until the PR 3 flows | fixed (PR 3 · 3.7) |
 | "Runner listener exited with error code 1" is red | fixed: parser rule (2.9) |
 
 ## first-run

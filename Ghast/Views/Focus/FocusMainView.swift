@@ -8,6 +8,7 @@ struct FocusMainView: View {
     @Environment(\.focusContext) private var context
     @Environment(\.mainWindowPreset) private var preset
     @Environment(\.runnerFlowServices) private var flowServices
+    @Environment(RunnerFlowCoordinator.self) private var flows: RunnerFlowCoordinator?
     @Environment(\.controlActiveState) private var controlActiveState
 
     @SceneStorage("main.selection") private var storedSelection = ""
@@ -93,6 +94,7 @@ struct FocusMainView: View {
                 NewRunnerSheet(services: flowServices, preset: preset?.newRunner, finish: finishNewRunner)
             }
         }
+        .runnerFlowAlerts(flows)
         .background(WindowVisibilityReader { remoteStore.isVisible = $0 })
         .background(OutputFindResponderInstaller(target: commandTarget(for: selected)))
         // This view exists only while signed in, so the first fetch runs with the token set.
@@ -141,7 +143,7 @@ struct FocusMainView: View {
         outputPanes.pane(for: localID)
     }
 
-    private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }
+    private var actions: RunnerActions { RunnerActions(runnerService: runnerService, flows: flows) }
 
     private func newRunner() {
         runnerIDsBeforeNewRunner = Set(runnerService.localRunners.map(\.id))
@@ -173,7 +175,8 @@ struct FocusMainView: View {
             canStopAll: actions.canStopAll,
             hasOutput: !lines.isEmpty,
             hasFindQuery: localID.map { !outputPane(for: $0).query.isEmpty } ?? false,
-            isSheetOpen: isShowingNewRunner
+            isSheetOpen: isShowingNewRunner,
+            isFlowBusy: localID.map(actions.isFlowBusy) ?? false
         )
     }
 
@@ -211,7 +214,8 @@ struct FocusMainView: View {
         case .openOnGitHub: item.map(actions.openOnGitHub)
         case .copyAllOutput:
             localID.map { actions.copy(OutputLine.copyText(activityStore.activity(for: $0).lines)) }
-        case .reconfigure, .remove: break
+        case .reconfigure: localID.map(actions.reconfigure)
+        case .remove: localID.map { actions.remove($0, gitHubRunnerID: item?.gitHubRunnerID) }
         }
     }
 

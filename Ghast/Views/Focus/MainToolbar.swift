@@ -55,8 +55,8 @@ struct MainToolbar: ToolbarContent {
                 .disabled(!state.isEnabled(.openOnGitHub))
             Button("Copy Name") { item.map { actions.copy($0.name) } }
             Divider()
-            // Remove from GitHub arrives with the runner flows.
-            Button("Remove from GitHub…") {}.disabled(true)
+            Button("Remove from GitHub…") { item.map(actions.removeFromGitHub) }
+                .disabled(!actions.canRunFlows || item?.gitHubRunnerID == nil)
         } label: {
             Label("More", systemImage: "ellipsis")
         }

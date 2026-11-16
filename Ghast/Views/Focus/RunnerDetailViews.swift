@@ -67,7 +67,8 @@ struct LocalRunnerDetail: View {
                 HeaderActionRow(
                     hint: RunnerDisplayStatus.errorHint(for: activity),
                     start: { actions.start(runner.id) },
-                    reconfigure: {}
+                    reconfigure: { actions.reconfigure(runner.id) },
+                    isReconfigureEnabled: actions.canRunFlows && !actions.isFlowBusy(runner.id)
                 )
             case .stopped:
                 HeaderActionRow(hint: nil, start: { actions.start(runner.id) }, reconfigure: nil)

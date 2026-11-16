@@ -79,9 +79,10 @@ struct RunnerSidebar: View {
             Button("Show in Finder") { actions.showInFinder(localID) }
             Button("Copy Name") { actions.copy(item.name) }
             Divider()
-            // Reconfigure and Remove arrive with the runner flows.
-            Button("Reconfigure…") {}.disabled(true)
-            Button("Remove Runner…") {}.disabled(true)
+            Button("Reconfigure…") { actions.reconfigure(localID) }
+                .disabled(!actions.canRunFlows || actions.isFlowBusy(localID))
+            Button("Remove Runner…") { actions.remove(localID, gitHubRunnerID: item.gitHubRunnerID) }
+                .disabled(!actions.canRunFlows || actions.isFlowBusy(localID))
         }
     }
 
@@ -91,7 +92,8 @@ struct RunnerSidebar: View {
             .disabled(item.gitHubRunnerID == nil)
         Button("Copy Name") { actions.copy(item.name) }
         Divider()
-        Button("Remove from GitHub…") {}.disabled(true)
+        Button("Remove from GitHub…") { actions.removeFromGitHub(item) }
+            .disabled(!actions.canRunFlows || item.gitHubRunnerID == nil)
     }
 
     @ViewBuilder
