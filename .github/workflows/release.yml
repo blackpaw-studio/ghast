@@ -119,10 +119,53 @@ jobs:
         SIGNATURE=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | ./sparkle-tools/bin/sign_update --ed-key-file - build/Ghast-notarized.zip)
         echo "SPARKLE_SIGNATURE=$SIGNATURE" >> "$GITHUB_ENV"
 
+    - name: Generate appcast
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        PLIST=build/export/Ghast.app/Contents/Info.plist
+        SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+        BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+        MIN_OS=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$PLIST")
+        TAG="${INPUT_VERSION:+v$INPUT_VERSION}"
+        TAG="${TAG:-$GITHUB_REF_NAME}"
+
+        # Sparkle only offers an update when the bundle version rises, so a tag
+        # that disagrees with the built app is a release bug: stop here.
+        if [ "$TAG" != "v$SHORT" ]; then
+          echo "::error::Tag $TAG does not match app version $SHORT; bump MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.yml"
+          exit 1
+        fi
+
+        BASE="https://github.com/${GITHUB_REPOSITORY}/releases"
+        cat > build/appcast.xml <<EOF
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <title>Ghast</title>
+            <link>${BASE}/latest/download/appcast.xml</link>
+            <item>
+              <title>Version ${SHORT}</title>
+              <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+              <sparkle:version>${BUILD}</sparkle:version>
+              <sparkle:shortVersionString>${SHORT}</sparkle:shortVersionString>
+              <sparkle:minimumSystemVersion>${MIN_OS}</sparkle:minimumSystemVersion>
+              <sparkle:releaseNotesLink>${BASE}/tag/${TAG}</sparkle:releaseNotesLink>
+              <enclosure url="${BASE}/download/${TAG}/Ghast-notarized.zip" type="application/octet-stream" ${SPARKLE_SIGNATURE} />
+            </item>
+          </channel>
+        </rss>
+        EOF
+        xmllint --noout build/appcast.xml
+        echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
     - name: Create Release
       uses: softprops/action-gh-release@v3
       with:
-        files: build/Ghast-notarized.zip
+        tag_name: ${{ env.RELEASE_TAG }}
+        files: |
+          build/Ghast-notarized.zip
+          build/appcast.xml
         draft: true
         prerelease: false
         body: |
@@ -134,8 +177,11 @@ jobs:
           
           1. Download `Ghast-notarized.zip`
           2. Unzip and drag Ghast.app to your Applications folder
-          3. Launch Ghast
-          
+          3. Launch Ghast — future updates install automatically
+
+          Publishing this draft makes it the latest release, which puts its
+          `appcast.xml` live for Sparkle auto-update.
+
           ## Sparkle Update Signature
           
           ```
