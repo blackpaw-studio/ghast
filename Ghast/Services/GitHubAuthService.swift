@@ -75,9 +75,8 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
 
     /// Check if the app is running in a test environment
     private func isRunningTests() -> Bool {
-        return NSClassFromString("XCTest") != nil || 
-               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
-               ProcessInfo.processInfo.arguments.contains { $0.contains("test") }
+        return NSClassFromString("XCTest") != nil ||
+               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
     
     func checkStoredAuthentication() async {

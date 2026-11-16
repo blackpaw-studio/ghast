@@ -6,7 +6,7 @@ import Sparkle
 @MainActor
 struct AppDependencies {
     let runnerService: RunnerService
-    let apiService: GitHubAPIService
+    let apiService: any GitHubAPIServiceProtocol
     let authService: GitHubAuthService
     let clock: any AppClock
     let sleeper: Sleeper
@@ -16,7 +16,7 @@ struct AppDependencies {
 
     init(
         runnerService: RunnerService,
-        apiService: GitHubAPIService,
+        apiService: any GitHubAPIServiceProtocol,
         authService: GitHubAuthService,
         clock: any AppClock = SystemClock(),
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
@@ -72,9 +72,8 @@ struct GhastApp: App {
     
     /// Check if the app is running in a test environment
     private func isRunningTests() -> Bool {
-        return NSClassFromString("XCTest") != nil || 
-               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
-               ProcessInfo.processInfo.arguments.contains { $0.contains("test") }
+        return NSClassFromString("XCTest") != nil ||
+               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 }
 
@@ -83,6 +82,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController: SPUStandardUpdaterController
     private var builtDependencies: AppDependencies?
     private var signalSources: [DispatchSourceSignal] = []
+    #if DEBUG
+    /// Set in design fixture mode: no single-instance check, Sparkle, signal handlers or
+    /// runner cleanup (that cleanup `pkill`s the real runners).
+    private var fixtureStage: FixtureStage?
+    #endif
+    
+    private var isFixtureMode: Bool {
+        #if DEBUG
+        return fixtureStage != nil
+        #else
+        return false
+        #endif
+    }
     
     /// The app's services, built on first use. Never built under test unless injected.
     var dependencies: AppDependencies {
@@ -94,10 +106,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     override init() {
         // Sparkle shows a modal alert when the feed/key is invalid, which blocks the
-        // XCTest host's main thread. Don't start the updater under test.
+        // XCTest host's main thread. Don't start the updater under test or in fixture mode.
         let isUnderTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest, updaterDelegate: nil, userDriverDelegate: nil)
+        #if DEBUG
+        let fixture = FixtureBootstrap.fromProcessArguments()
+        #else
+        let fixture: Void? = nil
+        #endif
+        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest && fixture == nil, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
+        #if DEBUG
+        if let fixture {
+            builtDependencies = fixture.dependencies.appDependencies
+            fixtureStage = fixture.stage
+        }
+        #endif
     }
     
     init(dependencies: AppDependencies) {
@@ -107,6 +130,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if let fixtureStage {
+            NSApp.setActivationPolicy(.regular)
+            fixtureStage.start()
+            return
+        }
+        #endif
         
         // Ensure single instance behavior
         let runningApps = NSWorkspace.shared.runningApplications
@@ -156,12 +186,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
+        #if DEBUG
+        fixtureStage?.shutdown()
+        #endif
         performRunnerCleanup()
     }
     
     private func performRunnerCleanup() {
-        // Nothing to clean up if the services were never built (test host).
-        guard let runnerService = builtDependencies?.runnerService else { return }
+        // Nothing to clean up if the services were never built (test host), and a fixture
+        // must never stop the user's real runners.
+        guard !isFixtureMode, let runnerService = builtDependencies?.runnerService else { return }
         
         // Stop all running runners when app terminates
         // This must be synchronous to ensure cleanup completes before termination
