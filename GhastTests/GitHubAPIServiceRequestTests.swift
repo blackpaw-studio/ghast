@@ -108,9 +108,28 @@ import Foundation
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "GET")
-        #expect(request.url?.absoluteString == "\(base(scope))/actions/runners")
+        #expect(request.url.map { "\($0.scheme!)://\($0.host!)\($0.path)" } == "\(base(scope))/actions/runners")
+        #expect(query(request) == ["per_page": "100", "page": "1"])
         expectStandardHeaders(request)
         #expect(runners.map(\.id) == [42])
+        #expect(await transport.requests.count == 1)
+    }
+
+    @Test(arguments: scopes)
+    func fetchRunnersPaginatesUntilShortPage(scope: RunnerScope) async throws {
+        let fullPage = Array(repeating: Self.runnerJSON, count: 100).joined(separator: ",")
+        let (service, transport) = makeService([
+            .json(#"{"total_count":101,"runners":[\#(fullPage)]}"#),
+            .json(#"{"total_count":101,"runners":[\#(Self.runnerJSON)]}"#),
+        ])
+
+        let runners = try await service.fetchRunners(in: scope)
+
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        #expect(requests.map { query($0)["page"] } == ["1", "2"])
+        #expect(requests.allSatisfy { $0.url?.path.hasSuffix("/actions/runners") == true })
+        #expect(runners.count == 101)
     }
 
     @Test(arguments: scopes)

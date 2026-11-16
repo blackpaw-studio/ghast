@@ -52,9 +52,7 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     // MARK: - Runner APIs
 
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
-        let request = makeRequest(method: "GET", path: Self.runnersPath(scope))
-        let response: RunnersResponse = try await send(request)
-        return response.runners
+        try await fetchAllPages(path: Self.runnersPath(scope), query: []) { (page: RunnersResponse) in page.runners }
     }
 
     func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
@@ -87,13 +85,24 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
 
     /// Follows `page`/`per_page` pagination until a short page or the safety limit.
     private func fetchAllPages<Item: Decodable>(path: String, query: [URLQueryItem]) async throws -> [Item] {
+        try await fetchAllPages(path: path, query: query) { (page: [Item]) in page }
+    }
+
+    /// Paginates an endpoint whose page is an envelope (`{"total_count":…,"runners":[…]}`);
+    /// `items` pulls the list out of each page.
+    private func fetchAllPages<Page: Decodable, Item>(
+        path: String,
+        query: [URLQueryItem],
+        items extract: (Page) -> [Item]
+    ) async throws -> [Item] {
         var items: [Item] = []
         for page in 1...Self.maxPages {
             let request = makeRequest(method: "GET", path: path, query: query + [
                 URLQueryItem(name: "page", value: String(page)),
                 URLQueryItem(name: "per_page", value: String(Self.pageSize)),
             ])
-            let pageItems: [Item] = try await send(request)
+            let page: Page = try await send(request)
+            let pageItems = extract(page)
             items.append(contentsOf: pageItems)
             // A short page means we've reached the end
             if pageItems.count < Self.pageSize { return items }
