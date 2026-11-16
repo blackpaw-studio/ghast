@@ -19,6 +19,16 @@ Known native differences from the spec (seeded; each repeats on every screen it 
 - Menu submenu side: the system chooses it (the mockup shows left).
 - Notification banner chrome: drawn by Notification Center, not by Ghast.
 
+## Main window chrome
+
+Measured on the build host (macOS 27) with `Scripts/fidelity/probe.sh`, on a standard `NavigationSplitView` with a `List(.sidebar)`. No custom chrome is drawn, so these stay as native differences from the mockups. macOS 26 users may see the inset floating sidebar style; the host does not, so the capture cannot confirm it.
+
+| Deviation | Status |
+|---|---|
+| Sidebar is full-bleed (flush to the window edge, full height), not the mockups' inset rounded floating panel. Variants tried, none gave the inset: (a) default `WindowGroup` and toolbar style, (b) `.windowToolbarStyle(.unified)` on the scene, (c) `.navigationSplitViewStyle(.balanced)`, (d) `.containerBackground(.regularMaterial, for: .window)`. `containerBackground(for: .navigation)` is unavailable on macOS. | native: macOS 27 host renders the sidebar full-bleed |
+| Sidebar selection is the system accent colour (solid blue on an active window), not the mockups' neutral grey row | native: selection is drawn by `List`, which follows the accent colour |
+| Toolbar glass capsules blur the content scrolling under them to a near-flat tint (stddev 0.004 against 0.248 for the sharp content) | native: system glass |
+
 ## main
 
 | Deviation | Status |

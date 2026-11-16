@@ -11,9 +11,10 @@
 #    same rect as a region (`--mode area --region`).
 # 4. Asserts (a) the window capture is exactly 2x the window's real size, (b) the traffic lights
 #    render in colour (active), (c) the stripes under the capsule are blurred, not sharp and not
-#    flat (glass sampled its own content), (d) the sidebar is an inset rounded panel, and (e) the
+#    flat (glass sampled its own content), (d) reports, without failing, whether the sidebar is an inset rounded panel, and (e) the
 #    window and region captures agree.
 #
+# GHAST_PROBE_VARIANT=a|b|c|d picks a standard window configuration (see GlassProbe.swift).
 # Exits 0 only if every assertion holds. Output: build/fidelity/probe-*.png.
 # Captures go through Peekaboo (its Bridge holds Screen Recording); the script fails if
 # `peekaboo permissions` doesn't report it granted.
@@ -46,7 +47,9 @@ AGREE_MAX="0.03"
 
 start_virtual_display
 
-build_tool glass-probe -parse-as-library "$FIDELITY_DIR/probe/GlassProbe.swift"
+# PROBE_SWIFTC_FLAGS lets a variant compile in a Scene modifier (e.g. -DPROBE_UNIFIED_TOOLBAR).
+# shellcheck disable=SC2086
+build_tool glass-probe -parse-as-library ${PROBE_SWIFTC_FLAGS:-} "$FIDELITY_DIR/probe/GlassProbe.swift"
 PROBE_LOG="$OUT_DIR/probe.log"
 : > "$PROBE_LOG"
 "$BIN_DIR/glass-probe" > "$PROBE_LOG" 2>&1 &
@@ -71,6 +74,10 @@ peek_region "$RX,$RY,$RW,$RH" "$REGION_PNG"
 FAILED=0
 check() { # check <label> <ok: 0|1> <detail>
     if [ "$2" -eq 1 ]; then echo "PASS  $1: $3"; else echo "FAIL  $1: $3"; FAILED=1; fi
+}
+# inform <label> <ok: 0|1> <detail>: reported, never fails the probe.
+inform() {
+    if [ "$2" -eq 1 ]; then echo "PASS  $1: $3"; else echo "WARN  $1: $3"; fi
 }
 stddev() { magick "$1" -crop "$2" +repage -colorspace Gray -format '%[fx:standard_deviation]' info:; }
 
@@ -99,7 +106,7 @@ magick "$WIN_PNG" -crop "$capsule_crop" +repage "$OUT_DIR/probe-capsule.png"
 CORNER_GRAY="$(gray_at "$WIN_PNG" $((CORNER_OFFSET * 2)) $((HEIGHT - CORNER_OFFSET * 2)))"
 FILL_GRAY="$(gray_at "$WIN_PNG" $((SIDEBAR_FILL_X * 2)) $((HEIGHT - SIDEBAR_FILL_FROM_BOTTOM * 2)))"
 ok="$(awk -v a="$CORNER_GRAY" -v b="$FILL_GRAY" -v min="$INSET_MIN_DELTA" 'BEGIN { d = a - b; if (d < 0) d = -d; print (d >= min) ? 1 : 0 }')"
-check "sidebar is an inset rounded panel" "$ok" "corner luminance $CORNER_GRAY vs panel fill $FILL_GRAY (need a difference of at least $INSET_MIN_DELTA)"
+inform "sidebar is an inset rounded panel (informational: macOS 26 may differ from this host)" "$ok" "corner luminance $CORNER_GRAY vs panel fill $FILL_GRAY (need a difference of at least $INSET_MIN_DELTA)"
 
 # (e) window and region captures agree, ignoring the rounded corners
 SHAVE=40

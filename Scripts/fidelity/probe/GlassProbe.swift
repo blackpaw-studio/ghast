@@ -17,16 +17,32 @@ import AppKit
 private let probeSize = CGSize(width: 1240, height: 780)
 private let probeOrigin = CGPoint(x: 100, y: 60)
 
+/// Which standard, no-custom-drawing configuration to show (`GHAST_PROBE_VARIANT`):
+///   a  default WindowGroup, default toolbar style (the baseline)
+///   b  `.windowToolbarStyle(.unified)` on the scene (compile with -DPROBE_UNIFIED_TOOLBAR;
+///      `Scene` modifiers can't be chosen at run time)
+///   c  `.navigationSplitViewStyle(.balanced)`
+///   d  `.containerBackground(.regularMaterial, for: .window)` (`for: .navigation` is
+///      unavailable on macOS)
+private let probeVariant = ProcessInfo.processInfo.environment["GHAST_PROBE_VARIANT"] ?? "a"
+
 @main
 struct GlassProbeApp: App {
     @NSApplicationDelegateAdaptor(ProbeDelegate.self) var delegate
 
     var body: some Scene {
-        Window("Glass Probe", id: "probe") {
-            ProbeContent()
-                .frame(width: probeSize.width, height: probeSize.height)
-        }
-        .windowResizability(.contentSize)
+        #if PROBE_UNIFIED_TOOLBAR
+        WindowGroup("Glass Probe", id: "probe") { content }
+            .windowResizability(.contentSize)
+            .windowToolbarStyle(.unified)
+        #else
+        WindowGroup("Glass Probe", id: "probe") { content }
+            .windowResizability(.contentSize)
+        #endif
+    }
+
+    private var content: some View {
+        ProbeContent().frame(width: probeSize.width, height: probeSize.height)
     }
 }
 
@@ -56,6 +72,16 @@ struct StripesView: View {
 }
 
 struct ProbeContent: View {
+    var body: some View {
+        switch probeVariant {
+        case "c": ProbeSplitView().navigationSplitViewStyle(.balanced)
+        case "d": ProbeSplitView().containerBackground(.regularMaterial, for: .window)
+        default: ProbeSplitView()
+        }
+    }
+}
+
+struct ProbeSplitView: View {
     @State private var selection: Int? = 1
 
     var body: some View {
