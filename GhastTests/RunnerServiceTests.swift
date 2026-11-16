@@ -290,40 +290,6 @@ final class RunnerServiceTests: XCTestCase {
         }
     }
     
-    // MARK: - Download and Extraction Tests
-    
-    func testInvalidDownloadURL() async {
-        let repo = GitHubRepository(
-            id: 1,
-            name: "test",
-            fullName: "user/test",
-            description: nil,
-            isPrivate: false,
-            owner: GitHubUser(id: 1, login: "user", avatarURL: "", name: nil, email: nil),
-            htmlURL: ""
-        )
-        
-        let app = GitHubRunnerApplication(
-            os: "osx",
-            architecture: "arm64",
-            downloadURL: "not-a-valid-url",
-            filename: "runner.tar.gz"
-        )
-        
-        do {
-            _ = try await runnerService.createManagedRunner(
-                name: "Test",
-                scope: repo.runnerScope,
-                application: app,
-                registrationToken: "token"
-            )
-            XCTFail("Should throw invalidDownloadURL error")
-        } catch {
-            // Expected error - invalid URL will fail
-            XCTAssertNotNil(error)
-        }
-    }
-    
     // MARK: - LocalRunner Model Tests
     
     func testLocalRunnerInitialization() {

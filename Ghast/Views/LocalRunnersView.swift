@@ -147,9 +147,6 @@ struct LocalRunnersView: View {
         .frame(minWidth: 800, idealWidth: 1000, maxWidth: .infinity)
         .background(Color(NSColor.controlBackgroundColor))
         .navigationTitle("")
-        .sheet(isPresented: $showingNewRunnerFlow) {
-            NewRunnerFlowView(repositories: appState.repositories)
-        }
     }
     
     private var modernEmptyState: some View {

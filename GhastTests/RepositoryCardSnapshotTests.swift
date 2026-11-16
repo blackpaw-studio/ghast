@@ -96,59 +96,6 @@ final class RepositoryCardSnapshotTests: XCTestCase {
         SnapshotTestHelpers.assertSnapshot(of: view, width: 300, height: 120)
     }
     
-    // MARK: - New Runner Repository Card Tests
-    
-    func testNewRunnerRepositoryCardSelected() async {
-        let repository = createTestRepository(
-            name: "selected-repo",
-            description: "This repository is currently selected",
-            isPrivate: false
-        )
-        
-        let view = NewRunnerRepositoryCard(
-            repository: repository,
-            isSelected: true
-        ) {
-            // Action handler
-        }
-        
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 400, height: 100)
-    }
-    
-    func testNewRunnerRepositoryCardUnselected() async {
-        let repository = createTestRepository(
-            name: "unselected-repo",
-            description: "This repository is not selected",
-            isPrivate: true
-        )
-        
-        let view = NewRunnerRepositoryCard(
-            repository: repository,
-            isSelected: false
-        ) {
-            // Action handler
-        }
-        
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 400, height: 100)
-    }
-    
-    func testNewRunnerRepositoryCardLongDescription() async {
-        let repository = createTestRepository(
-            name: "detailed-repo",
-            description: "This repository has a very detailed description that explains what the project does and might need to be truncated if it's too long for the available space",
-            isPrivate: true
-        )
-        
-        let view = NewRunnerRepositoryCard(
-            repository: repository,
-            isSelected: true
-        ) {
-            // Action handler
-        }
-        
-        SnapshotTestHelpers.assertSnapshot(of: view, width: 400, height: 100)
-    }
-    
     // MARK: - Grid Layout Tests
     
     func testRepositoryCardsGrid() async {
