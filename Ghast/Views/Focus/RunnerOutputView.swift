@@ -82,6 +82,13 @@ struct RunnerOutputView: View {
                 .onSubmit { pane.find.next() }
                 .onChange(of: pane.query) { _, query in pane.find.update(query: query, lines: lines) }
                 .onExitCommand { pane.hideFind(lines: lines) }
+                // The field's own editor claims Edit › Find Next/Previous and disables them,
+                // so ⌘G and ⇧⌘G are handled here while typing a query.
+                .onKeyPress(keys: ["g", "G"], phases: .down) { press in
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    press.modifiers.contains(.shift) ? pane.find.previous() : pane.find.next()
+                    return .handled
+                }
                 .frame(maxWidth: FocusMetrics.findFieldWidth)
             Text(pane.find.matchCountText)
                 .font(FocusType.callout)

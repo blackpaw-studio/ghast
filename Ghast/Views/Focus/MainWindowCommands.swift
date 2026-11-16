@@ -10,8 +10,9 @@ extension FocusedValues {
     @Entry var mainWindow: MainWindowCommandTarget?
 }
 
-/// File, Edit › Find, View, Runner and Help commands with the spec's shortcuts. Each acts on
-/// the main window's selection and disables when it doesn't apply.
+/// File, View, Runner, Window and Help commands with the spec's shortcuts. Each acts on the
+/// main window's selection and disables when it doesn't apply. Edit › Find stays the system's
+/// and reaches the output through `OutputFindResponder`.
 struct MainWindowCommands: Commands {
     @FocusedValue(\.mainWindow) private var target
     @Environment(\.openURL) private var openURL
@@ -19,16 +20,10 @@ struct MainWindowCommands: Commands {
 
     var body: some Commands {
         SidebarCommands()
+        // The system Find, Spelling and Substitutions; Find reaches the output via the responder chain.
+        TextEditingCommands()
         CommandGroup(replacing: .newItem) {
             command("New Runner…", .newRunner).keyboardShortcut("n")
-        }
-        // Replaces the text Find submenu so ⌘F always reaches the output's find bar.
-        CommandGroup(replacing: .textEditing) {
-            Menu("Find") {
-                command("Find…", .find).keyboardShortcut("f")
-                command("Find Next", .findNext).keyboardShortcut("g")
-                command("Find Previous", .findPrevious).keyboardShortcut("g", modifiers: [.command, .shift])
-            }
         }
         CommandGroup(before: .toolbar) {
             command("Output", .showOutput).keyboardShortcut("1")

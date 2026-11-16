@@ -86,12 +86,10 @@ struct FocusMainView: View {
                     )
                 }
         }
-        .focusedSceneValue(\.mainWindow, MainWindowCommandTarget(
-            state: commandState(for: selected),
-            perform: { perform($0, on: selected) }
-        ))
+        .focusedSceneValue(\.mainWindow, commandTarget(for: selected))
         .sheet(isPresented: $isShowingNewRunner, onDismiss: refreshIfRunnerAdded) { NewRunnerStopgapSheet() }
         .background(WindowVisibilityReader { remoteStore.isVisible = $0 })
+        .background(OutputFindResponderInstaller(target: commandTarget(for: selected)))
         // This view exists only while signed in, so the first fetch runs with the token set.
         .task {
             await remoteStore.refresh(.launch)
@@ -164,6 +162,10 @@ struct FocusMainView: View {
             hasFindQuery: localID.map { !outputPane(for: $0).query.isEmpty } ?? false,
             isSheetOpen: isShowingNewRunner
         )
+    }
+
+    private func commandTarget(for item: RunnerItem?) -> MainWindowCommandTarget {
+        MainWindowCommandTarget(state: commandState(for: item), perform: { perform($0, on: item) })
     }
 
     /// Runs a toolbar or menu command against the selection. Callers check `isEnabled` first.
