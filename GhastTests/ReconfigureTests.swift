@@ -19,9 +19,10 @@ import Foundation
     }
 
     /// The `.runner` file `config.sh` writes, with the BOM the runner puts on it.
-    static func runnerFile(agentID: Int = 1002, agentName: String = "dionysus-xcode", workFolder: String = "builds") -> Data {
+    static func runnerFile(agentID: Int? = 1002, agentName: String = "dionysus-xcode", workFolder: String = "builds") -> Data {
+        let id = agentID.map { "\"agentId\": \($0), " } ?? ""
         let json = """
-        {"agentId": \(agentID), "agentName": "\(agentName)", "poolId": 7, "poolName": "macOS builders", \
+        {\(id)"agentName": "\(agentName)", "poolId": 7, "poolName": "macOS builders", \
         "serverUrl": "https://pipelines.actions.githubusercontent.com/x", "gitHubUrl": "https://github.com/blackpaw-studio", \
         "workFolder": "\(workFolder)"}
         """
@@ -114,6 +115,7 @@ import Foundation
         case .notOnGitHub: h.api.runners[FlowHarness.org] = [Self.gitHubRecord(id: 5, name: "someone-else")]
         case .gitHubUnreachable: h.api.runnersError = GitHubAPIError.serverError(502)
         case .groupUnknown: h.api.runners[FlowHarness.org] = [Self.gitHubRecord(groupID: nil)]
+        case .agentIDGoneButNameTaken: h.api.runners[FlowHarness.org] = [Self.gitHubRecord(id: 2001)]
         }
         let before = snapshot(runner)
 
@@ -133,7 +135,28 @@ import Foundation
         #expect(runner.customLabels == ["xcode"])
     }
 
-    enum RefusalCase: CaseIterable, Sendable { case noRunnerFile, notOnGitHub, gitHubUnreachable, groupUnknown }
+    enum RefusalCase: CaseIterable, Sendable { case noRunnerFile, notOnGitHub, gitHubUnreachable, groupUnknown, agentIDGoneButNameTaken }
+
+    /// GitHub no longer lists the registered agent id. Another runner with the same name is a
+    /// different registration, and `--replace` would take it over, so Reconfigure refuses.
+    @Test func aRunnerGitHubNoLongerListsByIDIsNeverMatchedByName() async throws {
+        let runner = try await configuredRunner()
+        h.api.runners[FlowHarness.org] = [Self.gitHubRecord(id: 2001)]
+
+        await #expect(throws: ReconfigureError.noLongerRegistered(runner: "dionysus-xcode", scope: "blackpaw-studio")) {
+            try await reconfigurer.reconfigure(runner)
+        }
+        #expect(await h.scripts.calls.isEmpty)
+    }
+
+    @Test func matchesByNameOnlyWhenTheRunnerFileHasNoAgentID() async throws {
+        let runner = try await configuredRunner(runnerFile: Self.runnerFile(agentID: nil))
+        h.api.runners[FlowHarness.org] = [Self.gitHubRecord(id: 2001)]
+
+        try await reconfigurer.reconfigure(runner)
+
+        #expect(await h.scripts.calls.last?.arguments.contains("xcode") == true)
+    }
 
     @Test func theOldRegistrationIsSetAsideThenTrashedNeverDeleted() async throws {
         let runner = try await configuredRunner()

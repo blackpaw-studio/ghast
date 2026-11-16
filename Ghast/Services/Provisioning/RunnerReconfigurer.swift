@@ -4,6 +4,7 @@ import Foundation
 enum ReconfigureError: LocalizedError, Equatable {
     case notConfigured(runner: String)
     case notOnGitHub(runner: String, scope: String)
+    case noLongerRegistered(runner: String, scope: String)
     case gitHubUnavailable(reason: String)
     case groupUnknown(runner: String)
 
@@ -13,6 +14,8 @@ enum ReconfigureError: LocalizedError, Equatable {
             "\(runner) has no readable .runner file, so Ghast can't tell how it was registered. Remove it and create it again."
         case let .notOnGitHub(runner, scope):
             "\(scope) doesn't list \(runner), so Ghast can't keep its labels and group. Remove it and create it again."
+        case let .noLongerRegistered(runner, scope):
+            "\(runner) is no longer registered with \(scope) on GitHub. Remove it, then create a new runner."
         case let .gitHubUnavailable(reason):
             "Ghast couldn't read the runner's labels and group from GitHub: \(reason)"
         case let .groupUnknown(runner):
@@ -66,9 +69,7 @@ struct RunnerReconfigurer {
         } catch {
             throw ReconfigureError.gitHubUnavailable(reason: scope.errorMessage(for: error))
         }
-        let record = agent.id.flatMap { id in listed.first { $0.id == id } }
-            ?? listed.first { $0.name.caseInsensitiveCompare(agent.name) == .orderedSame }
-        guard let record else { throw ReconfigureError.notOnGitHub(runner: agent.name, scope: scope.displayName) }
+        let record = try Self.record(of: agent, in: listed, scope: scope)
         return RunnerRegistration(
             name: agent.name,
             scope: scope,
@@ -91,6 +92,22 @@ struct RunnerReconfigurer {
         }
         guard let group = groups.first(where: { $0.id == groupID }) else { throw ReconfigureError.groupUnknown(runner: agent) }
         return group.isDefault ? nil : group.name
+    }
+
+    /// GitHub's record of the agent. A `.runner` with an agent id matches only that id: a
+    /// runner of the same name under another id is a different registration, and `--replace`
+    /// would take it over. Only a `.runner` without an id falls back to the name.
+    private static func record(of agent: RegisteredAgent, in listed: [GitHubRunner], scope: RunnerScope) throws -> GitHubRunner {
+        if let id = agent.id {
+            guard let record = listed.first(where: { $0.id == id }) else {
+                throw ReconfigureError.noLongerRegistered(runner: agent.name, scope: scope.displayName)
+            }
+            return record
+        }
+        guard let record = listed.first(where: { $0.name.caseInsensitiveCompare(agent.name) == .orderedSame }) else {
+            throw ReconfigureError.notOnGitHub(runner: agent.name, scope: scope.displayName)
+        }
+        return record
     }
 
     /// The runner's environment files. `config.sh` sources `env.sh`, which overwrites `.path`
