@@ -145,7 +145,7 @@ struct WelcomeView: View {
                             DeviceCodePanel(
                                 code: code,
                                 onOpenGitHub: { openURL(code.verificationURI) },
-                                onCopy: { copyToPasteboard(code.userCode) },
+                                onCopy: { DeviceFlowPresenter.copyToPasteboard(code.userCode) },
                                 onCancel: { authService.cancelSignIn() }
                             )
                         case .failed(let error):
@@ -154,12 +154,7 @@ struct WelcomeView: View {
 
                         requirementsNote
                     }
-                    .onChange(of: authService.signInState) { _, state in
-                        // Once per attempt: put the code on the clipboard and open GitHub.
-                        guard case .awaitingUser(let code) = state else { return }
-                        copyToPasteboard(code.userCode)
-                        openURL(code.verificationURI)
-                    }
+                    .presentsDeviceFlow(authService.signInState)
 
                     Spacer(minLength: 0)
                 }
@@ -221,11 +216,6 @@ struct WelcomeView: View {
 
     private func startSignIn() {
         Task { await authService.signIn() }
-    }
-
-    private func copyToPasteboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

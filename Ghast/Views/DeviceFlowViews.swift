@@ -86,3 +86,30 @@ struct SignInFailurePanel: View {
         }
     }
 }
+
+/// Once per sign-in attempt: when a new user code arrives, put it on the clipboard and
+/// open GitHub's verification page. Shared by the welcome screen and in-app re-sign-in.
+struct DeviceFlowPresenter: ViewModifier {
+    let signInState: SignInState
+    @Environment(\.openURL) private var openURL
+
+    func body(content: Content) -> some View {
+        content.onChange(of: signInState) { _, state in
+            guard case .awaitingUser(let code) = state else { return }
+            Self.copyToPasteboard(code.userCode)
+            openURL(code.verificationURI)
+        }
+    }
+
+    static func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+extension View {
+    /// See `DeviceFlowPresenter`.
+    func presentsDeviceFlow(_ signInState: SignInState) -> some View {
+        modifier(DeviceFlowPresenter(signInState: signInState))
+    }
+}

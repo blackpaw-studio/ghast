@@ -49,22 +49,26 @@ struct ContentView: View {
 struct MainAppView: View {
     @Environment(GitHubAuthService.self) private var authService
     @Environment(AppState.self) private var appState
+    @Environment(\.openURL) private var openURL
+    @State private var isReSignInPresented = false
+    
+    /// The token lacks admin:org and the banner wasn't dismissed this launch.
+    private var showsScopeBanner: Bool {
+        authService.needsScopeUpgrade && !appState.isScopeBannerDismissed
+    }
     
     var body: some View {
         NavigationSplitView {
             SidebarView()
         } detail: {
-            switch appState.selectedView {
-            case .dashboard:
-                DashboardView()
-            case .repository(let repo):
-                RepositoryDetailView(repository: repo)
-            case .organization(let organization):
-                OrganizationDetailView(organization: organization)
-            case .localRunners:
-                LocalRunnersView()
-            case .settings:
-                SettingsView()
+            VStack(spacing: 0) {
+                if showsScopeBanner {
+                    ScopeUpgradeBanner(
+                        onSignIn: startReSignIn,
+                        onDismiss: { appState.isScopeBannerDismissed = true }
+                    )
+                }
+                detailContent
             }
         }
         .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
@@ -97,6 +101,46 @@ struct MainAppView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $isReSignInPresented, onDismiss: cancelUnfinishedReSignIn) {
+            ReSignInSheet(
+                signInState: authService.signInState,
+                onOpenGitHub: { openURL($0.verificationURI) },
+                onTryAgain: { Task { await authService.signIn() } },
+                onCancel: { isReSignInPresented = false }
+            )
+        }
+        .presentsDeviceFlow(authService.signInState)
+        .onChange(of: authService.signInState) { _, state in
+            if state == .signedIn { isReSignInPresented = false }
+        }
+    }
+    
+    @ViewBuilder
+    private var detailContent: some View {
+        switch appState.selectedView {
+        case .dashboard:
+            DashboardView()
+        case .repository(let repo):
+            RepositoryDetailView(repository: repo)
+        case .organization(let organization):
+            OrganizationDetailView(organization: organization)
+        case .localRunners:
+            LocalRunnersView()
+        case .settings:
+            SettingsView()
+        }
+    }
+    
+    private func startReSignIn() {
+        isReSignInPresented = true
+        Task { await authService.signIn() }
+    }
+    
+    /// Closing the sheet abandons an attempt still in flight; the old token stays.
+    private func cancelUnfinishedReSignIn() {
+        if authService.signInState != .signedIn {
+            authService.cancelSignIn()
         }
     }
 }
