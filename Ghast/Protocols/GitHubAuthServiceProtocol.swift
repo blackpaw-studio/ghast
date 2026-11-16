@@ -10,6 +10,8 @@ protocol GitHubAuthServiceProtocol: AnyObject, Observable {
     var isLoading: Bool { get }
     var isAuthenticating: Bool { get }
     var isCheckingStoredAuth: Bool { get set }
+    /// True when the stored token lacks `admin:org`; repo features still work.
+    var needsScopeUpgrade: Bool { get }
     
     func checkStoredAuthentication() async
     func signIn() async

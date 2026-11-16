@@ -13,6 +13,20 @@ struct GitHubUser: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// The signed-in user plus the OAuth scopes GitHub reports for the token.
+struct AuthenticatedUser: Equatable, Sendable {
+    let user: GitHubUser
+    /// From the `X-OAuth-Scopes` response header; nil when the header is absent.
+    let grantedScopes: Set<String>?
+
+    /// Parses a comma-separated `X-OAuth-Scopes` value (`"repo, user:email"`).
+    static func scopes(fromHeader header: String?) -> Set<String>? {
+        header.map { value in
+            Set(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+        }
+    }
+}
+
 struct GitHubRepository: Codable, Identifiable, Equatable, Sendable {
     let id: Int
     let name: String
@@ -27,6 +41,18 @@ struct GitHubRepository: Codable, Identifiable, Equatable, Sendable {
         case fullName = "full_name"
         case isPrivate = "private"
         case htmlURL = "html_url"
+    }
+}
+
+/// An organization the signed-in user administers.
+struct GitHubOrganization: Codable, Identifiable, Hashable, Sendable {
+    let login: String
+    let id: Int
+    let avatarURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case login, id
+        case avatarURL = "avatar_url"
     }
 }
 

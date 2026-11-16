@@ -21,7 +21,15 @@ final class AddRunnerViewSnapshotTests: XCTestCase {
     func testAddRunnerViewDefault() async {
         let repository = createTestRepository()
         
-        let view = AddRunnerView(repository: repository) {
+        let view = AddRunnerView(scope: repository.runnerScope, repository: repository) {
+            // Completion handler
+        }
+        
+        SnapshotTestHelpers.assertSnapshot(of: view, width: 1000, height: 750, record: false)
+    }
+    
+    func testAddRunnerViewOrganizationScope() async {
+        let view = AddRunnerView(scope: .organization(login: "acme")) {
             // Completion handler
         }
         

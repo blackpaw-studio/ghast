@@ -4,7 +4,7 @@ import Foundation
 /// Records requests and replays queued results. Actor keeps it Sendable.
 actor FakeTransport: HTTPTransport {
     enum Reply {
-        case json(String, status: Int = 200)
+        case json(String, status: Int = 200, headers: [String: String] = [:])
         case failure(Error)
     }
 
@@ -17,8 +17,8 @@ actor FakeTransport: HTTPTransport {
         requests.append(request)
         guard !replies.isEmpty else { throw URLError(.badServerResponse) }
         switch replies.removeFirst() {
-        case let .json(body, status):
-            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        case let .json(body, status, headers):
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
             return (Data(body.utf8), response)
         case let .failure(error):
             throw error

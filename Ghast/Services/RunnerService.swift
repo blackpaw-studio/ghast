@@ -33,7 +33,7 @@ class RunnerService {
     /// Automatically downloads, extracts, configures and creates a new runner
     func createManagedRunner(
         name: String,
-        repository: GitHubRepository,
+        scope: RunnerScope,
         application: GitHubRunnerApplication,
         registrationToken: String,
         labels: [String] = []
@@ -52,7 +52,7 @@ class RunnerService {
         // Configure runner
         try await configureRunner(
             at: runnerDir,
-            repository: repository,
+            scope: scope,
             token: registrationToken,
             name: name,
             labels: labels
@@ -61,7 +61,7 @@ class RunnerService {
         // Create LocalRunner instance
         let runner = LocalRunner(
             name: name,
-            repository: repository.fullName,
+            scope: scope,
             path: runnerDir.path,
             labels: labels
         )
@@ -220,9 +220,21 @@ class RunnerService {
         }
     }
     
+    /// Arguments for a non-interactive `config.sh` registering against `url`.
+    static func configArguments(url: String, token: String, name: String, labels: [String]) -> [String] {
+        let base = [
+            "./config.sh",
+            "--url", url,
+            "--token", token,
+            "--name", name,
+            "--unattended",  // Non-interactive mode
+        ]
+        return labels.isEmpty ? base : base + ["--labels", labels.joined(separator: ",")]
+    }
+
     private func configureRunner(
         at directory: URL,
-        repository: GitHubRepository,
+        scope: RunnerScope,
         token: String,
         name: String,
         labels: [String]
@@ -243,19 +255,7 @@ class RunnerService {
         process.currentDirectoryPath = directory.path
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         
-        var arguments = [
-            "./config.sh",
-            "--url", repository.htmlURL,
-            "--token", token,
-            "--name", name,
-            "--unattended"  // Non-interactive mode
-        ]
-        
-        if !labels.isEmpty {
-            arguments.append("--labels")
-            arguments.append(labels.joined(separator: ","))
-        }
-        
+        let arguments = Self.configArguments(url: scope.configURL, token: token, name: name, labels: labels)
         process.arguments = arguments
         
         // Capture output for debugging
@@ -896,19 +896,17 @@ class RunnerService {
                     continue
                 }
                 
-                // Try to extract repository info from .runner file if it exists
-                var repository = "Unknown/Repository"
+                // Try to extract the scope from the .runner file if it exists:
+                // https://github.com/{org} or https://github.com/{owner}/{repo}
+                var scope = RunnerScope.repository(fullName: "Unknown/Repository")
                 let runnerFile = runnerDir.appendingPathComponent(".runner")
                 if FileManager.default.fileExists(atPath: runnerFile.path) {
                     do {
                         let data = try Data(contentsOf: runnerFile)
                         if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let gitHubUrl = json["gitHubUrl"] as? String {
-                            // Extract owner/repo from URL like https://github.com/owner/repo
-                            if let url = URL(string: gitHubUrl),
-                               url.pathComponents.count >= 3 {
-                                repository = "\(url.pathComponents[1])/\(url.pathComponents[2])"
-                            }
+                           let gitHubUrl = json["gitHubUrl"] as? String,
+                           let parsed = RunnerScope(gitHubURL: gitHubUrl) {
+                            scope = parsed
                         }
                     } catch {
                         #if DEBUG
@@ -920,13 +918,13 @@ class RunnerService {
                 // Create a LocalRunner entry for this discovered runner
                 let discoveredRunner = LocalRunner(
                     name: runnerName,
-                    repository: repository,
+                    scope: scope,
                     path: runnerDir.path,
                     labels: ["self-hosted"]
                 )
                 
                 #if DEBUG
-                print("🏃 Discovered existing runner: \(runnerName) for \(repository)")
+                print("🏃 Discovered existing runner: \(runnerName) for \(scope.displayName)")
                 #endif
                 localRunners.append(discoveredRunner)
             }
@@ -1147,7 +1145,7 @@ class RunnerService {
 struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
-    let repository: String
+    let scope: RunnerScope
     let path: String
     var labels: [String]
     var status: RunnerStatus
@@ -1155,11 +1153,14 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     var environmentVariables: [String: String]
     var preJobScript: String?
     var postJobScript: String?
-    
-    init(name: String, repository: String, path: String, labels: [String] = []) {
+
+    /// Repository full name or organization login (see `RunnerScope.displayName`).
+    var repository: String { scope.displayName }
+
+    init(name: String, scope: RunnerScope, path: String, labels: [String] = []) {
         self.id = UUID().uuidString
         self.name = name
-        self.repository = repository
+        self.scope = scope
         self.path = path
         self.labels = labels
         self.status = .stopped
@@ -1168,7 +1169,58 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         self.preJobScript = nil
         self.postJobScript = nil
     }
-    
+
+    /// A repository-level runner for `repository` (`owner/repo`).
+    init(name: String, repository: String, path: String, labels: [String] = []) {
+        self.init(name: name, scope: .repository(fullName: repository), path: path, labels: labels)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, scope, repository, path, labels, status, createdAt
+        case environmentVariables, preJobScript, postJobScript
+    }
+
+    /// Runners saved before scopes existed (or rewritten by an older build) carry only
+    /// `repository`: an `owner/repo` full name decodes as `.repository`, a bare login
+    /// (no "/", which a full name always has) as `.organization`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        if let scope = try container.decodeIfPresent(RunnerScope.self, forKey: .scope) {
+            self.scope = scope
+        } else {
+            scope = Self.legacyScope(try container.decode(String.self, forKey: .repository))
+        }
+        path = try container.decode(String.self, forKey: .path)
+        labels = try container.decode([String].self, forKey: .labels)
+        status = try container.decode(RunnerStatus.self, forKey: .status)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        environmentVariables = try container.decode([String: String].self, forKey: .environmentVariables)
+        preJobScript = try container.decodeIfPresent(String.self, forKey: .preJobScript)
+        postJobScript = try container.decodeIfPresent(String.self, forKey: .postJobScript)
+    }
+
+    private static func legacyScope(_ repository: String) -> RunnerScope {
+        repository.contains("/") ? .repository(fullName: repository) : .organization(login: repository)
+    }
+
+    /// Also writes `repository`, so a build from before scopes can still read the list.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(repository, forKey: .repository)
+        try container.encode(path, forKey: .path)
+        try container.encode(labels, forKey: .labels)
+        try container.encode(status, forKey: .status)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(environmentVariables, forKey: .environmentVariables)
+        try container.encodeIfPresent(preJobScript, forKey: .preJobScript)
+        try container.encodeIfPresent(postJobScript, forKey: .postJobScript)
+    }
+
     // Custom equality based on ID only
     static func == (lhs: LocalRunner, rhs: LocalRunner) -> Bool {
         return lhs.id == rhs.id

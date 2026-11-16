@@ -57,6 +57,11 @@ struct SidebarView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     
+                    // Organizations section (orgs the user administers)
+                    if showsOrganizations {
+                        organizationsSection
+                    }
+                    
                     // Repositories section
                     repositoriesSection
                 }
@@ -71,6 +76,88 @@ struct SidebarView: View {
                 await loadRepositories()
             }
         }
+        // Re-runs when a re-sign-in grants admin:org.
+        .task(id: authService.needsScopeUpgrade) {
+            await loadOrganizations()
+        }
+    }
+    
+    /// Hidden while the token lacks admin:org (the call would 403) and when there are none.
+    private var showsOrganizations: Bool {
+        !authService.needsScopeUpgrade && !appState.organizations.isEmpty
+    }
+    
+    private var organizationsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "building.2")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.purple)
+                
+                Text("Organizations")
+                    .font(.system(.headline, design: .rounded, weight: .semibold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Text("\(appState.organizations.count)")
+                    .font(.system(.caption2, design: .rounded, weight: .bold))
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.purple.opacity(0.08))
+                    )
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            
+            LazyVStack(spacing: 4) {
+                ForEach(appState.organizations) { organization in
+                    organizationRow(organization)
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+    }
+    
+    private func organizationRow(_ organization: GitHubOrganization) -> some View {
+        let isSelected = appState.selectedView == .organization(organization)
+        return Button(action: {
+            appState.selectedView = .organization(organization)
+        }) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.purple.opacity(0.15))
+                        .frame(width: 24, height: 24)
+                    
+                    Image(systemName: "building.2")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.purple)
+                }
+                
+                Text(organization.login)
+                    .font(.system(.body, design: .rounded, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                if isSelected {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
     }
     
     private var modernHeader: some View {
@@ -319,6 +406,20 @@ struct SidebarView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+    
+    private func loadOrganizations() async {
+        guard !authService.needsScopeUpgrade, !appState.isLoadingOrganizations else { return }
+        
+        appState.isLoadingOrganizations = true
+        defer { appState.isLoadingOrganizations = false }
+        do {
+            appState.organizations = try await apiService.fetchAdminOrganizations()
+        } catch {
+            if !error.isCancellation {
+                print("Failed to load organizations: \(error)")
+            }
+        }
     }
     
     private func loadRepositories() async {

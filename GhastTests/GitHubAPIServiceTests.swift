@@ -70,7 +70,7 @@ final class GitHubAPIServiceTests: XCTestCase {
         )
         
         do {
-            _ = try await service.fetchRunners(for: mockRepo)
+            _ = try await service.fetchRunners(in: mockRepo.runnerScope)
             XCTFail("Should throw error when no token is set")
         } catch {
             // Expected to fail
@@ -92,7 +92,7 @@ final class GitHubAPIServiceTests: XCTestCase {
         )
         
         do {
-            _ = try await service.createRegistrationToken(for: mockRepo)
+            _ = try await service.createRegistrationToken(for: mockRepo.runnerScope)
             XCTFail("Should throw error when no token is set")
         } catch {
             // Expected to fail
@@ -114,7 +114,7 @@ final class GitHubAPIServiceTests: XCTestCase {
         )
         
         do {
-            _ = try await service.createRemoveToken(for: mockRepo)
+            _ = try await service.createRemoveToken(for: mockRepo.runnerScope)
             XCTFail("Should throw error when no token is set")
         } catch {
             // Expected to fail
@@ -136,7 +136,7 @@ final class GitHubAPIServiceTests: XCTestCase {
         )
         
         do {
-            try await service.deleteRunner(runnerId: 123, from: mockRepo)
+            try await service.deleteRunner(runnerId: 123, from: mockRepo.runnerScope)
             XCTFail("Should throw error when no token is set")
         } catch {
             // Expected to fail
@@ -158,19 +158,7 @@ final class GitHubAPIServiceTests: XCTestCase {
         )
         
         do {
-            _ = try await service.fetchRunnerApplications(for: mockRepo)
-            XCTFail("Should throw error when no token is set")
-        } catch {
-            // Expected to fail
-            XCTAssertNotNil(error)
-        }
-    }
-    
-    func testFetchOrganizationRunnersWithoutToken() async {
-        service.setAccessToken("")
-        
-        do {
-            _ = try await service.fetchOrganizationRunners(org: "test-org")
+            _ = try await service.fetchRunnerApplications(for: mockRepo.runnerScope)
             XCTFail("Should throw error when no token is set")
         } catch {
             // Expected to fail
@@ -233,7 +221,7 @@ extension GitHubAPIServiceTests {
         }
         
         service.setAccessToken(token)
-        let user = try await service.fetchCurrentUser()
+        let user = try await service.fetchCurrentUser().user
         
         XCTAssertNotNil(user.id)
         XCTAssertFalse(user.login.isEmpty)

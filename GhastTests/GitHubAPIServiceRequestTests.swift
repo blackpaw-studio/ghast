@@ -10,8 +10,6 @@ import Foundation
     static let runnerJSON = #"{"id":42,"name":"r1","os":"macOS","status":"online","busy":false,"labels":[{"id":1,"name":"self-hosted","type":"read-only"}]}"#
     static let tokenJSON = #"{"token":"AAA","expires_at":"2026-01-01T00:00:00Z"}"#
 
-    let repository = try! JSONDecoder().decode(GitHubRepository.self, from: Data(Self.repoJSON.utf8))
-
     func makeService(_ replies: [FakeTransport.Reply], token: String? = "tok") -> (GitHubAPIService, FakeTransport) {
         let transport = FakeTransport(replies)
         let service = GitHubAPIService(transport: transport)
@@ -35,13 +33,29 @@ import Foundation
     @Test func fetchCurrentUserUsesStoredToken() async throws {
         let (service, transport) = makeService([.json(Self.userJSON)])
 
-        let user = try await service.fetchCurrentUser(token: nil)
+        let authenticated = try await service.fetchCurrentUser(token: nil)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "GET")
         #expect(request.url?.absoluteString == "https://api.github.com/user")
         expectStandardHeaders(request)
-        #expect(user.login == "octocat")
+        #expect(authenticated.user.login == "octocat")
+    }
+
+    @Test func fetchCurrentUserParsesGrantedScopesHeader() async throws {
+        let (service, _) = makeService([.json(Self.userJSON, headers: ["X-OAuth-Scopes": "repo, user:email, admin:org"])])
+
+        let authenticated = try await service.fetchCurrentUser(token: nil)
+
+        #expect(authenticated.grantedScopes == ["repo", "user:email", "admin:org"])
+    }
+
+    @Test func fetchCurrentUserWithoutScopesHeaderReportsUnknownScopes() async throws {
+        let (service, _) = makeService([.json(Self.userJSON)])
+
+        let authenticated = try await service.fetchCurrentUser(token: nil)
+
+        #expect(authenticated.grantedScopes == nil)
     }
 
     @Test func fetchCurrentUserWithExplicitTokenSendsThatToken() async throws {
@@ -77,76 +91,137 @@ import Foundation
         #expect(repos.count == 101)
     }
 
-    @Test func fetchRunnersUnwrapsRunnersList() async throws {
+    nonisolated static let scopes: [RunnerScope] = [.repository(fullName: "octo/ghast"), .organization(login: "acme")]
+
+    func base(_ scope: RunnerScope) -> String {
+        switch scope {
+        case .repository: "https://api.github.com/repos/octo/ghast"
+        case .organization: "https://api.github.com/orgs/acme"
+        }
+    }
+
+    @Test(arguments: scopes)
+    func fetchRunnersUnwrapsRunnersList(scope: RunnerScope) async throws {
         let (service, transport) = makeService([.json(#"{"total_count":1,"runners":[\#(Self.runnerJSON)]}"#)])
 
-        let runners = try await service.fetchRunners(for: repository)
+        let runners = try await service.fetchRunners(in: scope)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "GET")
-        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners")
+        #expect(request.url.map { "\($0.scheme!)://\($0.host!)\($0.path)" } == "\(base(scope))/actions/runners")
+        #expect(query(request) == ["per_page": "100", "page": "1"])
         expectStandardHeaders(request)
         #expect(runners.map(\.id) == [42])
+        #expect(await transport.requests.count == 1)
     }
 
-    @Test func fetchOrganizationRunnersUsesOrgPath() async throws {
-        let (service, transport) = makeService([.json(#"{"total_count":1,"runners":[\#(Self.runnerJSON)]}"#)])
+    @Test(arguments: scopes)
+    func fetchRunnersPaginatesUntilShortPage(scope: RunnerScope) async throws {
+        let fullPage = Array(repeating: Self.runnerJSON, count: 100).joined(separator: ",")
+        let (service, transport) = makeService([
+            .json(#"{"total_count":101,"runners":[\#(fullPage)]}"#),
+            .json(#"{"total_count":101,"runners":[\#(Self.runnerJSON)]}"#),
+        ])
 
-        let runners = try await service.fetchOrganizationRunners(org: "acme")
+        let runners = try await service.fetchRunners(in: scope)
 
-        let request = try #require(await transport.requests.first)
-        #expect(request.httpMethod == "GET")
-        #expect(request.url?.absoluteString == "https://api.github.com/orgs/acme/actions/runners")
-        expectStandardHeaders(request)
-        #expect(runners.count == 1)
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        #expect(requests.map { query($0)["page"] } == ["1", "2"])
+        #expect(requests.allSatisfy { $0.url?.path.hasSuffix("/actions/runners") == true })
+        #expect(runners.count == 101)
     }
 
-    @Test func createRegistrationTokenPosts() async throws {
+    @Test(arguments: scopes)
+    func createRegistrationTokenPosts(scope: RunnerScope) async throws {
         let (service, transport) = makeService([.json(Self.tokenJSON, status: 201)])
 
-        let token = try await service.createRegistrationToken(for: repository)
+        let token = try await service.createRegistrationToken(for: scope)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "POST")
-        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/registration-token")
+        #expect(request.url?.absoluteString == "\(base(scope))/actions/runners/registration-token")
         expectStandardHeaders(request)
         #expect(token.token == "AAA")
     }
 
-    @Test func createRemoveTokenPosts() async throws {
+    @Test(arguments: scopes)
+    func createRemoveTokenPosts(scope: RunnerScope) async throws {
         let (service, transport) = makeService([.json(Self.tokenJSON, status: 201)])
 
-        let token = try await service.createRemoveToken(for: repository)
+        let token = try await service.createRemoveToken(for: scope)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "POST")
-        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/remove-token")
+        #expect(request.url?.absoluteString == "\(base(scope))/actions/runners/remove-token")
         expectStandardHeaders(request)
         #expect(token.token == "AAA")
     }
 
-    @Test func deleteRunnerSendsDeleteAndAcceptsEmptyBody() async throws {
+    @Test(arguments: scopes)
+    func deleteRunnerSendsDeleteAndAcceptsEmptyBody(scope: RunnerScope) async throws {
         let (service, transport) = makeService([.json("", status: 204)])
 
-        try await service.deleteRunner(runnerId: 42, from: repository)
+        try await service.deleteRunner(runnerId: 42, from: scope)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "DELETE")
-        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/42")
+        #expect(request.url?.absoluteString == "\(base(scope))/actions/runners/42")
         expectStandardHeaders(request)
     }
 
-    @Test func fetchRunnerApplicationsDecodesList() async throws {
+    @Test(arguments: scopes)
+    func fetchRunnerApplicationsDecodesList(scope: RunnerScope) async throws {
         let body = #"[{"os":"osx","architecture":"arm64","download_url":"https://d/x.tar.gz","filename":"x.tar.gz"}]"#
         let (service, transport) = makeService([.json(body)])
 
-        let apps = try await service.fetchRunnerApplications(for: repository)
+        let apps = try await service.fetchRunnerApplications(for: scope)
 
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "GET")
-        #expect(request.url?.absoluteString == "https://api.github.com/repos/octo/ghast/actions/runners/downloads")
+        #expect(request.url?.absoluteString == "\(base(scope))/actions/runners/downloads")
         expectStandardHeaders(request)
         #expect(apps.map(\.architecture) == ["arm64"])
+    }
+
+    // MARK: Organizations
+
+    static func membershipJSON(login: String, id: Int, role: String) -> String {
+        #"{"state":"active","role":"\#(role)","organization":{"login":"\#(login)","id":\#(id),"avatar_url":"https://a/\#(id)"}}"#
+    }
+
+    @Test func fetchAdminOrganizationsKeepsOnlyAdminMemberships() async throws {
+        let body = "[" + [
+            Self.membershipJSON(login: "acme", id: 1, role: "admin"),
+            Self.membershipJSON(login: "other", id: 2, role: "member"),
+            Self.membershipJSON(login: "zeta", id: 3, role: "admin"),
+        ].joined(separator: ",") + "]"
+        let (service, transport) = makeService([.json(body)])
+
+        let orgs = try await service.fetchAdminOrganizations()
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.path == "/user/memberships/orgs")
+        #expect(query(request) == ["state": "active", "per_page": "100", "page": "1"])
+        expectStandardHeaders(request)
+        #expect(orgs == [
+            GitHubOrganization(login: "acme", id: 1, avatarURL: "https://a/1"),
+            GitHubOrganization(login: "zeta", id: 3, avatarURL: "https://a/3"),
+        ])
+    }
+
+    @Test func fetchAdminOrganizationsPaginatesUntilShortPage() async throws {
+        let membership = Self.membershipJSON(login: "acme", id: 1, role: "admin")
+        let fullPage = "[" + Array(repeating: membership, count: 100).joined(separator: ",") + "]"
+        let (service, transport) = makeService([.json(fullPage), .json("[\(membership)]")])
+
+        let orgs = try await service.fetchAdminOrganizations()
+
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        #expect(query(requests[1])["page"] == "2")
+        #expect(orgs.count == 101)
     }
 
     @Test func requestWithoutTokenOmitsAuthorizationButKeepsOtherHeaders() async throws {

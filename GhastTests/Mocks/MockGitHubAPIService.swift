@@ -9,6 +9,9 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     var shouldThrowError = false
     var mockRepositories: [GitHubRepository] = []
     var mockRunners: [GitHubRunner] = []
+    var mockOrganizations: [GitHubOrganization] = []
+    /// Scopes whose runner calls fail, to exercise one-scope-fails paths.
+    var failingScopes: Set<RunnerScope> = []
     
     /// When true, `fetchRepositories` suspends until `releasePendingRequests()`, so a test can
     /// capture the in-flight (loading) state deterministically.
@@ -26,12 +29,16 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         accessTokens.append(token)
     }
     
-    func fetchCurrentUser(token: String? = nil) async throws -> GitHubUser {
+    func fetchCurrentUser(token: String? = nil) async throws -> AuthenticatedUser {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
         
-        return GitHubUser(
+        return AuthenticatedUser(user: mockUser, grantedScopes: Set(GitHubAuthService.scopes))
+    }
+
+    private var mockUser: GitHubUser {
+        GitHubUser(
             id: 12345,
             login: "testuser",
             avatarURL: "https://example.com/avatar.png",
@@ -52,8 +59,15 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRepositories
     }
     
-    func fetchRunners(for repository: GitHubRepository) async throws -> [GitHubRunner] {
+    func fetchAdminOrganizations() async throws -> [GitHubOrganization] {
         if shouldThrowError {
+            throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
+        }
+        return mockOrganizations
+    }
+
+    func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
+        if shouldThrowError || failingScopes.contains(scope) {
             throw GitHubAPIError.unauthorized
         }
         
@@ -61,7 +75,7 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRunners
     }
     
-    func createRegistrationToken(for repository: GitHubRepository) async throws -> GitHubRunnerRegistrationToken {
+    func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
@@ -72,15 +86,7 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         )
     }
     
-    func fetchOrganizationRunners(org: String) async throws -> [GitHubRunner] {
-        if shouldThrowError {
-            throw GitHubAPIError.unauthorized
-        }
-        
-        return mockRunners
-    }
-    
-    func createRemoveToken(for repository: GitHubRepository) async throws -> GitHubRunnerRemoveToken {
+    func createRemoveToken(for scope: RunnerScope) async throws -> GitHubRunnerRemoveToken {
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
@@ -91,14 +97,14 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         )
     }
     
-    func deleteRunner(runnerId: Int, from repository: GitHubRepository) async throws {
+    func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {
         if shouldThrowError {
             throw GitHubAPIError.notFound
         }
         // Successfully "deleted"
     }
     
-    func fetchRunnerApplications(for repository: GitHubRepository) async throws -> [GitHubRunnerApplication] {
+    func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         if shouldThrowError {
             throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
         }

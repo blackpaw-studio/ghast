@@ -8,6 +8,10 @@ class MockGitHubAuthService: GitHubAuthService {
     init() {
         super.init(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
     }
+
+    /// Set to show the admin:org scope-upgrade state without running auth.
+    var stubbedNeedsScopeUpgrade = false
+    override var needsScopeUpgrade: Bool { stubbedNeedsScopeUpgrade }
     
     override func checkStoredAuthentication() async {
         // Do nothing - prevent actual keychain access or authentication

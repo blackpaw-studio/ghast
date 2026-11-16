@@ -111,7 +111,7 @@ struct RunnerConfigurationView: View {
                         Image(systemName: "building.2")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
-                        Text(runner.repository)
+                        RunnerScopeLabel(scope: runner.scope)
                             .font(.system(.caption, design: .rounded, weight: .medium))
                             .foregroundStyle(.secondary)
                     }

@@ -112,7 +112,7 @@ struct NewRunnerFlowView: View {
         .frame(minWidth: 1000, idealWidth: 1200, maxWidth: 1400, minHeight: 700, idealHeight: 800, maxHeight: 1000)
         .sheet(isPresented: $showingAddRunner) {
             if let repository = selectedRepository {
-                AddRunnerView(repository: repository) {
+                AddRunnerView(scope: repository.runnerScope, repository: repository) {
                     // Runner was added successfully
                     dismiss()
                 }
