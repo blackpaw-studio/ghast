@@ -141,6 +141,34 @@ struct RunnerWrapperTests {
         #expect(service.localRunners[0].lastExit?.code == 137)
     }
 
+    @Test("a wrapper killed by SIGTERM from outside Ghast is an unexpected exit with code 143")
+    func externalTerminate() async throws {
+        let harness = try makeRunner(runScript: "echo $PPID > wrapper.pid\nsleep 60")
+        let (service, runner, folder) = (harness.service, harness.runner, harness.folder)
+        try await service.startRunner(id: runner.id)
+        let pidFile = folder.appendingPathComponent("wrapper.pid")
+        try await waitUntil("run.sh to report the wrapper's pid") {
+            (try? String(contentsOf: pidFile, encoding: .utf8))?.hasSuffix("\n") == true
+        }
+        let wrapperPID = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+
+        // Not Ghast's stop path: an outside process signals the wrapper itself.
+        #expect(kill(wrapperPID, SIGTERM) == 0)
+        try await waitUntil("exit") { !isRunning(service.processStates[runner.id]) }
+        // The wrapper leads its group, and its `sleep` outlives it; clean up.
+        kill(-wrapperPID, SIGKILL)
+
+        guard case let .exited(exit)? = service.processStates[runner.id] else {
+            Issue.record("expected .exited, got \(String(describing: service.processStates[runner.id]))")
+            return
+        }
+        #expect(exit.code == 143)
+        #expect(!exit.wasRequested)
+        #expect(service.localRunners[0].lastExit == exit)
+        #expect(!service.localRunners[0].shouldBeRunning)
+        #expect(RunnerDisplayStatus.make(processState: .exited(exit), lastExit: exit, activity: RunnerActivity()) == .error(code: 143, at: exit.at))
+    }
+
     @Test("a requested stop is .stopped, marked requested, and clears run intent")
     func requestedStop() async throws {
         let harness = try makeRunner(runScript: "echo up\nsleep 60")
