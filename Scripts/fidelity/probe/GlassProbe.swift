@@ -5,7 +5,7 @@
 // samples its backdrop, the stripes appear blurred behind it.
 //
 // Prints:  probe-ready window=<n> backdrop=<n> rect=<x>,<y>,<w>,<h>
-// where rect is the window in global top-left display coordinates (for screencapture -R).
+// where rect is the window's actual frame in global top-left display coordinates (for a region capture).
 import SwiftUI
 import AppKit
 
@@ -124,10 +124,13 @@ final class ProbeDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         try? await Task.sleep(for: .seconds(1))
-        // Global top-left coordinates are measured from the primary display's top edge.
+        // Report the window's real frame, not the requested one: SwiftUI sizes the window to its
+        // content plus the title bar, so the two differ. Global top-left coordinates are
+        // measured from the primary display's top edge.
+        let actual = window.frame
         let primaryHeight = NSScreen.screens[0].frame.height
-        let top = primaryHeight - frame.maxY
-        print("probe-ready window=\(window.windowNumber) backdrop=\(backdrop.windowNumber) rect=\(Int(frame.minX)),\(Int(top)),\(Int(frame.width)),\(Int(frame.height))")
+        let top = primaryHeight - actual.maxY
+        print("probe-ready window=\(window.windowNumber) backdrop=\(backdrop.windowNumber) rect=\(Int(actual.minX)),\(Int(top)),\(Int(actual.width)),\(Int(actual.height))")
         fflush(stdout)
     }
 }

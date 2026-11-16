@@ -22,9 +22,10 @@ need magick
 mkdir -p "$OUT_DIR"
 require_screen_recording
 
-# Sidebar region inside the probe window, in points from the window's top-left (below the
-# toolbar, clear of the rounded corners).
-SIDEBAR_X=16 SIDEBAR_Y=120 SIDEBAR_W=200 SIDEBAR_H=300
+# Sidebar region inside the probe window, in points from the window's top-left: the empty part
+# below the runner rows (they end near y=220), clear of the toolbar and the rounded corners.
+# It must hold no text or selection, or its variance would not come from the backdrop.
+SIDEBAR_X=16 SIDEBAR_Y=300 SIDEBAR_W=200 SIDEBAR_H=400
 # window vs region agreement: normalised RMSE must stay under this (corners and shadow differ a little).
 AGREE_MAX="0.03"
 # Blur window: stddev of the sidebar crop, as a fraction of the sharp backdrop's.
@@ -66,7 +67,9 @@ check "window capture is 2x" "$ok" "${WIDTH}x${HEIGHT}, expected ${EXPECT_W}x${E
 
 # (b) glass sampled its backdrop: stddev between "flat" and the sharp stripes' own.
 sidebar_crop="$((SIDEBAR_W * 2))x$((SIDEBAR_H * 2))+$((SIDEBAR_X * 2))+$((SIDEBAR_Y * 2))"
-backdrop_crop="$((SIDEBAR_W * 2))x$((SIDEBAR_H * 2))+$(((RX + SIDEBAR_X) * 2))+$(((RY + SIDEBAR_Y) * 2))"
+# The backdrop capture is the whole display, so its offsets are display-relative.
+IFS=, read -r VDX VDY <<<"$VD_ORIGIN"
+backdrop_crop="$((SIDEBAR_W * 2))x$((SIDEBAR_H * 2))+$(((RX - VDX + SIDEBAR_X) * 2))+$(((RY - VDY + SIDEBAR_Y) * 2))"
 stddev() { magick "$1" -crop "$2" +repage -colorspace Gray -format '%[fx:standard_deviation]' info:; }
 SIDEBAR_SD="$(stddev "$WIN_PNG" "$sidebar_crop")"
 SOURCE_SD="$(stddev "$BACKDROP_PNG" "$backdrop_crop")"

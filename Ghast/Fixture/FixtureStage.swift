@@ -110,8 +110,12 @@ final class FixtureStage {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         await waitForStableLayout(of: window)
-        let rect = [placement.topLeft.x, placement.topLeft.y, placement.size.width, placement.size.height]
-            .map { String(Int($0)) }
+        // The window's real frame: a window can end up larger than requested (title bar, content
+        // minimums), and the compare script crops the mockup to exactly this rect.
+        let frame = window.frame
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? frame.maxY
+        let rect = [frame.minX, primaryHeight - frame.maxY, frame.width, frame.height]
+            .map { String(Int($0.rounded())) }
             .joined(separator: ",")
         emit("\(Self.readyPrefix) window=\(window.windowNumber) rect=\(rect)")
     }
