@@ -630,9 +630,8 @@ transport, sleeper, file trasher).
    reset headers.
 
 ## Open questions (owner's call)
-1. **Errored runner's word in the menu bar.** MenuBar.png shows ghast-release
-   as "Stopped" with a red dot; the kit's rule is red = Error. Use "Error"
-   (recommended, consistent with sidebar) or keep "Stopped"?
+1. ~~Errored runner's word in the menu bar~~ Resolved: the menu shows
+   "Exited" with the red dot (MenuBar.png re-rendered), matching the sidebar.
 2. **Dock icon.** Keep Ghast a regular Dock app (current, recommended), or
    switch to menu-bar-only (accessory) when the menu bar extra is on and no
    window is open?
