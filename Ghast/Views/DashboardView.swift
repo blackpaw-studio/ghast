@@ -36,11 +36,16 @@ struct DashboardView: View {
         )
         .navigationTitle("")
         .task {
-            if !appState.repositories.isEmpty {
+            if !statsScopes.isEmpty {
                 await loadRunnerStats()
             }
         }
         .onChange(of: appState.repositories) {
+            Task {
+                await loadRunnerStats()
+            }
+        }
+        .onChange(of: appState.organizations) {
             Task {
                 await loadRunnerStats()
             }
@@ -365,31 +370,27 @@ struct DashboardView: View {
         }
     }
     
+    /// The first 10 repositories (to limit API calls) plus every listed organization.
+    private var statsScopes: [RunnerScope] {
+        appState.repositories.prefix(10).map(\.runnerScope)
+            + appState.organizations.map { .organization(login: $0.login) }
+    }
+    
     private func loadRunnerStats() async {
-        if appState.repositories.isEmpty { return }
+        let scopes = statsScopes
+        if scopes.isEmpty { return }
         
         isLoadingStats = true
-        var total = 0
-        var active = 0
-        var busy = 0
-        
-        // Load stats from first 10 repositories to avoid too many API calls
-        for repository in appState.repositories.prefix(10) {
-            do {
-                let runners = try await apiService.fetchRunners(in: repository.runnerScope)
-                total += runners.count
-                active += runners.filter { $0.isOnline }.count
-                busy += runners.filter { $0.busy }.count
-            } catch {
-                // Silently continue with other repositories
-                continue
-            }
+        // A failing scope is skipped inside `load`; only cancellation escapes.
+        guard let stats = try? await RunnerStats.load(scopes: scopes, fetch: { try await apiService.fetchRunners(in: $0) }) else {
+            isLoadingStats = false
+            return
         }
         
         await MainActor.run {
-            totalRunners = total
-            activeRunners = active
-            busyRunners = busy
+            totalRunners = stats.total
+            activeRunners = stats.online
+            busyRunners = stats.busy
             isLoadingStats = false
         }
     }
