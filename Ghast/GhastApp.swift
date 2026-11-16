@@ -14,6 +14,7 @@ struct AppDependencies {
     let hostInfo: any HostInfo
     let fileTrasher: any FileTrasher
     let processLauncher: any RunnerProcessLauncher
+    let settings: AppSettings
 
     init(
         runnerService: RunnerService,
@@ -24,7 +25,8 @@ struct AppDependencies {
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
         hostInfo: any HostInfo = SystemHostInfo(),
         fileTrasher: any FileTrasher = WorkspaceFileTrasher(),
-        processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher()
+        processLauncher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
+        settings: AppSettings
     ) {
         self.runnerService = runnerService
         self.activityStore = activityStore
@@ -35,6 +37,7 @@ struct AppDependencies {
         self.hostInfo = hostInfo
         self.fileTrasher = fileTrasher
         self.processLauncher = processLauncher
+        self.settings = settings
     }
 
     static func live() -> AppDependencies {
@@ -46,7 +49,8 @@ struct AppDependencies {
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
-            processLauncher: launcher
+            processLauncher: launcher,
+            settings: AppSettings(defaults: .standard)
         )
     }
 }

@@ -77,7 +77,8 @@ struct FixtureDependencies {
             authService: GitHubAuthService(apiService: api, tokenStore: tokenStore),
             clock: clock,
             hostInfo: FixtureHostInfo(),
-            processLauncher: launcher
+            processLauncher: launcher,
+            settings: AppSettings(defaults: defaults)
         )
         return FixtureDependencies(
             launch: launch,

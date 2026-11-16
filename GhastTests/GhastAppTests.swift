@@ -106,7 +106,8 @@ final class GhastAppTests: XCTestCase {
         let appDelegate = AppDelegate(dependencies: AppDependencies(
             runnerService: runnerService,
             apiService: GitHubAPIService(),
-            authService: GitHubAuthService(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
+            authService: GitHubAuthService(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore()),
+            settings: AppSettings(defaults: makeIsolatedDefaults().defaults)
         ))
         
         // A runner whose run.sh sleeps, so there is a real process to stop
