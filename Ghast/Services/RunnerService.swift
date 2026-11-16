@@ -1,25 +1,27 @@
 import Foundation
-import Combine
+import Observation
 
 /// Service for managing local GitHub Actions runners
 @MainActor
-class RunnerService: ObservableObject {
-    static let shared = RunnerService()
+@Observable
+class RunnerService {
+    static let defaultRunnersDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".ghast")
+        .appendingPathComponent("runners")
     
-    @Published var localRunners: [LocalRunner] = []
+    @ObservationIgnored private let defaults: UserDefaults
     
-    private var runningProcesses: [String: Process] = [:]
-    private var processGroupIDs: [String: pid_t] = [:]
-    private var logStreams: [String: PassthroughSubject<String, Never>] = [:]
+    var localRunners: [LocalRunner] = []
     
-    /// Base directory for all managed runners
-    private var runnersBaseDirectory: URL {
-        // Use user's home directory instead of sandboxed Application Support
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        return homeDir.appendingPathComponent(".ghast").appendingPathComponent("runners")
-    }
+    @ObservationIgnored private var runningProcesses: [String: Process] = [:]
+    @ObservationIgnored private var processGroupIDs: [String: pid_t] = [:]
     
-    private init() {
+    /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
+    @ObservationIgnored private let runnersBaseDirectory: URL
+    
+    init(defaults: UserDefaults = .standard, runnersDirectory: URL = RunnerService.defaultRunnersDirectory) {
+        self.defaults = defaults
+        self.runnersBaseDirectory = runnersDirectory
         createRunnersDirectoryIfNeeded()
         loadRunners()
         // Discover any existing runners not in our database
@@ -358,10 +360,6 @@ class RunnerService: ObservableObject {
                 #endif
                 runningProcesses.removeValue(forKey: id)
                 processGroupIDs.removeValue(forKey: id)
-                if let stream = logStreams[id] {
-                    stream.send(completion: .finished)
-                    logStreams.removeValue(forKey: id)
-                }
             }
         }
         
@@ -442,10 +440,6 @@ class RunnerService: ObservableObject {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
-        // Create log stream
-        let logSubject = PassthroughSubject<String, Never>()
-        logStreams[id] = logSubject
-        
         // Send initial log message to file
         let logFileURL = URL(fileURLWithPath: logFile)
         let initialMessage = "\(Date().formatted(date: .omitted, time: .standard)) 🏃 Starting runner '\(runner.name)' at \(runner.path)\n"
@@ -463,11 +457,14 @@ class RunnerService: ObservableObject {
             try? initialMessage.write(to: logFileURL, atomically: false, encoding: .utf8)
         }
         
-        // Setup termination handler
+        // Setup termination handler. It runs on a background queue, so it only uses value
+        // snapshots; the state update hops to the main actor.
+        let runnerName = runner.name
+        let runnerDirectory = runner.path
         process.terminationHandler = { [weak self] terminatedProcess in
             let exitCode = terminatedProcess.terminationStatus
             #if DEBUG
-            print("🏃 Runner '\(runner.name)' terminated with exit code: \(exitCode)")
+            print("🏃 Runner '\(runnerName)' terminated with exit code: \(exitCode)")
             #endif
             
             // Log termination to file
@@ -489,7 +486,7 @@ class RunnerService: ObservableObject {
             case 127:
                 errorMessage = "❌ Error: Command not found (./run.sh missing or not executable)\n"
                 #if DEBUG
-                print("❌ Error: ./run.sh not found or not executable in \(runner.path)")
+                print("❌ Error: ./run.sh not found or not executable in \(runnerDirectory)")
                 #endif
             case 126:
                 errorMessage = "❌ Error: Permission denied (./run.sh not executable)\n"
@@ -512,21 +509,8 @@ class RunnerService: ObservableObject {
             }
             
             // Schedule cleanup on main actor
-            DispatchQueue.main.async {
-                guard let strongSelf = self else { return }
-                
-                // Remove from tracking - this prevents reuse of the Process instance
-                strongSelf.runningProcesses.removeValue(forKey: id)
-                strongSelf.processGroupIDs.removeValue(forKey: id)
-                
-                // Close log stream
-                strongSelf.logStreams[id]?.send(completion: .finished)
-                strongSelf.logStreams[id] = nil
-                
-                if let index = strongSelf.localRunners.firstIndex(where: { $0.id == id }) {
-                    strongSelf.localRunners[index].status = .stopped
-                    strongSelf.saveRunners()
-                }
+            Task { @MainActor [weak self] in
+                self?.didTerminate(id: id)
             }
         }
         
@@ -548,11 +532,21 @@ class RunnerService: ObservableObject {
         localRunners[runnerIndex].status = .running
         saveRunners()
         
-        // Send process started confirmation
-        logSubject.send("🏃 Runner process started (PID: \(process.processIdentifier))\n")
         #if DEBUG
         print("🏃 Started runner '\(runner.name)' with PID: \(process.processIdentifier)")
         #endif
+    }
+    
+    /// Drops the finished process from tracking and marks the runner stopped.
+    private func didTerminate(id: String) {
+        // Remove from tracking - this prevents reuse of the Process instance
+        runningProcesses.removeValue(forKey: id)
+        processGroupIDs.removeValue(forKey: id)
+        
+        if let index = localRunners.firstIndex(where: { $0.id == id }) {
+            localRunners[index].status = .stopped
+            saveRunners()
+        }
     }
     
     func stopRunner(id: String) {
@@ -563,12 +557,11 @@ class RunnerService: ObservableObject {
             return 
         }
         
+        #if DEBUG
         if let runner = localRunners.first(where: { $0.id == id }) {
-            logStreams[id]?.send("🏃 Stopping runner '\(runner.name)'...\n")
-            #if DEBUG
             print("🏃 Stopping runner '\(runner.name)' (PID: \(process.processIdentifier))")
-            #endif
         }
+        #endif
         
         // Use stored process group ID if available, otherwise fall back to process PID
         let pgid = processGroupIDs[id] ?? process.processIdentifier
@@ -580,70 +573,54 @@ class RunnerService: ObservableObject {
         // First try graceful termination of the process group
         kill(-pgid, SIGTERM)
         
+        // Read the path while still on the main actor; only value snapshots cross to the background queue.
+        let runnerPath = localRunners.first(where: { $0.id == id })?.path
+        let pid = process.processIdentifier
+        
         // Also kill any related processes by pattern for this specific runner (async)
-        if let runner = localRunners.first(where: { $0.id == id }) {
-            let runnerPath = runner.path
+        if let runnerPath {
             DispatchQueue.global(qos: .utility).async {
-                let cleanupScript = """
-                # Fast kill processes in this specific runner directory
-                pkill -f "\(runnerPath)" 2>/dev/null || true
-                """
-                
-                let cleanupProcess = Process()
-                cleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-                cleanupProcess.arguments = ["-c", cleanupScript]
-                
-                do {
-                    try cleanupProcess.run()
-                    cleanupProcess.waitUntilExit()
-                } catch {
-                    #if DEBUG
-                    print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
-                    #endif
-                }
+                Self.killProcesses(matching: runnerPath, signal: nil)
             }
         }
         
         // Give it a moment to terminate gracefully (reduced timeout)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            if process.isRunning {
-                #if DEBUG
-                print("🏃 Force killing runner process group (PGID: \(pgid))")
-                #endif
-                kill(-pgid, SIGKILL)
-                kill(process.processIdentifier, SIGKILL)
-                
-                // Force kill any remaining processes for this runner (async)
-                Task { @MainActor in
-                    if let runner = self?.localRunners.first(where: { $0.id == id }) {
-                        let runnerPath = runner.path
-                        DispatchQueue.global(qos: .utility).async {
-                            let forceCleanupScript = """
-                            # Fast force kill processes in this specific runner directory
-                            pkill -9 -f "\(runnerPath)" 2>/dev/null || true
-                            """
-                            
-                            let forceCleanupProcess = Process()
-                            forceCleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-                            forceCleanupProcess.arguments = ["-c", forceCleanupScript]
-                            
-                            do {
-                                try forceCleanupProcess.run()
-                                forceCleanupProcess.waitUntilExit()
-                            } catch {
-                                #if DEBUG
-                                print("🏃 Warning: Could not run force cleanup: \(error)")
-                                #endif
-                            }
-                        }
-                    }
-                }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            // Liveness by pid: the Process object itself must not cross isolation boundaries.
+            guard kill(pid, 0) == 0 else { return }
+            #if DEBUG
+            print("🏃 Force killing runner process group (PGID: \(pgid))")
+            #endif
+            kill(-pgid, SIGKILL)
+            kill(pid, SIGKILL)
+            
+            // Force kill any remaining processes for this runner
+            if let runnerPath {
+                Self.killProcesses(matching: runnerPath, signal: "-9")
             }
         }
         
         if let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) {
             localRunners[runnerIndex].status = .stopped
             saveRunners()
+        }
+    }
+    
+    /// Runs `pkill -f <path>` (optionally with a signal flag) to catch stragglers in a runner directory.
+    /// Blocks until `pkill` exits, so call it off the main actor.
+    nonisolated private static func killProcesses(matching runnerPath: String, signal: String?) {
+        let flag = signal.map { "\($0) " } ?? ""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", "pkill \(flag)-f \"\(runnerPath)\" 2>/dev/null || true"]
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            #if DEBUG
+            print("🏃 Warning: Could not run runner-specific cleanup: \(error)")
+            #endif
         }
     }
     
@@ -656,12 +633,11 @@ class RunnerService: ObservableObject {
         let processesToStop = Array(runningProcesses)
         
         for (id, process) in processesToStop {
+            #if DEBUG
             if let runner = localRunners.first(where: { $0.id == id }) {
-                #if DEBUG
                 print("🏃 Terminating runner '\(runner.name)' (PID: \(process.processIdentifier))")
-                #endif
-                logStreams[id]?.send("🏃 App terminating - stopping runner '\(runner.name)'...\n")
             }
+            #endif
             
             // Use stored process group ID if available, otherwise fall back to process PID
             let pgid = processGroupIDs[id] ?? process.processIdentifier
@@ -710,12 +686,6 @@ class RunnerService: ObservableObject {
         // Clear all running processes and process group IDs
         runningProcesses.removeAll()
         processGroupIDs.removeAll()
-        
-        // Close all log streams
-        for (_, stream) in logStreams {
-            stream.send(completion: .finished)
-        }
-        logStreams.removeAll()
         
         // Save updated runner states
         saveRunners()
@@ -776,9 +746,6 @@ class RunnerService: ObservableObject {
         }
     }
     
-    func getLogStream(for runnerId: String) -> AnyPublisher<String, Never>? {
-        return logStreams[runnerId]?.eraseToAnyPublisher()
-    }
     
     func getRunnerLogFile(for runnerId: String) -> URL? {
         guard let runner = localRunners.first(where: { $0.id == runnerId }) else { return nil }
@@ -851,7 +818,7 @@ class RunnerService: ObservableObject {
     private func saveRunners() {
         do {
             let data = try JSONEncoder().encode(localRunners)
-            UserDefaults.standard.set(data, forKey: "localRunners")
+            defaults.set(data, forKey: "localRunners")
         } catch {
             #if DEBUG
             print("Failed to save runners: \(error)")
@@ -860,7 +827,7 @@ class RunnerService: ObservableObject {
     }
     
     func loadRunners() {
-        guard let data = UserDefaults.standard.data(forKey: "localRunners") else { return }
+        guard let data = defaults.data(forKey: "localRunners") else { return }
         
         do {
             localRunners = try JSONDecoder().decode([LocalRunner].self, from: data)
@@ -1123,7 +1090,7 @@ class RunnerService: ObservableObject {
         
         // Read existing .env content
         if FileManager.default.fileExists(atPath: envFilePath) {
-            currentEnvContent = (try? String(contentsOfFile: envFilePath)) ?? ""
+            currentEnvContent = (try? String(contentsOfFile: envFilePath, encoding: .utf8)) ?? ""
         }
         
         // Remove existing hook variable if present
@@ -1151,7 +1118,7 @@ class RunnerService: ObservableObject {
         
         guard FileManager.default.fileExists(atPath: envFilePath) else { return }
         
-        let currentEnvContent = (try? String(contentsOfFile: envFilePath)) ?? ""
+        let currentEnvContent = (try? String(contentsOfFile: envFilePath, encoding: .utf8)) ?? ""
         let lines = currentEnvContent.components(separatedBy: .newlines)
         let filteredLines = lines.filter { !$0.hasPrefix("\(hook)=") }
         
@@ -1177,7 +1144,7 @@ class RunnerService: ObservableObject {
 
 // MARK: - Data Models
 
-struct LocalRunner: Codable, Identifiable, Hashable {
+struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let repository: String
@@ -1213,7 +1180,7 @@ struct LocalRunner: Codable, Identifiable, Hashable {
     }
 }
 
-enum RunnerStatus: String, Codable, CaseIterable {
+enum RunnerStatus: String, Codable, CaseIterable, Sendable {
     case stopped = "stopped"
     case running = "running"
     case error = "error"

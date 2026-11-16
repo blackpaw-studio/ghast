@@ -6,7 +6,8 @@ struct RepositoryDetailView: View {
     @State private var isLoadingRunners = false
     @State private var showingAddRunner = false
     @State private var errorMessage: String?
-    @StateObject private var runnerService = RunnerService.shared
+    @Environment(RunnerService.self) private var runnerService
+    @Environment(\.gitHubAPIService) private var apiService
     
     // Local runners for this repository
     private var localRunners: [LocalRunner] {
@@ -88,27 +89,27 @@ struct RepositoryDetailView: View {
                     
                     Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
                         .font(.system(size: 28, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 }
                 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(repository.name)
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     HStack(spacing: 8) {
                         Text(repository.fullName)
                             .font(.system(.body, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         
                         // Privacy badge
                         HStack(spacing: 4) {
                             Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(repository.isPrivate ? .orange : .green)
+                                .foregroundStyle(repository.isPrivate ? .orange : .green)
                             Text(repository.isPrivate ? "Private" : "Public")
                                 .font(.system(.caption2, design: .rounded, weight: .semibold))
-                                .foregroundColor(repository.isPrivate ? .orange : .green)
+                                .foregroundStyle(repository.isPrivate ? .orange : .green)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -125,7 +126,7 @@ struct RepositoryDetailView: View {
                     if let description = repository.description, !description.isEmpty {
                         Text(description)
                             .font(.system(.body, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
                 }
@@ -140,7 +141,7 @@ struct RepositoryDetailView: View {
                         Text("Add Runner")
                             .font(.system(.body, design: .rounded, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                     .background(
@@ -214,17 +215,17 @@ struct RepositoryDetailView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "desktopcomputer")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.purple)
+                            .foregroundStyle(.purple)
                         
                         Text("Local Runners")
                             .font(.system(.title2, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         
                         Spacer()
                         
                         Text("\(localRunners.count)")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.purple)
+                            .foregroundStyle(.purple)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
@@ -262,17 +263,17 @@ struct RepositoryDetailView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "cloud.fill")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                         
                         Text("Remote Runners")
                             .font(.system(.title2, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         
                         Spacer()
                         
                         Text("\(filteredRemoteRunners.count)")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
@@ -329,17 +330,17 @@ struct RepositoryDetailView: View {
                 
                 Image(systemName: "server.rack")
                     .font(.system(size: 40, weight: .light))
-                    .foregroundColor(.blue.opacity(0.7))
+                    .foregroundStyle(.blue.opacity(0.7))
             }
             
             VStack(spacing: 12) {
                 Text("No Runners Found")
                     .font(.system(.title2, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Get started by adding your first self-hosted runner for this repository.")
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 
                 Button(action: { showingAddRunner = true }) {
@@ -349,7 +350,7 @@ struct RepositoryDetailView: View {
                         Text("Add Runner")
                             .font(.system(.body, design: .rounded, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
                     .background(
@@ -386,7 +387,7 @@ struct RepositoryDetailView: View {
             
             Text("Loading runners...")
                 .font(.system(.body, design: .rounded, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 40)
         .frame(maxWidth: .infinity)
@@ -405,7 +406,7 @@ struct RepositoryDetailView: View {
     private func loadRunners() async {
         isLoadingRunners = true
         do {
-            let fetchedRunners = try await GitHubAPIService.shared.fetchRunners(for: repository)
+            let fetchedRunners = try await apiService.fetchRunners(for: repository)
             await MainActor.run {
                 self.runners = fetchedRunners
                 self.isLoadingRunners = false
@@ -425,7 +426,7 @@ struct RepositoryDetailView: View {
 
 struct ModernLocalRunnerCard: View {
     let runner: LocalRunner
-    @StateObject private var runnerService = RunnerService.shared
+    @Environment(RunnerService.self) private var runnerService
     @State private var isHovered = false
     
     // Find the current runner from the service to get live status updates
@@ -451,16 +452,16 @@ struct ModernLocalRunnerCard: View {
                 HStack(spacing: 8) {
                     Text(runner.name)
                         .font(.system(.body, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     // Local badge
                     HStack(spacing: 4) {
                         Image(systemName: "desktopcomputer")
                             .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(.purple)
+                            .foregroundStyle(.purple)
                         Text("LOCAL")
                             .font(.system(.caption2, design: .rounded, weight: .bold))
-                            .foregroundColor(.purple)
+                            .foregroundStyle(.purple)
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -480,7 +481,7 @@ struct ModernLocalRunnerCard: View {
                     // Status badge
                     Text(currentRunner?.status.displayName ?? runner.status.displayName)
                         .font(.system(.caption2, design: .rounded, weight: .semibold))
-                        .foregroundColor(statusColor)
+                        .foregroundStyle(statusColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
@@ -495,7 +496,7 @@ struct ModernLocalRunnerCard: View {
                     // Platform badge
                     Text("macOS")
                         .font(.system(.caption2, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
@@ -510,7 +511,7 @@ struct ModernLocalRunnerCard: View {
                         ForEach(runner.labels.prefix(2), id: \.self) { label in
                             Text(label)
                                 .font(.system(.caption2, design: .rounded, weight: .medium))
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
@@ -522,7 +523,7 @@ struct ModernLocalRunnerCard: View {
                         if runner.labels.count > 2 {
                             Text("+\(runner.labels.count - 2)")
                                 .font(.system(.caption2, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -537,7 +538,7 @@ struct ModernLocalRunnerCard: View {
                         runnerService.stopRunner(id: runner.id)
                     }
                     .font(.system(.caption, design: .rounded, weight: .semibold))
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -560,7 +561,7 @@ struct ModernLocalRunnerCard: View {
                         }
                     }
                     .font(.system(.caption, design: .rounded, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -587,7 +588,7 @@ struct ModernLocalRunnerCard: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .padding(8)
                         .background(
                             Circle()
@@ -630,6 +631,7 @@ struct ModernRemoteRunnerCard: View {
     @State private var isHovered = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
+    @Environment(\.gitHubAPIService) private var apiService
     
     var body: some View {
         HStack(spacing: 16) {
@@ -649,16 +651,16 @@ struct ModernRemoteRunnerCard: View {
                 HStack(spacing: 8) {
                     Text(runner.name)
                         .font(.system(.body, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     // Remote badge
                     HStack(spacing: 4) {
                         Image(systemName: "cloud.fill")
                             .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                         Text("REMOTE")
                             .font(.system(.caption2, design: .rounded, weight: .bold))
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -676,10 +678,10 @@ struct ModernRemoteRunnerCard: View {
                         HStack(spacing: 4) {
                             Image(systemName: "circle.fill")
                                 .font(.system(size: 6, weight: .bold))
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             Text("BUSY")
                                 .font(.system(.caption2, design: .rounded, weight: .bold))
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -700,7 +702,7 @@ struct ModernRemoteRunnerCard: View {
                     // Status badge
                     Text(runner.status.capitalized)
                         .font(.system(.caption2, design: .rounded, weight: .semibold))
-                        .foregroundColor(statusColor)
+                        .foregroundStyle(statusColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
@@ -715,7 +717,7 @@ struct ModernRemoteRunnerCard: View {
                     // Platform badge
                     Text(runner.os.capitalized)
                         .font(.system(.caption2, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
@@ -730,7 +732,7 @@ struct ModernRemoteRunnerCard: View {
                         ForEach(runner.labels.prefix(2)) { label in
                             Text(label.name)
                                 .font(.system(.caption2, design: .rounded, weight: .medium))
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
@@ -742,7 +744,7 @@ struct ModernRemoteRunnerCard: View {
                         if runner.labels.count > 2 {
                             Text("+\(runner.labels.count - 2)")
                                 .font(.system(.caption2, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -758,7 +760,7 @@ struct ModernRemoteRunnerCard: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(8)
                     .background(
                         Circle()
@@ -812,7 +814,7 @@ struct ModernRemoteRunnerCard: View {
     private func deleteRunner() async {
         isDeleting = true
         do {
-            try await GitHubAPIService.shared.deleteRunner(runnerId: runner.id, from: repository)
+            try await apiService.deleteRunner(runnerId: runner.id, from: repository)
             await MainActor.run {
                 onRunnerDeleted()
                 isDeleting = false

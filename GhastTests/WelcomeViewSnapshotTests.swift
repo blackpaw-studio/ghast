@@ -27,7 +27,7 @@ final class WelcomeViewSnapshotTests: XCTestCase {
         authService.setUnauthenticatedState()
         if let state { authService.setSignInState(state) }
         return WelcomeView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .preferredColorScheme(dark ? .dark : nil)
     }
 

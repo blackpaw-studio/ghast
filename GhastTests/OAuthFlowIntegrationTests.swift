@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 @testable import Ghast
 
 @MainActor
@@ -7,7 +8,7 @@ final class OAuthFlowIntegrationTests: XCTestCase {
     
     override func setUp() async throws {
         try await super.setUp()
-        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
+        authService = GitHubAuthService(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
     }
     
     override func tearDown() async throws {
@@ -55,7 +56,9 @@ final class OAuthFlowIntegrationTests: XCTestCase {
         // Test that auth state changes are observable
         let expectation = XCTestExpectation(description: "Auth state change observed")
         
-        let cancellable = authService.objectWillChange.sink { _ in
+        withObservationTracking {
+            _ = authService.isAuthenticated
+        } onChange: {
             expectation.fulfill()
         }
         
@@ -64,7 +67,6 @@ final class OAuthFlowIntegrationTests: XCTestCase {
             id: 1, login: "mockuser", avatarURL: "", name: nil, email: nil))
         
         await fulfillment(of: [expectation], timeout: 1.0)
-        cancellable.cancel()
     }
     
     func testLoadingStateTransitions() async throws {

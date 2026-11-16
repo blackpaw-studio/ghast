@@ -6,18 +6,18 @@ import Foundation
 final class RunnerServiceEnvironmentTests: XCTestCase {
     
     var runnerService: RunnerService!
+    var isolatedDefaults: IsolatedDefaults!
     var testRunner: LocalRunner!
     var tempDirectory: URL!
     
     override func setUp() async throws {
         try await super.setUp()
         
-        runnerService = RunnerService.shared
+        isolatedDefaults = makeIsolatedDefaults()
+        runnerService = makeTestRunnerService(defaults: isolatedDefaults.defaults)
         
         // Create a temporary directory for testing
-        tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ghast-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        tempDirectory = makeTemporaryDirectory()
         
         // Create test runner with temp directory path
         testRunner = LocalRunner(
@@ -26,14 +26,11 @@ final class RunnerServiceEnvironmentTests: XCTestCase {
             path: tempDirectory.path
         )
         
-        // Clean up any existing runners to ensure clean state
-        runnerService.removeAllLocalRunners()
         runnerService.addLocalRunner(testRunner)
     }
     
     override func tearDown() async throws {
-        // Clean up test runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults.cleanup()
         
         // Clean up temporary directory
         try? FileManager.default.removeItem(at: tempDirectory)

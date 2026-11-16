@@ -1,8 +1,9 @@
 import Foundation
 import SwiftUI
+import Observation
 import os
 
-enum SignInState: Equatable {
+enum SignInState: Equatable, Sendable {
     case idle
     case awaitingUser(DeviceCode)
     case failed(DeviceFlowError)
@@ -10,19 +11,20 @@ enum SignInState: Equatable {
 }
 
 @MainActor
+@Observable
 class GitHubAuthService: GitHubAuthServiceProtocol {
     static let scopes = ["repo", "user:email"]
 
-    @Published var isAuthenticated = false {
+    var isAuthenticated = false {
         didSet {
             #if DEBUG
             print("🔐 OAuth: isAuthenticated changed to \(isAuthenticated)")
             #endif
         }
     }
-    @Published var currentUser: GitHubUser?
-    @Published var signInState: SignInState = .idle
-    @Published var isCheckingStoredAuth = true // Start with true to prevent login screen flash
+    var currentUser: GitHubUser?
+    var signInState: SignInState = .idle
+    var isCheckingStoredAuth = true // Start with true to prevent login screen flash
 
     /// Derived from `signInState` for views that only need "is a sign-in in flight".
     var isLoading: Bool { isAuthenticating }
@@ -45,13 +47,15 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
 
     /// - Parameters:
     ///   - deviceFlow: Device Flow transport; production default talks to github.com.
+    ///   - apiService: The GitHub API client. Required; the `fetchUser` and `useToken`
+    ///     defaults are derived from it.
     ///   - fetchUser: Loads the user for a fresh token. Must have no side effects; the
-    ///     default calls the GitHub API with the token explicitly.
+    ///     default calls `apiService` with the token explicitly.
     ///   - tokenStore: Persists the verified token; the default uses the Keychain.
     ///   - useToken: Hands a stored token to the API client. Only runs for the current
-    ///     attempt, after the token was persisted. The default configures
-    ///     `GitHubAPIService.shared`.
+    ///     attempt, after the token was persisted. The default configures `apiService`.
     init(
+        apiService: any GitHubAPIServiceProtocol,
         deviceFlow: any DeviceFlowClienting = DeviceFlowClient(),
         tokenStore: any TokenStore = KeychainTokenStore(),
         fetchUser: (@MainActor (String) async throws -> GitHubUser)? = nil,
@@ -59,8 +63,8 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
     ) {
         self.deviceFlow = deviceFlow
         self.tokenStore = tokenStore
-        self.fetchUser = fetchUser ?? { try await GitHubAPIService.shared.fetchCurrentUser(token: $0) }
-        self.useToken = useToken ?? { GitHubAPIService.shared.setAccessToken($0) }
+        self.fetchUser = fetchUser ?? { try await apiService.fetchCurrentUser(token: $0) }
+        self.useToken = useToken ?? { apiService.setAccessToken($0) }
         // isCheckingStoredAuth is already true from the property declaration
         // This prevents the login screen flash without triggering keychain access
     }
@@ -164,16 +168,14 @@ class GitHubAuthService: GitHubAuthServiceProtocol {
         self.signInState = .signedIn
     }
     
-    private func checkExistingAuth() async {
+    func checkExistingAuth() async {
         do {
             guard let token = try tokenStore.read() else { return }
 
-            let user = try await GitHubAPIService.shared.fetchCurrentUser(token: token)
-            await MainActor.run {
-                self.currentUser = user
-                self.isAuthenticated = true
-                GitHubAPIService.shared.setAccessToken(token)
-            }
+            let user = try await fetchUser(token)
+            currentUser = user
+            isAuthenticated = true
+            useToken(token)
         } catch {
             // Token is invalid or keychain access failed, remove it silently
             try? tokenStore.delete()

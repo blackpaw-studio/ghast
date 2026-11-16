@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 @testable import Ghast
 
 @MainActor
@@ -108,14 +109,15 @@ final class AppStateTests: XCTestCase {
         // Test that state changes are observable
         let expectation = XCTestExpectation(description: "State change observed")
         
-        let cancellable = appState.objectWillChange.sink { _ in
+        withObservationTracking {
+            _ = appState.selectedView
+        } onChange: {
             expectation.fulfill()
         }
         
         appState.selectedView = .localRunners
         
         await fulfillment(of: [expectation], timeout: 1.0)
-        cancellable.cancel()
     }
     
     func testConcurrentStateChanges() async throws {

@@ -7,7 +7,7 @@ final class IntegrationTests: XCTestCase {
     func testRunnerServiceIntegration() {
         print("🧪 Testing runner service integration")
         
-        let runnerService = RunnerService.shared
+        let runnerService = makeTestRunnerService()
         let initialCount = runnerService.localRunners.count
         
         // Test adding a runner

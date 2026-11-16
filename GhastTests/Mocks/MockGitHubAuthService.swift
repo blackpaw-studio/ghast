@@ -4,6 +4,10 @@ import Foundation
 /// Mock GitHubAuthService for testing that prevents any real authentication attempts
 @MainActor
 class MockGitHubAuthService: GitHubAuthService {
+
+    init() {
+        super.init(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
+    }
     
     override func checkStoredAuthentication() async {
         // Do nothing - prevent actual keychain access or authentication

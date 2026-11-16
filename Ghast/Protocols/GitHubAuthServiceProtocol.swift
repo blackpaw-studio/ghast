@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Protocol for GitHub authentication operations to enable testing
 @MainActor
-protocol GitHubAuthServiceProtocol: ObservableObject {
+protocol GitHubAuthServiceProtocol: AnyObject, Observable {
     var isAuthenticated: Bool { get set }
     var currentUser: GitHubUser? { get set }
     var signInState: SignInState { get }
@@ -20,7 +20,8 @@ protocol GitHubAuthServiceProtocol: ObservableObject {
 
 /// Environment key for injecting auth service
 struct GitHubAuthServiceKey: EnvironmentKey {
-    static let defaultValue: (any GitHubAuthServiceProtocol)? = nil
+    // Computed: a stored static of a non-Sendable type is rejected in Swift 6 mode.
+    static var defaultValue: (any GitHubAuthServiceProtocol)? { nil }
 }
 
 extension EnvironmentValues {

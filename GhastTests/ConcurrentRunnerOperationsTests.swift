@@ -1,27 +1,19 @@
 import XCTest
-import Combine
 @testable import Ghast
 
 @MainActor
 final class ConcurrentRunnerOperationsTests: XCTestCase {
     var runnerService: RunnerService!
-    var cancellables: Set<AnyCancellable>!
+    var isolatedDefaults: IsolatedDefaults!
     
     override func setUp() async throws {
         try await super.setUp()
-        runnerService = RunnerService.shared
-        cancellables = Set<AnyCancellable>()
-        
-        // Clear any existing runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults = makeIsolatedDefaults()
+        runnerService = makeTestRunnerService(defaults: isolatedDefaults.defaults)
     }
     
     override func tearDown() async throws {
-        cancellables.forEach { $0.cancel() }
-        cancellables = nil
-        
-        // Clean up all test runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults.cleanup()
         
         runnerService = nil
         try await super.tearDown()
@@ -65,66 +57,31 @@ final class ConcurrentRunnerOperationsTests: XCTestCase {
         XCTAssertEqual(uniquePaths.count, runnerCount)
     }
     
-    func testConcurrentLogPublisherAccess() async throws {
-        // Test concurrent access to log publishers
-        let testRunnerId = "test-runner-concurrent-logs"
-        var receivedLogs: [String] = []
-        let logsLock = NSLock()
-        
-        // Create multiple subscribers
-        let subscriberCount = 5
-        for i in 0..<subscriberCount {
-            // No process running, so there is no stream to subscribe to
-            XCTAssertNil(runnerService.getLogStream(for: testRunnerId))
-            cancellables.insert(AnyCancellable {})
-            _ = i
+    func testLogFilesAreDistinctPerRunner() {
+        let runners = (0..<5).map {
+            LocalRunner(name: "Log Runner \($0)", repository: "user/repo", path: "/tmp/log-runner-\($0)")
         }
+        runners.forEach { runnerService.addLocalRunner($0) }
         
-        // No actual log emission in this test, just verifying publisher creation
-        // In a real scenario, logs would be emitted through the runner process
+        let logFiles = runners.compactMap { runnerService.getRunnerLogFile(for: $0.id) }
         
-        // Verify all publishers were created successfully
-        XCTAssertEqual(cancellables.count, subscriberCount)
+        XCTAssertEqual(Set(logFiles).count, runners.count)
+        for (runner, logFile) in zip(runners, logFiles) {
+            XCTAssertEqual(logFile.path, "\(runner.path)/ghast-runner.log")
+        }
     }
     
-    func testConcurrentStateObservation() async throws {
-        // Test that multiple observers can watch runner state changes
-        var observationCounts: [Int] = Array(repeating: 0, count: 5)
-        let countLock = NSLock()
-        
-        // Create multiple observers
-        for i in 0..<5 {
-            let cancellable = runnerService.$localRunners
-                .sink { _ in
-                    countLock.lock()
-                    observationCounts[i] += 1
-                    countLock.unlock()
-                }
-            cancellables.insert(cancellable)
-        }
-        
-        // Trigger state changes
+    func testRunnersAppendedDirectlyAreVisible() {
         for i in 0..<3 {
-            let runner = LocalRunner(
+            runnerService.localRunners.append(LocalRunner(
                 name: "State Test Runner \(i)",
                 repository: "user/repo",
                 path: "/tmp/state-runner-\(i)",
                 labels: []
-            )
-            runnerService.localRunners.append(runner)
+            ))
         }
         
-        // Allow time for observations
-        try await Task.sleep(nanoseconds: 100_000_000)
-        
-        // Verify all observers received updates
-        countLock.lock()
-        let finalCounts = observationCounts
-        countLock.unlock()
-        
-        for count in finalCounts {
-            XCTAssertGreaterThan(count, 0)
-        }
+        XCTAssertEqual(runnerService.localRunners.count, 3)
     }
     
     func testRunnerServiceThreadSafety() async throws {

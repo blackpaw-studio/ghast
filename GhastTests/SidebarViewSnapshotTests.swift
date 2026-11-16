@@ -12,7 +12,7 @@ final class SidebarViewSnapshotTests: XCTestCase {
     
     override func setUp() async throws {
         try await super.setUp()
-        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
+        authService = GitHubAuthService(apiService: MockGitHubAPIService(), tokenStore: InMemoryTokenStore())
         appState = AppState()
         mockAPIService = MockGitHubAPIService()
         
@@ -30,9 +30,12 @@ final class SidebarViewSnapshotTests: XCTestCase {
     // MARK: - Empty State Tests
     
     func testSidebarViewEmpty() {
+        // The reference shows the in-flight repository load, so hold the request pending.
+        mockAPIService.holdsRepositoriesPending = true
+        defer { mockAPIService.releasePendingRequests() }
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -45,8 +48,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.isLoadingRepositories = true
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -61,8 +64,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.selectedView = .dashboard
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -80,8 +83,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         }
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -95,8 +98,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.selectedView = .localRunners
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -108,8 +111,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.selectedView = .settings
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -125,8 +128,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         // but we can test the view with repositories that would be filtered
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -159,8 +162,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         ]
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -190,8 +193,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         ]
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -230,8 +233,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         ]
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
         
@@ -244,8 +247,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.repositories = createMockRepositories()
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 320, height: 700) // Minimum width
         
@@ -256,8 +259,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.repositories = createMockRepositories()
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 480, height: 700) // Maximum width
         
@@ -268,8 +271,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.repositories = createMockRepositories()
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 400)
         
@@ -283,8 +286,8 @@ final class SidebarViewSnapshotTests: XCTestCase {
         appState.selectedView = .dashboard
         
         let view = SidebarView()
-            .environmentObject(authService)
-            .environmentObject(appState)
+            .environment(authService)
+            .environment(appState)
             .environment(\.gitHubAPIService, mockAPIService)
             .frame(width: 380, height: 700)
             .preferredColorScheme(.dark)

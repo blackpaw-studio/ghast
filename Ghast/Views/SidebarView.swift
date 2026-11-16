@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @EnvironmentObject var authService: GitHubAuthService
-    @EnvironmentObject var appState: AppState
+    @Environment(GitHubAuthService.self) private var authService
+    @Environment(AppState.self) private var appState
     @Environment(\.gitHubAPIService) var apiService
     @State private var searchText = ""
     
@@ -85,39 +85,39 @@ struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ghast")
                         .font(.system(.title2, design: .rounded, weight: .bold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     HStack(spacing: 0) {
                         Text("G")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("it")
                             .font(.system(.caption, design: .rounded, weight: .light))
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
                         Text("H")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("ub ")
                             .font(.system(.caption, design: .rounded, weight: .light))
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
                         Text("A")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("ctions ")
                             .font(.system(.caption, design: .rounded, weight: .light))
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
                         Text("S")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("elf-Hosted ")
                             .font(.system(.caption, design: .rounded, weight: .light))
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
                         Text("T")
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("ool")
                             .font(.system(.caption, design: .rounded, weight: .light))
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
                     }
                 }
                 
@@ -145,12 +145,12 @@ struct SidebarView: View {
                     
                     Image(systemName: icon)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isSelected ? color : .secondary)
+                        .foregroundStyle(isSelected ? color : .secondary)
                 }
                 
                 Text(title)
                     .font(.system(.body, design: .rounded, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(isSelected ? color : .primary)
+                    .foregroundStyle(isSelected ? color : .primary)
                 
                 Spacer()
                 
@@ -177,11 +177,11 @@ struct SidebarView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "folder.badge.gearshape")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.orange)
+                        .foregroundStyle(.orange)
                     
                     Text("Repositories")
                         .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
                 
                 Spacer()
@@ -192,7 +192,7 @@ struct SidebarView: View {
                 }) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .padding(6)
                         .background(
                             Circle()
@@ -207,7 +207,7 @@ struct SidebarView: View {
                 if !appState.repositories.isEmpty {
                     Text("\(filteredRepositories.count)")
                         .font(.system(.caption2, design: .rounded, weight: .bold))
-                        .foregroundColor(.orange)
+                        .foregroundStyle(.orange)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
@@ -242,7 +242,7 @@ struct SidebarView: View {
             
             Text("Loading repositories...")
                 .font(.system(.caption, design: .rounded, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity)
@@ -252,16 +252,16 @@ struct SidebarView: View {
         VStack(spacing: 12) {
             Image(systemName: "folder.badge.questionmark")
                 .font(.system(size: 24, weight: .light))
-                .foregroundColor(.secondary.opacity(0.6))
+                .foregroundStyle(.secondary.opacity(0.6))
             
             VStack(spacing: 4) {
                 Text("No repositories")
                     .font(.system(.caption, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Check your access permissions")
                     .font(.system(.caption2, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
         }
@@ -283,20 +283,20 @@ struct SidebarView: View {
                     
                     Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(repository.isPrivate ? .orange : .green)
+                        .foregroundStyle(repository.isPrivate ? .orange : .green)
                 }
                 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(repository.name)
                         .font(.system(.body, design: .rounded, weight: .medium))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     if let description = repository.description, !description.isEmpty {
                         Text(description)
                             .font(.system(.caption2, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -338,6 +338,6 @@ struct SidebarView: View {
 
 #Preview {
     SidebarView()
-        .environmentObject(GitHubAuthService())
-        .environmentObject(AppState())
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
+        .environment(AppState())
 }

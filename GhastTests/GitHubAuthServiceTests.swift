@@ -5,9 +5,11 @@ import XCTest
 final class GitHubAuthServiceTests: XCTestCase {
     
     var authService: GitHubAuthService!
+    var apiService: MockGitHubAPIService!
     
     override func setUp() async throws {
-        authService = GitHubAuthService(tokenStore: InMemoryTokenStore())
+        apiService = MockGitHubAPIService()
+        authService = GitHubAuthService(apiService: apiService, tokenStore: InMemoryTokenStore())
     }
 
     override func tearDown() async throws {
@@ -33,6 +35,16 @@ final class GitHubAuthServiceTests: XCTestCase {
         XCTAssertFalse(authService.isCheckingStoredAuth)
         XCTAssertFalse(authService.isAuthenticated)
         XCTAssertNil(authService.currentUser)
+    }
+    
+    func testStoredTokenIsHandedToInjectedAPIService() async {
+        let service = GitHubAuthService(apiService: apiService, tokenStore: InMemoryTokenStore(token: "stored-token"))
+        
+        await service.checkExistingAuth()
+        
+        XCTAssertEqual(apiService.accessTokens, ["stored-token"])
+        XCTAssertTrue(service.isAuthenticated)
+        XCTAssertEqual(service.currentUser?.login, "testuser")
     }
     
     // MARK: - Sign Out Tests

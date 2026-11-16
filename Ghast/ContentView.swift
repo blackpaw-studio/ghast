@@ -2,8 +2,8 @@ import SwiftUI
 import Foundation
 
 struct ContentView: View {
-    @StateObject private var authService = GitHubAuthService()
-    @StateObject private var appState = AppState()
+    let authService: GitHubAuthService
+    @State private var appState = AppState()
     
     var body: some View {
         Group {
@@ -14,20 +14,20 @@ struct ContentView: View {
                         .scaleEffect(1.2)
                     Text("Loading...")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(NSColor.windowBackgroundColor))
             } else if authService.isAuthenticated {
                 MainAppView()
-                    .environmentObject(authService)
-                    .environmentObject(appState)
+                    .environment(authService)
+                    .environment(appState)
                     .onAppear {
                         print("🔐 UI: MainAppView appeared")
                     }
             } else {
                 WelcomeView()
-                    .environmentObject(authService)
+                    .environment(authService)
                     .onAppear {
                         print("🔐 UI: WelcomeView appeared")
                     }
@@ -40,15 +40,15 @@ struct ContentView: View {
                 await authService.checkStoredAuthentication()
             }
         }
-        .onChange(of: authService.isAuthenticated) { newValue in
+        .onChange(of: authService.isAuthenticated) { _, newValue in
             print("🔐 UI: isAuthenticated changed to \(newValue)")
         }
     }
 }
 
 struct MainAppView: View {
-    @EnvironmentObject var authService: GitHubAuthService
-    @EnvironmentObject var appState: AppState
+    @Environment(GitHubAuthService.self) private var authService
+    @Environment(AppState.self) private var appState
     
     var body: some View {
         NavigationSplitView {
@@ -90,7 +90,7 @@ struct MainAppView: View {
                                 Text("?")
                                     .font(.caption2)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                             )
                     }
                 }
@@ -106,7 +106,7 @@ struct ToolbarProfileImage: View {
     @State private var image: Image?
     @State private var isLoading = false
     
-    private static var imageCache: [String: Image] = [:]
+    @MainActor private static var imageCache: [String: Image] = [:]
     
     var body: some View {
         Group {
@@ -120,7 +120,7 @@ struct ToolbarProfileImage: View {
                         Text(fallback)
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                     )
             }
         }
@@ -190,11 +190,12 @@ struct ToolbarProfileImage: View {
 }
 
 @MainActor
-class AppState: ObservableObject {
-    @Published var selectedView: SelectedView = .dashboard
-    @Published var repositories: [GitHubRepository] = []
-    @Published var isLoadingRepositories = false
-    @Published var selectedRepository: GitHubRepository?
+@Observable
+class AppState {
+    var selectedView: SelectedView = .dashboard
+    var repositories: [GitHubRepository] = []
+    var isLoadingRepositories = false
+    var selectedRepository: GitHubRepository?
     
     enum SelectedView: Equatable {
         case dashboard
@@ -205,5 +206,8 @@ class AppState: ObservableObject {
 }
 
 #Preview {
-    ContentView()
+    let apiService = GitHubAPIService()
+    ContentView(authService: GitHubAuthService(apiService: apiService))
+        .environment(RunnerService())
+        .environment(\.gitHubAPIService, apiService)
 }

@@ -35,17 +35,13 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         let appState = AppState()
         appState.repositories = [] // Empty repositories
         
-        // Clear any existing runners
-        let runnerService = RunnerService.shared
-        runnerService.removeAllLocalRunners()
+        let runnerService = makeTestRunnerService()
         
         let view = LocalRunnersView()
-            .environmentObject(appState)
+            .environment(appState)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
-        
-        // Clean up
-        runnerService.removeAllLocalRunners()
     }
     
     func testLocalRunnersViewWithRunners() async {
@@ -63,8 +59,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         ]
         
         // Add mock runners
-        let runnerService = RunnerService.shared
-        runnerService.removeAllLocalRunners()
+        let runnerService = makeTestRunnerService()
         
         let mockRunners = createMockRunners()
         for (index, runner) in mockRunners.enumerated() {
@@ -78,12 +73,10 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         }
         
         let view = LocalRunnersView()
-            .environmentObject(appState)
+            .environment(appState)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
-        
-        // Clean up
-        runnerService.removeAllLocalRunners()
     }
     
     func testLocalRunnersViewWithSelectedRunner() async {
@@ -101,8 +94,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         ]
         
         // Add mock runners
-        let runnerService = RunnerService.shared
-        runnerService.removeAllLocalRunners()
+        let runnerService = makeTestRunnerService()
         
         let mockRunners = createMockRunners()
         for runner in mockRunners {
@@ -114,8 +106,8 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         
         // Create a wrapper view that pre-selects a runner
         struct TestWrapper: View {
-            @StateObject private var runnerService = RunnerService.shared
-            @EnvironmentObject var appState: AppState
+            @Environment(RunnerService.self) var runnerService
+            @Environment(AppState.self) var appState
             @State private var selectedRunner: LocalRunner?
             
             var body: some View {
@@ -194,12 +186,10 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         }
         
         let view = TestWrapper()
-            .environmentObject(appState)
+            .environment(appState)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1200, height: 800)
-        
-        // Clean up
-        runnerService.removeAllLocalRunners()
     }
     
     func testLocalRunnersViewSmallWindow() async {
@@ -217,8 +207,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         ]
         
         // Add mock runners
-        let runnerService = RunnerService.shared
-        runnerService.removeAllLocalRunners()
+        let runnerService = makeTestRunnerService()
         
         let mockRunners = createMockRunners()
         for runner in mockRunners {
@@ -226,12 +215,10 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         }
         
         let view = LocalRunnersView()
-            .environmentObject(appState)
+            .environment(appState)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 800, height: 600)
-        
-        // Clean up
-        runnerService.localRunners.removeAll()
     }
     
     func testLocalRunnersViewLargeWindow() async {
@@ -249,8 +236,7 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         ]
         
         // Add mock runners
-        let runnerService = RunnerService.shared
-        runnerService.removeAllLocalRunners()
+        let runnerService = makeTestRunnerService()
         
         let mockRunners = createMockRunners()
         for (index, runner) in mockRunners.enumerated() {
@@ -264,11 +250,9 @@ final class LocalRunnersViewSnapshotTests: XCTestCase {
         }
         
         let view = LocalRunnersView()
-            .environmentObject(appState)
+            .environment(appState)
+            .environment(runnerService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 1600, height: 1000)
-        
-        // Clean up
-        runnerService.localRunners.removeAll()
     }
 }

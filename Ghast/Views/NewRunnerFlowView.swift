@@ -30,7 +30,7 @@ struct NewRunnerFlowView: View {
                 
                 Text("Select a repository to create a self-hosted runner for:")
                     .font(.headline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -41,7 +41,7 @@ struct NewRunnerFlowView: View {
             // Search bar
             HStack {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 
                 TextField("Search repositories...", text: $searchText)
                     .textFieldStyle(.plain)
@@ -59,16 +59,16 @@ struct NewRunnerFlowView: View {
                 VStack(spacing: 16) {
                     Image(systemName: searchText.isEmpty ? "folder" : "magnifyingglass")
                         .font(.system(size: 48))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Text(searchText.isEmpty ? "No repositories available" : "No repositories found")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Text(searchText.isEmpty ? 
                          "Make sure you have access to repositories with GitHub Actions." :
                          "Try adjusting your search terms.")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
@@ -133,7 +133,7 @@ struct NewRunnerRepositoryCard: View {
                 VStack {
                     Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
                         .font(.title2)
-                        .foregroundColor(repository.isPrivate ? .orange : .green)
+                        .foregroundStyle(repository.isPrivate ? .orange : .green)
                 }
                 .frame(width: 40)
                 
@@ -148,19 +148,19 @@ struct NewRunnerRepositoryCard: View {
                         
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                     
                     Text(repository.fullName)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                     
                     if let description = repository.description, !description.isEmpty {
                         Text(description)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }

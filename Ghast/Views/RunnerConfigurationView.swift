@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RunnerConfigurationView: View {
     let runner: LocalRunner
-    @StateObject private var runnerService = RunnerService.shared
+    @Environment(RunnerService.self) private var runnerService
     @Environment(\.dismiss) private var dismiss
     
     @State private var environmentVariables: [String: String]
@@ -105,15 +105,15 @@ struct RunnerConfigurationView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Configure \(runner.name)")
                         .font(.system(.title2, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     HStack(spacing: 6) {
                         Image(systemName: "building.2")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(runner.repository)
                             .font(.system(.caption, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
@@ -122,7 +122,7 @@ struct RunnerConfigurationView: View {
             
             Text("Manage environment variables and pre/post job scripts for this runner")
                 .font(.system(.body, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(20)
@@ -136,18 +136,18 @@ struct RunnerConfigurationView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Environment Variables")
                         .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     Text("These variables will be available to your GitHub Actions workflows")
                         .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
                 
                 Text("\(environmentVariables.count) variables")
                     .font(.system(.caption, design: .rounded, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.blue.opacity(0.1))
@@ -168,7 +168,7 @@ struct RunnerConfigurationView: View {
                     Button(action: addEnvironmentVariable) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                     }
                     .buttonStyle(.plain)
                     .disabled(newEnvKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -183,15 +183,15 @@ struct RunnerConfigurationView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "gearshape")
                         .font(.system(size: 32, weight: .light))
-                        .foregroundColor(.secondary.opacity(0.6))
+                        .foregroundStyle(.secondary.opacity(0.6))
                     
                     Text("No environment variables")
                         .font(.system(.body, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Text("Add variables that your workflows need")
                         .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -224,11 +224,11 @@ struct RunnerConfigurationView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Pre-Job Script")
                         .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     Text("Bash script that runs before each GitHub Actions job starts")
                         .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
@@ -247,14 +247,14 @@ struct RunnerConfigurationView: View {
                 HStack {
                     Text("Script Content")
                         .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Spacer()
                     
                     if !preJobScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("\(preJobScript.components(separatedBy: .newlines).count) lines")
                             .font(.system(.caption2, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
@@ -272,7 +272,7 @@ struct RunnerConfigurationView: View {
                                 VStack(alignment: .leading) {
                                     Text("#!/bin/bash\n# Example: Setup environment\necho \"Pre-job setup starting...\"\n# Your setup commands here")
                                         .font(.system(.body, design: .monospaced))
-                                        .foregroundColor(.secondary.opacity(0.6))
+                                        .foregroundStyle(.secondary.opacity(0.6))
                                         .padding(12)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Spacer()
@@ -294,11 +294,11 @@ struct RunnerConfigurationView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Post-Job Script")
                         .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     Text("Bash script that runs after each GitHub Actions job completes")
                         .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
@@ -317,14 +317,14 @@ struct RunnerConfigurationView: View {
                 HStack {
                     Text("Script Content")
                         .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Spacer()
                     
                     if !postJobScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("\(postJobScript.components(separatedBy: .newlines).count) lines")
                             .font(.system(.caption2, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
@@ -342,7 +342,7 @@ struct RunnerConfigurationView: View {
                                 VStack(alignment: .leading) {
                                     Text("#!/bin/bash\n# Example: Cleanup after job\necho \"Post-job cleanup starting...\"\n# Your cleanup commands here")
                                         .font(.system(.body, design: .monospaced))
-                                        .foregroundColor(.secondary.opacity(0.6))
+                                        .foregroundStyle(.secondary.opacity(0.6))
                                         .padding(12)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Spacer()
@@ -428,7 +428,7 @@ struct EnvironmentVariableRow: View {
             // Key (read-only)
             Text(key)
                 .font(.system(.body, design: .monospaced, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .frame(minWidth: 120, alignment: .leading)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
@@ -437,7 +437,7 @@ struct EnvironmentVariableRow: View {
             
             Text("=")
                 .font(.system(.body, design: .monospaced, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             
             // Value (editable)
             TextField("Value", text: $value)
@@ -453,7 +453,7 @@ struct EnvironmentVariableRow: View {
             }) {
                 Image(systemName: "trash")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
             .alert("Remove Variable", isPresented: $showingDeleteAlert) {

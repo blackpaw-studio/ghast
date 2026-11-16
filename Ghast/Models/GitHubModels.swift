@@ -1,6 +1,6 @@
 import Foundation
 
-struct GitHubUser: Codable, Identifiable, Equatable {
+struct GitHubUser: Codable, Identifiable, Equatable, Sendable {
     let id: Int
     let login: String
     let avatarURL: String
@@ -13,7 +13,7 @@ struct GitHubUser: Codable, Identifiable, Equatable {
     }
 }
 
-struct GitHubRepository: Codable, Identifiable, Equatable {
+struct GitHubRepository: Codable, Identifiable, Equatable, Sendable {
     let id: Int
     let name: String
     let fullName: String
@@ -30,7 +30,7 @@ struct GitHubRepository: Codable, Identifiable, Equatable {
     }
 }
 
-struct GitHubRunner: Codable, Identifiable {
+struct GitHubRunner: Sendable, Codable, Identifiable {
     let id: Int
     let name: String
     let os: String
@@ -54,13 +54,13 @@ struct GitHubRunner: Codable, Identifiable {
     }
 }
 
-struct GitHubRunnerLabel: Codable, Identifiable {
+struct GitHubRunnerLabel: Sendable, Codable, Identifiable {
     let id: Int
     let name: String
     let type: String
 }
 
-struct GitHubRunnerRegistrationToken: Codable {
+struct GitHubRunnerRegistrationToken: Sendable, Codable {
     let token: String
     let expiresAt: String
     
@@ -70,7 +70,7 @@ struct GitHubRunnerRegistrationToken: Codable {
     }
 }
 
-struct GitHubRunnerRemoveToken: Codable {
+struct GitHubRunnerRemoveToken: Sendable, Codable {
     let token: String
     let expiresAt: String
     
@@ -80,7 +80,7 @@ struct GitHubRunnerRemoveToken: Codable {
     }
 }
 
-struct GitHubRunnerApplication: Codable {
+struct GitHubRunnerApplication: Sendable, Codable {
     let os: String
     let architecture: String
     let downloadURL: String
@@ -92,7 +92,7 @@ struct GitHubRunnerApplication: Codable {
     }
 }
 
-enum GitHubAPIError: Error, LocalizedError {
+enum GitHubAPIError: Error, LocalizedError, Sendable {
     case invalidURL
     case noAccessToken
     case invalidResponse
@@ -102,6 +102,8 @@ enum GitHubAPIError: Error, LocalizedError {
     case httpStatus(Int)
     case networkError(Error)
     case decodingError(Error)
+    /// The API service was never injected (see `UnconfiguredGitHubAPIService`).
+    case notConfigured
     
     var errorDescription: String? {
         switch self {
@@ -123,6 +125,8 @@ enum GitHubAPIError: Error, LocalizedError {
             return "Network error: \(error.localizedDescription)"
         case .decodingError(let error):
             return "Failed to decode response: \(error.localizedDescription)"
+        case .notConfigured:
+            return "GitHub API service is not configured"
         }
     }
 

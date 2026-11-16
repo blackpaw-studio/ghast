@@ -1,5 +1,4 @@
 import XCTest
-import Combine
 @testable import Ghast
 
 @MainActor
@@ -7,42 +6,28 @@ final class RunnerServiceTests: XCTestCase {
     
     var runnerService: RunnerService!
     var tempDirectory: URL!
-    var cancellables: Set<AnyCancellable>!
+    var isolatedDefaults: IsolatedDefaults!
     
     override func setUp() async throws {
         try await super.setUp()
         
-        runnerService = RunnerService.shared
-        cancellables = Set<AnyCancellable>()
+        isolatedDefaults = makeIsolatedDefaults()
+        runnerService = RunnerService(defaults: isolatedDefaults.defaults, runnersDirectory: makeTemporaryDirectory())
         
         // Create a temporary directory for testing
-        tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ghast-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        
-        // Clean up any existing runners to ensure clean state
-        runnerService.removeAllLocalRunners()
+        tempDirectory = makeTemporaryDirectory()
     }
     
     override func tearDown() async throws {
-        // Clean up test runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults.cleanup()
         
         // Clean up temporary directory
         try? FileManager.default.removeItem(at: tempDirectory)
-        
-        cancellables.removeAll()
         
         try await super.tearDown()
     }
     
     // MARK: - Initialization Tests
-    
-    func testSingletonInstance() {
-        let instance1 = RunnerService.shared
-        let instance2 = RunnerService.shared
-        XCTAssertTrue(instance1 === instance2, "RunnerService should be a singleton")
-    }
     
     func testInitialState() {
         // After clearing in setUp, should have no runners
@@ -199,23 +184,26 @@ final class RunnerServiceTests: XCTestCase {
         XCTAssertEqual(clearedContent, "")
     }
     
-    // MARK: - Log Stream Tests
+    // MARK: - Log File Tests
     
-    func testGetLogStream() {
+    func testReadAndClearRunnerLogs() throws {
         let runner = LocalRunner(
             name: "Test Runner",
             repository: "user/repo",
             path: tempDirectory.path
         )
-        
         runnerService.addLocalRunner(runner)
+        let placeholder = "No logs available. Start the runner to see output."
         
-        // Initially no log stream
-        let stream1 = runnerService.getLogStream(for: runner.id)
-        XCTAssertNil(stream1)
+        XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), placeholder)
         
-        // Note: Cannot fully test log streaming without starting a runner,
-        // which requires actual runner files
+        let logFile = try XCTUnwrap(runnerService.getRunnerLogFile(for: runner.id))
+        try "line one\n".write(to: logFile, atomically: true, encoding: .utf8)
+        XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), "line one\n")
+        
+        runnerService.clearRunnerLogs(for: runner.id)
+        XCTAssertEqual(try String(contentsOf: logFile, encoding: .utf8), "")
+        XCTAssertEqual(runnerService.readRunnerLogs(for: runner.id), placeholder)
     }
     
     // MARK: - Persistence Tests
@@ -267,7 +255,7 @@ final class RunnerServiceTests: XCTestCase {
         
         // Manually save to UserDefaults
         let data = try! JSONEncoder().encode([runner])
-        UserDefaults.standard.set(data, forKey: "localRunners")
+        isolatedDefaults.defaults.set(data, forKey: "localRunners")
         
         // Load runners
         runnerService.loadRunners()

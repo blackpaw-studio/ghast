@@ -2,6 +2,23 @@ import SwiftUI
 import Foundation
 import Sparkle
 
+/// The app's services, built once at the composition root and injected from there.
+@MainActor
+struct AppDependencies {
+    let runnerService: RunnerService
+    let apiService: GitHubAPIService
+    let authService: GitHubAuthService
+
+    static func live() -> AppDependencies {
+        let apiService = GitHubAPIService()
+        return AppDependencies(
+            runnerService: RunnerService(),
+            apiService: apiService,
+            authService: GitHubAuthService(apiService: apiService)
+        )
+    }
+}
+
 @main
 struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -9,7 +26,10 @@ struct GhastApp: App {
     var body: some Scene {
         WindowGroup {
             if !isRunningTests() {
-                ContentView()
+                let dependencies = appDelegate.dependencies
+                ContentView(authService: dependencies.authService)
+                    .environment(dependencies.runnerService)
+                    .environment(\.gitHubAPIService, dependencies.apiService)
             } else {
                 EmptyView()
             }
@@ -33,14 +53,31 @@ struct GhastApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController: SPUStandardUpdaterController
+    private var builtDependencies: AppDependencies?
+    private var signalSources: [DispatchSourceSignal] = []
+    
+    /// The app's services, built on first use. Never built under test unless injected.
+    var dependencies: AppDependencies {
+        if let builtDependencies { return builtDependencies }
+        let dependencies = AppDependencies.live()
+        builtDependencies = dependencies
+        return dependencies
+    }
     
     override init() {
         // Sparkle shows a modal alert when the feed/key is invalid, which blocks the
         // XCTest host's main thread. Don't start the updater under test.
         let isUnderTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest, updaterDelegate: nil, userDriverDelegate: nil)
+        super.init()
+    }
+    
+    init(dependencies: AppDependencies) {
+        builtDependencies = dependencies
+        updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
     }
     
@@ -90,29 +127,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func handleTermination() {
-        // Ensure we're on the main thread for cleanup
-        if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                performRunnerCleanup()
-            }
-        } else {
-            DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    performRunnerCleanup()
-                }
-            }
-        }
+        performRunnerCleanup()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        // applicationWillTerminate is called on the main thread
-        MainActor.assumeIsolated {
-            performRunnerCleanup()
-        }
+        performRunnerCleanup()
     }
     
-    @MainActor
     private func performRunnerCleanup() {
+        // Nothing to clean up if the services were never built (test host).
+        guard let runnerService = builtDependencies?.runnerService else { return }
+        
         // Stop all running runners when app terminates
         // This must be synchronous to ensure cleanup completes before termination
         print("🏃 Application terminating - stopping all runners...")
@@ -122,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ProcessInfo.processInfo.enableSuddenTermination()
         }
         
-        RunnerService.shared.stopAllRunners()
+        runnerService.stopAllRunners()
         
         print("🏃 Runner cleanup completed")
     }
@@ -136,28 +161,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func installSignalHandlers() {
-        // Install handlers for common termination signals
-        let signals = [SIGTERM, SIGINT, SIGHUP, SIGQUIT]
-        
-        for sig in signals {
-            signal(sig) { signalNumber in
-                print("🏃 Received signal \(signalNumber) - cleaning up runners...")
-                
-                // We need to perform cleanup synchronously on the main thread
-                // Using CFRunLoopPerformBlock to ensure it runs on main thread
-                CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes as CFTypeRef) {
-                    MainActor.assumeIsolated {
-                        RunnerService.shared.stopAllRunners()
-                    }
+        // Stop the runners, then exit, on common termination signals. Dispatch sources
+        // run the handler on the main queue, so it can use main-actor state directly.
+        for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                MainActor.assumeIsolated {
+                    print("🏃 Received signal \(sig) - cleaning up runners...")
+                    self?.performRunnerCleanup()
+                    exit(0)
                 }
-                CFRunLoopWakeUp(CFRunLoopGetMain())
-                
-                // Give a brief moment for cleanup to complete
-                Thread.sleep(forTimeInterval: 0.5)
-                
-                // Exit cleanly
-                exit(0)
             }
+            source.resume()
+            signalSources.append(source)
         }
         
         print("🏃 Signal handlers installed for runner cleanup")

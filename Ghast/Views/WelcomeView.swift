@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct WelcomeView: View {
-    @EnvironmentObject var authService: GitHubAuthService
+    @Environment(GitHubAuthService.self) private var authService
     @Environment(\.openURL) private var openURL
     @State private var animationOffset: CGFloat = 0
 
@@ -89,46 +89,46 @@ struct WelcomeView: View {
                             VStack(spacing: 4) {
                                 Text("Welcome to Ghast")
                                     .font(.system(size: isCompact ? 36 : 40, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                                     .multilineTextAlignment(.center)
                                 
                                 HStack(spacing: 0) {
                                     Text("G")
                                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                     Text("it")
                                         .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundColor(.blue.opacity(0.7))
+                                        .foregroundStyle(.blue.opacity(0.7))
                                     Text("H")
                                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                     Text("ub ")
                                         .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundColor(.blue.opacity(0.7))
+                                        .foregroundStyle(.blue.opacity(0.7))
                                     Text("A")
                                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                     Text("ctions ")
                                         .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundColor(.blue.opacity(0.7))
+                                        .foregroundStyle(.blue.opacity(0.7))
                                     Text("S")
                                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                     Text("elf-Hosted ")
                                         .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundColor(.blue.opacity(0.7))
+                                        .foregroundStyle(.blue.opacity(0.7))
                                     Text("T")
                                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                     Text("ool")
                                         .font(.system(size: 28, weight: .light, design: .rounded))
-                                        .foregroundColor(.blue.opacity(0.7))
+                                        .foregroundStyle(.blue.opacity(0.7))
                                 }
                             }
                             
                             Text("Effortlessly manage your self-hosted GitHub Actions runners. Monitor status, view logs, and control your CI/CD infrastructure from one beautiful interface.")
                                 .font(.system(size: 16, weight: .regular, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(3)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -184,7 +184,7 @@ struct WelcomeView: View {
                 Text("Sign In with GitHub")
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
             }
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(minWidth: 240)
             .padding(.vertical, 14)
             .background(
@@ -205,15 +205,15 @@ struct WelcomeView: View {
             HStack(spacing: 6) {
                 Image(systemName: "info.circle.fill")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
                 Text("Admin access to repositories required")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Text("Ghast needs admin permissions to manage self-hosted runners")
                 .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary.opacity(0.8))
+                .foregroundStyle(.secondary.opacity(0.8))
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 32)
@@ -231,5 +231,5 @@ struct WelcomeView: View {
 
 #Preview {
     WelcomeView()
-        .environmentObject(GitHubAuthService())
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
 }

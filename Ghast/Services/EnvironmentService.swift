@@ -1,12 +1,15 @@
 import Foundation
+import Observation
 
 @MainActor
-class EnvironmentService: ObservableObject {
-    static let shared = EnvironmentService()
+@Observable
+class EnvironmentService {
+    var environments: [RunnerEnvironment] = []
     
-    @Published var environments: [RunnerEnvironment] = []
+    @ObservationIgnored private let defaults: UserDefaults
     
-    private init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         loadEnvironments()
     }
     
@@ -30,14 +33,14 @@ class EnvironmentService: ObservableObject {
     private func saveEnvironments() {
         do {
             let data = try JSONEncoder().encode(environments)
-            UserDefaults.standard.set(data, forKey: "runnerEnvironments")
+            defaults.set(data, forKey: "runnerEnvironments")
         } catch {
             print("Failed to save environments: \(error)")
         }
     }
     
     private func loadEnvironments() {
-        guard let data = UserDefaults.standard.data(forKey: "runnerEnvironments") else { return }
+        guard let data = defaults.data(forKey: "runnerEnvironments") else { return }
         
         do {
             environments = try JSONDecoder().decode([RunnerEnvironment].self, from: data)

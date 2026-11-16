@@ -1,15 +1,17 @@
 import SwiftUI
-import Combine
 import Foundation
 
 struct RunnerLogsView: View {
     let runner: LocalRunner
-    @StateObject private var runnerService = RunnerService.shared
-    @State private var logText: String = ""
-    @State private var refreshTimer: Timer?
+    @Environment(RunnerService.self) private var runnerService
+    @State private var tailer: LogTailer?
+    @State private var startError: String?
     @State private var isAutoScrollEnabled: Bool = true
-    @State private var fileMonitor: DispatchSourceFileSystemObject?
-    @State private var logFileDescriptor: Int32 = -1
+    
+    /// A failed start replaces the log text until the log changes again.
+    private var logText: String {
+        startError ?? tailer?.text ?? ""
+    }
     
     // Find the current runner from the service to get live status updates
     private var currentRunner: LocalRunner? {
@@ -28,12 +30,15 @@ struct RunnerLogsView: View {
         .navigationTitle("")
         .onAppear {
             runnerService.syncRunnerStatus(id: runner.id)
-            loadLogs()
-            startFileMonitoring()
+            startTailing()
         }
         .onDisappear {
-            stopAutoRefresh()
-            stopFileMonitoring()
+            let tailer = tailer
+            self.tailer = nil
+            Task { await tailer?.stop() }
+        }
+        .onChange(of: tailer?.text) {
+            startError = nil
         }
     }
     
@@ -56,15 +61,15 @@ struct RunnerLogsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(runner.name)
                             .font(.system(.title2, design: .rounded, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                         
                         HStack(spacing: 6) {
                             Image(systemName: "building.2")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(runner.repository)
                                 .font(.system(.caption, design: .rounded, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -102,10 +107,10 @@ struct RunnerLogsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("\(logText.components(separatedBy: .newlines).count) lines")
                             .font(.system(.caption, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -127,7 +132,7 @@ struct RunnerLogsView: View {
                 .frame(width: 6, height: 6)
             Text(currentRunner?.status.displayName ?? runner.status.displayName)
                 .font(.system(.caption, design: .rounded, weight: .semibold))
-                .foregroundColor(statusColor)
+                .foregroundStyle(statusColor)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -149,7 +154,7 @@ struct RunnerLogsView: View {
                         Text("Stop")
                             .font(.system(.caption, design: .rounded, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -163,11 +168,10 @@ struct RunnerLogsView: View {
                     Task {
                         do {
                             try await runnerService.startRunner(id: runner.id)
-                            loadLogs()
-                            // File monitoring will automatically pick up changes
+                            tailer?.reload()
                         } catch {
                             print("Failed to start runner: \(error)")
-                            logText = "ERROR: Failed to start runner: \(error.localizedDescription)\n"
+                            startError = "ERROR: Failed to start runner: \(error.localizedDescription)\n"
                         }
                     }
                 }) {
@@ -177,7 +181,7 @@ struct RunnerLogsView: View {
                         Text("Start")
                             .font(.system(.caption, design: .rounded, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -190,7 +194,8 @@ struct RunnerLogsView: View {
             
             Button(action: {
                 runnerService.clearRunnerLogs(for: runner.id)
-                loadLogs()
+                startError = nil
+                tailer?.reload()
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: "trash")
@@ -198,7 +203,7 @@ struct RunnerLogsView: View {
                     Text("Clear")
                         .font(.system(.caption, design: .rounded, weight: .semibold))
                 }
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
@@ -220,16 +225,16 @@ struct RunnerLogsView: View {
                             VStack(spacing: 16) {
                                 Image(systemName: "terminal")
                                     .font(.system(size: 48, weight: .light))
-                                    .foregroundColor(.secondary.opacity(0.5))
+                                    .foregroundStyle(.secondary.opacity(0.5))
                                 
                                 VStack(spacing: 8) {
                                     Text("No logs yet")
                                         .font(.system(.title3, design: .rounded, weight: .semibold))
-                                        .foregroundColor(.primary)
+                                        .foregroundStyle(.primary)
                                     
                                     Text("Start the runner to see live output")
                                         .font(.system(.body, design: .rounded))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.center)
                                 }
                             }
@@ -240,7 +245,7 @@ struct RunnerLogsView: View {
                             // Terminal-style log display
                             Text(logText)
                                 .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                                 .textSelection(.enabled)
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -295,88 +300,17 @@ struct RunnerLogsView: View {
         }
     }
     
-    private func loadLogs() {
-        let newLogs = runnerService.readRunnerLogs(for: runner.id)
-        if newLogs != logText {
-            print("📝 Log update detected for runner \(runner.name)")
-            logText = newLogs
-        }
-    }
-    
-    private func startAutoRefresh() {
-        // Don't start if already running
-        guard refreshTimer == nil else { return }
-        
-        print("🔄 Starting auto-refresh timer for runner \(runner.name)")
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            DispatchQueue.main.async {
-                self.loadLogs()
-            }
-        }
-    }
-    
-    private func stopAutoRefresh() {
-        if refreshTimer != nil {
-            print("⏹️ Stopping auto-refresh timer for runner \(runner.name)")
-        }
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-    }
-    
-    private func startFileMonitoring() {
-        guard let logFileURL = runnerService.getRunnerLogFile(for: runner.id) else {
+    private func startTailing() {
+        guard tailer == nil else { return }
+        let logFileURL = runnerService.getRunnerLogFile(for: runner.id)
+        if logFileURL == nil {
             print("❌ Could not get log file URL for runner \(runner.name)")
-            return
         }
-        
-        let logPath = logFileURL.path
-        print("📁 Starting file monitoring for: \(logPath)")
-        
-        // Create the log file if it doesn't exist
-        if !FileManager.default.fileExists(atPath: logPath) {
-            FileManager.default.createFile(atPath: logPath, contents: nil)
-        }
-        
-        // Open file descriptor for monitoring
-        logFileDescriptor = open(logPath, O_RDONLY)
-        guard logFileDescriptor >= 0 else {
-            print("❌ Could not open log file: \(logPath)")
-            return
-        }
-        
-        // Create dispatch source to monitor file changes
-        fileMonitor = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: logFileDescriptor,
-            eventMask: [.write, .extend],
-            queue: DispatchQueue.global(qos: .utility)
-        )
-        
-        fileMonitor?.setEventHandler {
-            DispatchQueue.main.async {
-                loadLogs()
-            }
-        }
-        
-        fileMonitor?.setCancelHandler {
-            if logFileDescriptor >= 0 {
-                close(logFileDescriptor)
-                logFileDescriptor = -1
-            }
-        }
-        
-        fileMonitor?.resume()
-        print("✅ File monitoring started for runner \(runner.name)")
-    }
-    
-    private func stopFileMonitoring() {
-        print("🛑 Stopping file monitoring for runner \(runner.name)")
-        fileMonitor?.cancel()
-        fileMonitor = nil
-        
-        if logFileDescriptor >= 0 {
-            close(logFileDescriptor)
-            logFileDescriptor = -1
-        }
+        let runnerID = runner.id
+        let service = runnerService
+        let tailer = LogTailer(fileURL: logFileURL) { service.readRunnerLogs(for: runnerID) }
+        tailer.start()
+        self.tailer = tailer
     }
 }
 
@@ -386,4 +320,5 @@ struct RunnerLogsView: View {
         repository: "user/sample-repo",
         path: "/Users/user/actions-runner"
     ))
+    .environment(RunnerService())
 }

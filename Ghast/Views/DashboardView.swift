@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct DashboardView: View {
-    @EnvironmentObject var authService: GitHubAuthService
-    @EnvironmentObject var appState: AppState
+    @Environment(GitHubAuthService.self) private var authService
+    @Environment(AppState.self) private var appState
     @Environment(\.gitHubAPIService) var apiService
     @State private var totalRunners = 0
     @State private var activeRunners = 0
@@ -40,7 +40,7 @@ struct DashboardView: View {
                 await loadRunnerStats()
             }
         }
-        .onChange(of: appState.repositories) { _ in
+        .onChange(of: appState.repositories) {
             Task {
                 await loadRunnerStats()
             }
@@ -59,12 +59,12 @@ struct DashboardView: View {
                         if let user = authService.currentUser {
                             Text("Welcome back, \(user.name ?? user.login)!")
                                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                         }
                         
                         Text("Manage your GitHub Actions self-hosted runners")
                             .font(.system(.title3, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     
                     // Quick stats preview
@@ -105,7 +105,7 @@ struct DashboardView: View {
                             Text("New Runner")
                                 .font(.system(.body, design: .rounded, weight: .semibold))
                         }
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .background(
@@ -132,7 +132,7 @@ struct DashboardView: View {
                             Text("Refresh")
                                 .font(.system(.caption, design: .rounded, weight: .semibold))
                         }
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(.ultraThinMaterial)
@@ -164,15 +164,15 @@ struct DashboardView: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(color)
+                .foregroundStyle(color)
             
             Text(value)
                 .font(.system(.caption, design: .rounded, weight: .bold))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
             
             Text(label)
                 .font(.system(.caption2, design: .rounded, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -191,7 +191,7 @@ struct DashboardView: View {
             HStack {
                 Text("Overview")
                     .font(.system(.title2, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 
@@ -201,7 +201,7 @@ struct DashboardView: View {
                             .scaleEffect(0.7)
                         Text("Loading...")
                             .font(.system(.caption, design: .rounded, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -268,7 +268,7 @@ struct DashboardView: View {
             HStack {
                 Text("Recent Repositories")
                     .font(.system(.title2, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 
@@ -277,7 +277,7 @@ struct DashboardView: View {
                         // Navigate to full repositories view
                     }
                     .font(.system(.caption, design: .rounded, weight: .semibold))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
                 }
             }
             
@@ -310,11 +310,11 @@ struct DashboardView: View {
             VStack(spacing: 6) {
                 Text("Loading repositories...")
                     .font(.system(.body, design: .rounded, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("This may take a moment")
                     .font(.system(.caption, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity)
@@ -325,16 +325,16 @@ struct DashboardView: View {
         VStack(spacing: 20) {
             Image(systemName: "folder.badge.questionmark")
                 .font(.system(size: 48, weight: .light))
-                .foregroundColor(.secondary.opacity(0.5))
+                .foregroundStyle(.secondary.opacity(0.5))
             
             VStack(spacing: 8) {
                 Text("No repositories found")
                     .font(.system(.title3, design: .rounded, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text("Make sure you have access to repositories with GitHub Actions workflows.")
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
             }
@@ -418,7 +418,7 @@ struct ModernStatCard: View {
                         
                         Image(systemName: icon)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(color)
+                            .foregroundStyle(color)
                     }
                     
                     Spacer()
@@ -429,7 +429,7 @@ struct ModernStatCard: View {
                     } else if onTap != nil {
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .opacity(isHovered ? 1 : 0.6)
                     }
                 }
@@ -437,12 +437,12 @@ struct ModernStatCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(value)
                         .font(.system(.title, design: .rounded, weight: .bold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     Text(title)
                         .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -489,11 +489,11 @@ struct ModernRepositoryCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: repository.isPrivate ? "lock.fill" : "globe")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(repository.isPrivate ? .orange : .green)
+                            .foregroundStyle(repository.isPrivate ? .orange : .green)
                         
                         Text(repository.isPrivate ? "Private" : "Public")
                             .font(.system(.caption2, design: .rounded, weight: .semibold))
-                            .foregroundColor(repository.isPrivate ? .orange : .green)
+                            .foregroundStyle(repository.isPrivate ? .orange : .green)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -506,27 +506,27 @@ struct ModernRepositoryCard: View {
                     
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .opacity(isHovered ? 1 : 0.6)
                 }
                 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(repository.name)
                         .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     if let description = repository.description, !description.isEmpty {
                         Text(description)
                             .font(.system(.caption, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         Text("No description")
                             .font(.system(.caption, design: .rounded))
-                            .foregroundColor(.secondary.opacity(0.6))
+                            .foregroundStyle(.secondary.opacity(0.6))
                             .italic()
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -604,6 +604,6 @@ struct DashboardRepositoryCard: View {
 
 #Preview {
     DashboardView()
-        .environmentObject(GitHubAuthService())
-        .environmentObject(AppState())
+        .environment(GitHubAuthService(apiService: GitHubAPIService()))
+        .environment(AppState())
 }

@@ -1,8 +1,7 @@
 import Foundation
 
-class GitHubAPIService: GitHubAPIServiceProtocol {
-    static let shared = GitHubAPIService()
-
+@MainActor
+final class GitHubAPIService: GitHubAPIServiceProtocol {
     private static let baseURL = URL(string: "https://api.github.com")!
     private static let apiVersion = "2022-11-28"
     private static let reposPerPage = 100 // Maximum allowed by GitHub API

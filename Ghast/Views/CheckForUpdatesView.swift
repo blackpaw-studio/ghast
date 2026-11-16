@@ -2,12 +2,12 @@ import SwiftUI
 import Sparkle
 
 struct CheckForUpdatesView: View {
-    @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
+    @State private var checkForUpdatesViewModel: CheckForUpdatesViewModel
     private let updater: SPUUpdater
     
     init(updater: SPUUpdater) {
         self.updater = updater
-        self.checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: updater)
+        _checkForUpdatesViewModel = State(initialValue: CheckForUpdatesViewModel(updater: updater))
     }
     
     var body: some View {
@@ -16,11 +16,16 @@ struct CheckForUpdatesView: View {
     }
 }
 
-final class CheckForUpdatesViewModel: ObservableObject {
-    @Published var canCheckForUpdates = false
+@MainActor
+@Observable
+final class CheckForUpdatesViewModel {
+    private(set) var canCheckForUpdates = false
+    @ObservationIgnored private var observation: NSKeyValueObservation?
     
     init(updater: SPUUpdater) {
-        updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
+        observation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, change in
+            let canCheck = change.newValue ?? false
+            Task { @MainActor [weak self] in self?.canCheckForUpdates = canCheck }
+        }
     }
 }

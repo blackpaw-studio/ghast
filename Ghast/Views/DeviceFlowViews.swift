@@ -32,7 +32,7 @@ struct DeviceCodePanel: View {
         VStack(spacing: 12) {
             Text("Enter this code on GitHub")
                 .font(.system(size: 16, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(code.userCode)
                 .font(.system(size: 40, weight: .bold, design: .monospaced))
@@ -48,7 +48,7 @@ struct DeviceCodePanel: View {
                 ProgressView().controlSize(.small)
                 Text("Waiting for approval… the code is copied to your clipboard.")
                     .font(.system(size: 13, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 12) {
@@ -71,10 +71,10 @@ struct SignInFailurePanel: View {
         VStack(spacing: 16) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
                 Text(error.userMessage)
                     .font(.system(size: 14, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }

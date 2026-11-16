@@ -1,27 +1,20 @@
 import XCTest
-import Combine
+import Observation
 @testable import Ghast
 
 @MainActor
 final class RunnerProcessLifecycleTests: XCTestCase {
     var runnerService: RunnerService!
-    var cancellables: Set<AnyCancellable>!
+    var isolatedDefaults: IsolatedDefaults!
     
     override func setUp() async throws {
         try await super.setUp()
-        runnerService = RunnerService.shared
-        cancellables = Set<AnyCancellable>()
-        
-        // Clear any existing runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults = makeIsolatedDefaults()
+        runnerService = makeTestRunnerService(defaults: isolatedDefaults.defaults)
     }
     
     override func tearDown() async throws {
-        cancellables.forEach { $0.cancel() }
-        cancellables = nil
-        
-        // Clean up any test runners
-        runnerService.removeAllLocalRunners()
+        isolatedDefaults.cleanup()
         
         runnerService = nil
         try await super.tearDown()
@@ -61,30 +54,23 @@ final class RunnerProcessLifecycleTests: XCTestCase {
         XCTAssertEqual(RunnerStatus.error.color, "red")
     }
     
-    func testRunnerServiceSharedInstance() {
-        // Test that shared instance is properly initialized
-        XCTAssertNotNil(runnerService)
-        XCTAssertNotNil(runnerService.localRunners)
-    }
-    
     func testRunnerStateObservability() async throws {
         // Test that runner state changes are observable
         let expectation = XCTestExpectation(description: "Runner state change observed")
         
-        let cancellable = runnerService.$localRunners.sink { runners in
+        withObservationTracking {
+            _ = runnerService.localRunners
+        } onChange: {
             expectation.fulfill()
         }
         
-        // Trigger a change by calling removeAllLocalRunners
-        runnerService.removeAllLocalRunners()
+        runnerService.addLocalRunner(LocalRunner(name: "Observed", repository: "user/repo", path: "/tmp/observed"))
         
         await fulfillment(of: [expectation], timeout: 1.0)
-        cancellable.cancel()
     }
     
-    func testLogStreamIsNilForUnknownRunner() {
-        // No process has been started, so there is no log stream to subscribe to
-        XCTAssertNil(runnerService.getLogStream(for: "test-runner-id"))
+    func testLogFileIsNilForUnknownRunner() {
+        XCTAssertNil(runnerService.getRunnerLogFile(for: "unknown"))
     }
     
     func testRunnerEquality() {
@@ -96,7 +82,7 @@ final class RunnerProcessLifecycleTests: XCTestCase {
             labels: ["label1"]
         )
         
-        var runner2 = LocalRunner(
+        let runner2 = LocalRunner(
             name: "Runner 2",
             repository: "user/repo2",
             path: "/tmp/runner2",

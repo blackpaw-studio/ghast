@@ -17,7 +17,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         ))
         
         let view = SettingsView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
@@ -27,7 +27,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         authService.setUnauthenticatedState()
         
         let view = SettingsView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
@@ -43,7 +43,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         ))
         
         let view = SettingsView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
     }
@@ -59,7 +59,7 @@ final class SettingsViewSnapshotTests: XCTestCase {
         ))
         
         let view = SettingsView()
-            .environmentObject(authService as GitHubAuthService)
+            .environment(authService as GitHubAuthService)
             .preferredColorScheme(.dark)
         
         SnapshotTestHelpers.assertSnapshot(of: view, width: 600, height: 500, record: false)
