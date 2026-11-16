@@ -15,6 +15,8 @@ struct FocusMainView: View {
     /// Find and follow state per runner, kept while the window lives.
     @State private var outputPanes = OutputPaneRegistry()
     @State private var isShowingNewRunner = false
+    /// Local runner ids when New Runner opened, to refresh GitHub's lists if one was added.
+    @State private var runnerIDsBeforeNewRunner: Set<String> = []
 
     private var catalog: RunnerCatalog {
         RunnerCatalog.merge(
@@ -88,9 +90,13 @@ struct FocusMainView: View {
             state: commandState(for: selected),
             perform: { perform($0, on: selected) }
         ))
-        .sheet(isPresented: $isShowingNewRunner) { NewRunnerStopgapSheet() }
+        .sheet(isPresented: $isShowingNewRunner, onDismiss: refreshIfRunnerAdded) { NewRunnerStopgapSheet() }
         .background(WindowVisibilityReader { remoteStore.isVisible = $0 })
-        .task { await remoteStore.pollWhileAlive(sleeper: context.sleeper) }
+        // This view exists only while signed in, so the first fetch runs with the token set.
+        .task {
+            await remoteStore.refresh(.launch)
+            await remoteStore.pollWhileAlive(sleeper: context.sleeper)
+        }
         .onChange(of: controlActiveState) { _, state in
             guard state == .key else { return }
             Task { await remoteStore.refresh(.activation) }
@@ -135,7 +141,15 @@ struct FocusMainView: View {
     private var actions: RunnerActions { RunnerActions(runnerService: runnerService) }
 
     /// The New Runner flow arrives in the next step of the redesign; the old one stands in.
-    private func newRunner() { isShowingNewRunner = true }
+    private func newRunner() {
+        runnerIDsBeforeNewRunner = Set(runnerService.localRunners.map(\.id))
+        isShowingNewRunner = true
+    }
+
+    private func refreshIfRunnerAdded() {
+        guard Set(runnerService.localRunners.map(\.id)) != runnerIDsBeforeNewRunner else { return }
+        Task { await remoteStore.refresh(.explicit) }
+    }
 
     // MARK: Commands
 

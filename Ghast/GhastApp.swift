@@ -57,11 +57,11 @@ struct AppDependencies {
         FocusContext(clock: clock, hostInfo: hostInfo, animatesCursor: animatesCursor, sleeper: sleeper, displayPath: displayPath)
     }
 
-    /// Starts the always-on services: output tailing for every local runner and GitHub's
-    /// runner lists. Never called under test.
+    /// Starts the always-on services: output tailing for every local runner. GitHub's runner
+    /// lists load once the account is signed in (the main window), since the stored token
+    /// isn't applied yet at launch. Never called under test.
     func startServices() async {
         activityStore.observe(runnerService)
-        await remoteStore.refresh(.launch)
     }
 
     static func live() -> AppDependencies {
