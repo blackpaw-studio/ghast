@@ -15,6 +15,17 @@ final class ScriptTextView: NSTextView {
     override var isGrammarCheckingEnabled: Bool { get { false } set {} }
     override var smartInsertDeleteEnabled: Bool { get { false } set {} }
     override var enabledTextCheckingTypes: NSTextCheckingTypes { get { 0 } set {} }
+
+    /// The script's own history, never the window's: ⌘Z here can only undo this script.
+    private let scriptUndoManager = UndoManager()
+    override var undoManager: UndoManager? { scriptUndoManager }
+
+    /// Shows another script (a runner switch or an outside change) and forgets the undo history,
+    /// which belongs to the old text; replaying it would write one runner's script into another.
+    func replaceScript(_ text: String, attributes: [NSAttributedString.Key: Any]) {
+        textStorage?.setAttributedString(NSAttributedString(string: text, attributes: attributes))
+        scriptUndoManager.removeAllActions()
+    }
 }
 
 /// The job-script editor: `ScriptTextView` in a borderless, scroller-free scroll view, set in
@@ -57,8 +68,8 @@ struct ScriptTextEditor: NSViewRepresentable {
         Self.setText(text, in: textView)
     }
 
-    private static func setText(_ text: String, in textView: NSTextView) {
-        textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: attributes))
+    private static func setText(_ text: String, in textView: ScriptTextView) {
+        textView.replaceScript(text, attributes: attributes)
     }
 
     private static var attributes: [NSAttributedString.Key: Any] {

@@ -28,3 +28,21 @@ import AppKit
         #expect(!view.isGrammarCheckingEnabled)
     }
 }
+
+/// One editor shows each runner in turn: its undo history must not survive a switch, or ⌘Z
+/// would write the previous runner's script into the next one.
+@MainActor @Suite struct ScriptTextViewUndoTests {
+    @Test func replacingTheScriptForgetsTheUndoHistory() {
+        let view = ScriptTextView()
+        view.allowsUndo = true
+        view.replaceScript("echo a", attributes: [:])
+        view.insertText(" # edited", replacementRange: NSRange(location: 6, length: 0))
+        view.breakUndoCoalescing()
+        #expect(view.undoManager?.canUndo == true)
+
+        view.replaceScript("echo b", attributes: [:])
+
+        #expect(view.undoManager?.canUndo == false)
+        #expect(view.string == "echo b")
+    }
+}
