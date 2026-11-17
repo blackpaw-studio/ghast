@@ -22,6 +22,11 @@ enum FixtureBootstrap {
                     await dependencies.seedProcessStates()
                     await dependencies.appDependencies.startServices()
                     await dependencies.startSignInIfNeeded()
+                    // Settings › Account lists the organizations from GitHub's (fixture) lists,
+                    // which only the main window loads otherwise.
+                    if launch.screen.settingsTab != nil {
+                        await dependencies.appDependencies.remoteStore.refresh(.launch)
+                    }
                 }
             )
             return Result(dependencies: dependencies, stage: stage)

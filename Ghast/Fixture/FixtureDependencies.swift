@@ -138,8 +138,11 @@ struct FixtureDependencies {
             processLauncher: launcher,
             settings: AppSettings(defaults: defaults),
             runnerDownloader: FixtureRunnerDownloader(),
-            scriptRunner: FixtureScriptRunner()
+            scriptRunner: FixtureScriptRunner(),
+            loginItemService: InertLoginItemService(status: .enabled)
         )
+        // Settings.png: open at login is on and the last check found nothing new.
+        dependencies.updateStatus.handle(.noUpdateFound)
         dependencies.animatesCursor = false
         dependencies.performsDeviceFlowSideEffects = false
         let scratchRunners = runners.path

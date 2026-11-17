@@ -36,6 +36,8 @@ final class FixtureStage {
     }
 
     var mainWindowPreset: MainWindowPreset? { launch.screen.mainWindowPreset }
+    var settingsTabPreset: SettingsTab? { launch.screen.settingsTab }
+    var suppressesAuthWindows: Bool { launch.screen.settingsTab != nil || launch.screen == .menuBar }
 
     func shutdown() {
         restoreAutosavedFrames()
@@ -69,6 +71,7 @@ final class FixtureStage {
         backdrop = makeBackdrop(on: screen)
         task = Task { [weak self] in
             await self?.prepare()
+            if self?.settingsTabPreset != nil { Self.openSettings() }
             await self?.placeWindowAndAnnounce(on: screen)
         }
     }
@@ -79,6 +82,14 @@ final class FixtureStage {
         NSScreen.screens.first {
             $0.frame.size == FixtureWindowPlacement.screenSize && $0.backingScaleFactor == 2
         } ?? NSScreen.main
+    }
+
+    /// Chooses the app menu's Settings… item, as ⌘, would.
+    private static func openSettings() {
+        guard let appMenu = NSApp.mainMenu?.items.first?.submenu,
+              let index = appMenu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command })
+        else { return }
+        appMenu.performActionForItem(at: index)
     }
 
     // MARK: - Backdrop

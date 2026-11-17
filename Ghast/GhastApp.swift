@@ -106,23 +106,22 @@ struct AppDependencies {
         )
     }
 
-    /// Starts the always-on services: output tailing for every local runner, and the runners
-    /// that were running when Ghast quit. GitHub's runner lists load once the account is signed
-    /// in (the main window), since the stored token isn't applied yet at launch. Never called
-    /// under test.
+    /// Starts the always-on services: output tailing for every local runner and notifications.
+    /// GitHub's runner lists load once the account is signed in (the main window), since the
+    /// stored token isn't applied yet at launch. Never called under test.
     func startServices() async {
         activityStore.observe(runnerService)
         let notificationService = notificationService
         let liveEvents = activityStore.liveEvents
         let processExits = runnerService.processExits
         Task { await notificationService.run(liveEvents: liveEvents, processExits: processExits) }
-        async let restarted: Void = RestartAtLaunch.run(
-            isEnabled: settings.restartRunnersAtLaunch,
-            starter: runnerService,
-            sleeper: sleeper
-        )
         await authService.checkStoredAuthentication()
-        await restarted
+    }
+
+    /// Starts the runners that were running when Ghast last quit. Not in the design fixture,
+    /// which seeds its own process states.
+    func restartRunnersAtLaunch() async {
+        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, starter: runnerService, sleeper: sleeper)
     }
 
     static func live(updater: SPUUpdater, updateEvents: SparkleUpdateEvents) -> AppDependencies {
@@ -172,7 +171,7 @@ struct GhastApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultSize(FocusMetrics.mainWindowSize)
-        .defaultLaunchBehavior(appDelegate.launchesSignedIn ? .presented : .suppressed)
+        .defaultLaunchBehavior(appDelegate.launchesSignedIn && !appDelegate.suppressesAuthWindows ? .presented : .suppressed)
         Window("Welcome to Ghast", id: AuthWindow.welcomeID) {
             if !isRunningTests() {
                 WelcomeWindowRoot(authService: appDelegate.dependencies.authService)
@@ -183,7 +182,23 @@ struct GhastApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(FocusMetrics.welcomeWindow)
-        .defaultLaunchBehavior(appDelegate.launchesSignedIn ? .suppressed : .presented)
+        .defaultLaunchBehavior(appDelegate.launchesSignedIn || appDelegate.suppressesAuthWindows ? .suppressed : .presented)
+        Settings {
+            if !isRunningTests() {
+                let dependencies = appDelegate.dependencies
+                SettingsWindow()
+                    .environment(dependencies.settings)
+                    .environment(dependencies.openAtLogin)
+                    .environment(dependencies.notificationService)
+                    .environment(dependencies.updateStatus)
+                    .environment(dependencies.runnerService)
+                    .environment(dependencies.remoteStore)
+                    .environment(dependencies.authService)
+                    .environment(\.focusContext, dependencies.focusContext)
+                    .environment(\.appWindowRouter, dependencies.router)
+                    .environment(\.settingsTabPreset, appDelegate.settingsTabPreset)
+            }
+        }
         .commands {
             MainWindowCommands()
             CommandGroup(after: .appInfo) {
@@ -254,6 +269,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return isUnderTest || dependencies.authService.hasStoredToken
     }()
 
+    /// The design fixture's Settings and menu bar screens show neither the main nor the
+    /// Welcome window.
+    var suppressesAuthWindows: Bool {
+        #if DEBUG
+        return fixtureStage?.suppressesAuthWindows ?? false
+        #else
+        return false
+        #endif
+    }
+
+    /// The Settings tab the design fixture opens; nil on a normal launch.
+    var settingsTabPreset: SettingsTab? {
+        #if DEBUG
+        return fixtureStage?.settingsTabPreset
+        #else
+        return nil
+        #endif
+    }
+
     /// The selection the design fixture opens on; nil on a normal launch.
     var mainWindowPreset: MainWindowPreset? {
         #if DEBUG
@@ -307,6 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let dependencies = dependencies
         Task { await dependencies.startServices() }
+        Task { await dependencies.restartRunnersAtLaunch() }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
