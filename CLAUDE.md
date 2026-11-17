@@ -64,11 +64,11 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 #### Snapshot Testing
 Snapshots lock layout (glass and backdrop differ per macOS version, so they are covered by fidelity captures). All three suites are Swift Testing, parameterised over light and dark, and render against fixture dependencies:
 - `FocusMainSnapshotTests`: detail column in states running, idle, stopped, starting, error, remote, empty, configuration
-- `FocusFlowSnapshotTests`: welcome, welcome-failed, device-code, new-runner, new-runner-progress
+- `FocusFlowSnapshotTests`: welcome, welcome-failed, device-code, new-runner, new-runner-progress, new-runner-loading, new-runner-long-names, new-runner-load-failed
 - `FocusSettingsSnapshotTests`: General, Account, Account with organization access not granted
 
 #### Design fixture mode and fidelity scripts
-- Debug builds launch into a canned screen with `-GhastDesignFixture <screen>` (`-GhastAppearance dark` for dark). Screens: main, configuration, remote, error, first-run, welcome, device-code, new-runner, new-runner-progress, settings-general, settings-account, menu-bar (`Ghast/Fixture/`). Fixture mode uses a scratch folder, in-memory defaults and token store, and a fake GitHub API: it never touches real defaults, the Keychain, `~/.ghast`, Sparkle or running runners.
+- Debug builds launch into a canned screen with `-GhastDesignFixture <screen>` (`-GhastAppearance dark` for dark). Screens: main, configuration, remote, error, first-run, welcome, device-code, new-runner, new-runner-progress, new-runner-loading, new-runner-loaded, settings-general, settings-account, menu-bar (`Ghast/Fixture/`). Fixture mode uses a scratch folder, in-memory defaults and token store, and a fake GitHub API: it never touches real defaults, the Keychain, `~/.ghast`, Sparkle or running runners.
 - `Scripts/fidelity/capture.sh <screen> [--dark]` builds Debug, starts a HiDPI virtual display, launches the fixture and captures it at 2x into `build/fidelity/` (needs Peekaboo with Screen Recording). `compare.sh <screen> [--dark]` writes a side-by-side and overlay against `docs/design/focus-redesign/`. Deviations are logged in `docs/design/focus-redesign/fidelity.md`.
 
 **Recording new snapshots**:

@@ -57,6 +57,8 @@ enum FixtureRepositoryLoad: Equatable, Sendable {
     case delayed(Duration)
     /// Never arrives: the sheet stays in its loading state.
     case pending
+    /// GitHub can't be reached.
+    case failing
 }
 
 /// Which account the fixture's GitHub answers for.
@@ -74,7 +76,7 @@ extension FixtureWorld {
 
     private static let busyOrganizationLogins = [
         "blackpaw-studio", "evandcoleman-labs", "olympus-homelab",
-        "the-extraordinarily-long-organization-name-collective",
+        "an-extraordinarily-long-organization-name-collective",
     ]
 
     static let busyOrganizations: [GitHubOrganization] = busyOrganizationLogins.enumerated().map { index, login in
@@ -91,7 +93,7 @@ extension FixtureWorld {
             ("blackpaw-studio", "marketing-site", false),
             ("evandcoleman", "dotfiles", true),
             ("evandcoleman", "an-unreasonably-long-repository-name-that-keeps-going-and-going", true),
-            ("the-extraordinarily-long-organization-name-collective", "infrastructure-as-code-monorepo", true),
+            ("an-extraordinarily-long-organization-name-collective", "infrastructure-as-code-monorepo", true),
             ("olympus-homelab", "nomad-jobs", true),
             ("olympus-homelab", "consul-templates", false),
         ] + (1...22).map { ("evandcoleman-labs", "experiment-\($0)", true) }
@@ -135,6 +137,7 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
         case .immediate: break
         case let .delayed(delay): try await Task.sleep(for: delay)
         case .pending: try await Task.sleep(for: .seconds(3_600))
+        case .failing: throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
         }
         return FixtureWorld.busyRepositories
     }

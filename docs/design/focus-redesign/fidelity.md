@@ -112,10 +112,17 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 | Sheet position: the system attaches the sheet to the window and centres it vertically; the mockup floats two sheets side by side near the top | native: sheets are window-attached |
 | The window under the sheet draws inactive and without the kit's scrim | native: sheet presentation |
 | Avatar image: a monogram drawn as an `NSImage` (menu items can't host views); real avatars load from GitHub | native: fixture stand-in |
-| "Add to" is the system menu popup: filled bezel, sized to its widest item, icon tight to the title | native: `Picker(.menu)` |
+| "Add to" is the system menu popup: filled bezel, sized to its widest item, icon tight to the title. When the widest item doesn't fit the value column it takes the full column instead, and the closed popup tail-truncates the chosen name (the system popup's own truncation); the open menu shows names in full | native: `Picker(.menu)` |
 | The Name field selects the suggested name when it takes focus | native: text field focus |
 | Labels field is a SwiftUI token row in a text-field-coloured box, not `NSTokenField`, so the default labels can be fixed | native: no system token field with fixed tokens |
 | "Add Label" text column narrowed to 64 pt because SF tokens run 7 pt wider than the kit's | fixed |
+| Not in the kit: while the repository list loads, a small spinner sits left of the popup and the menu's Repositories section holds a disabled "Loading Repositories…" item; organizations stay selectable. With nothing to select yet, the closed popup shows that item and Create Runner stays disabled | added: loading state |
+| Not in the kit: if the repositories don't load, the help line reads "Couldn't load repositories." with a link-style "Try Again" (the error is its tooltip), and the menu offers "Try Again" too | added: failure state |
+| Not in the kit: the help line wraps instead of truncating when the scope name is long | added: long names |
+
+## new-runner-loading, new-runner-loaded (no mockup)
+
+Fixture screens for an account with many organizations and repositories, some with very long names: repositories that never arrive, and repositories that arrive shortly after the sheet opens. Both keep the sheet at 500 pt with the popup inside the form column.
 
 ## new-runner-progress
 

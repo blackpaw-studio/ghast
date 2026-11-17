@@ -104,9 +104,11 @@ struct FixtureDependencies {
     let tokenStore: any TokenStore
     let appDependencies: AppDependencies
 
+    /// `account` overrides the screen's GitHub account (tests load it without waiting).
     static func make(
         for launch: FixtureLaunch,
-        scratchRoot: URL = FileManager.default.temporaryDirectory
+        scratchRoot: URL = FileManager.default.temporaryDirectory,
+        account: FixtureAccount? = nil
     ) -> FixtureDependencies {
         let scratch = scratchRoot.appendingPathComponent("ghast-fixture-\(UUID().uuidString)", isDirectory: true)
         let runners = scratch.appendingPathComponent("runners", isDirectory: true)
@@ -117,7 +119,7 @@ struct FixtureDependencies {
         }
         defaults.removePersistentDomain(forName: suite)
 
-        let api = FixtureGitHubAPIService(listsThisMacRunners: launch.screen.hasLocalRunners, account: launch.screen.world)
+        let api = FixtureGitHubAPIService(listsThisMacRunners: launch.screen.hasLocalRunners, account: account ?? launch.screen.world)
         let tokenStore = InMemoryFixtureTokenStore(token: launch.screen.isSignedOut ? nil : "fixture-token")
         let clock = FrozenClock()
         let launcher = ScriptedRunnerLauncher(exitCodes: Dictionary(
