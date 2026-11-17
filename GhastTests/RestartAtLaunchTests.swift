@@ -103,8 +103,7 @@ struct RestartAtLaunchTests {
             defaults: isolated.defaults,
             runnersDirectory: root,
             launcher: ControllableLauncher(log: launches),
-            sleeper: { _ in },
-            runsStrayProcessCleanup: false
+            sleeper: { _ in }
         )
         for name in ["a", "b", "c"] {
             let folder = root.appendingPathComponent(name, isDirectory: true)

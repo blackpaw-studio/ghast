@@ -145,8 +145,7 @@ struct NotificationPolicyTests {
             defaults: isolated.defaults,
             runnersDirectory: makeTemporaryDirectory(),
             launcher: launcher,
-            sleeper: { _ in },
-            runsStrayProcessCleanup: false
+            sleeper: { _ in }
         )
         runnerService.addLocalRunner(runner)
         let service = NotificationService(

@@ -28,8 +28,7 @@ struct FlowHarness {
             defaults: makeIsolatedDefaults().defaults,
             runnersDirectory: runnersDirectory,
             launcher: launcher,
-            sleeper: { _ in },
-            runsStrayProcessCleanup: false
+            sleeper: { _ in }
         )
     }
 
