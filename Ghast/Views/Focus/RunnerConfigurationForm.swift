@@ -9,6 +9,7 @@ struct RunnerConfigurationForm: View {
     let runnerService: RunnerService
     let actions: RunnerActions
     @Environment(\.focusContext) private var context
+    @Environment(\.onConfigurationDraftLoaded) private var onDraftLoaded
 
     @State private var draft: RunnerConfigurationDraft
     @State private var selectedVariable: EnvironmentVariableDraft.ID?
@@ -49,7 +50,10 @@ struct RunnerConfigurationForm: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .focusContentLayer()
-        .task(id: runner.id) { draft.load(runner) }
+        .task(id: runner.id) {
+            draft.load(runner)
+            onDraftLoaded?(runner.id)
+        }
         .onDisappear { draft.flush() }
     }
 
@@ -254,4 +258,10 @@ struct ScriptDraft: Equatable {
     var savedScript: String? {
         isEnabled && !text.isEmpty ? text : nil
     }
+}
+
+extension EnvironmentValues {
+    /// Called with the runner's ID once the Configuration tab has loaded its saved settings, so
+    /// a snapshot can wait for that instead of guessing.
+    @Entry var onConfigurationDraftLoaded: (@MainActor (String) -> Void)? = nil
 }
