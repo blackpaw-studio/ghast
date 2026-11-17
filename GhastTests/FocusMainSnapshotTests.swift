@@ -8,7 +8,7 @@ import SnapshotTesting
 /// Locks the main window's content layer (status header, stats, tokens, output, form, empty
 /// state) for every runner state, in light and dark, using the fixture world the design kit
 /// was drawn from. Window chrome is native and checked by the fidelity captures instead.
-@Suite("FocusMainSnapshots")
+@Suite("FocusMainSnapshots", .timeLimit(.minutes(1)))
 @MainActor
 struct FocusMainSnapshotTests {
     enum State: String, CaseIterable {
@@ -24,16 +24,23 @@ struct FocusMainSnapshotTests {
         defer { fixture.tearDown() }
         await fixture.seedProcessStates()
 
+        let draftLoaded = AsyncStream.makeStream(of: String.self)
         let view = try content(for: state, fixture: fixture)
             .environment(\.focusContext, fixture.appDependencies.focusContext)
+            .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
             .environment(\.colorScheme, isDark ? .dark : .light)
             .frame(width: Self.size.width, height: Self.size.height)
             .background(Color(nsColor: .windowBackgroundColor))
         let host = NSHostingController(rootView: view)
         host.view.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
         host.view.frame = CGRect(origin: .zero, size: Self.size)
-        for _ in 0..<20 { await Task.yield() }
         host.view.layoutSubtreeIfNeeded()
+        // The Configuration tab loads its saved settings in a task; the other states draw
+        // synchronously.
+        if state == .configuration {
+            for await _ in draftLoaded.stream { break }
+            host.view.layoutSubtreeIfNeeded()
+        }
 
         let record: SnapshotTestingConfiguration.Record = SnapshotTestHelpers.isRecordingSnapshots ? .all : .missing
         withSnapshotTesting(record: record) {

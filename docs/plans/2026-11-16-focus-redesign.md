@@ -375,6 +375,13 @@ Recorded here instead of fixed; each is unlikely in normal use, or predates this
 - Verify: `$T -only-testing:GhastTests/RestartAtLaunchTests -only-testing:GhastTests/NotificationPolicyTests -only-testing:GhastTests/LoginItemTests -only-testing:GhastTests/UpdateStatusTests -only-testing:GhastTests/MenuBarMenuModelTests -only-testing:GhastTests/FocusSettingsSnapshotTests`, plus the capture loop.
 - Gate: full suite with `heavy $T`. The orchestrator checks open-at-login and notifications on a release-signed build through `xcode-remote` (risk 6).
 
+### PR 4 accepted risks (review.concurrency, round 1)
+Recorded here instead of fixed.
+- **A start failure at launch records exit 127 and clears `shouldBeRunning`.** A runner whose folder is on a volume that isn't mounted yet stays off until started by hand. Follow-up: a "couldn't start" notice with the real error.
+- **`OpenAtLoginModel` refreshes only when Settings opens.** An approval or removal in System Settings while Settings is already open shows on the next open.
+- **Rebuilding the status menu while it's open closes any open submenu.** It happens only when a runner's state changes during that moment.
+- **Wrapper watcher scope.** It ends a runner whose Ghast died, polling once a second, but only for wrappers started by this version. A listener orphaned by an older wrapper (a crash right before updating) still needs stopping by hand.
+
 ---
 
 ## PR 5 · Cleanup (brief: `implement`, medium)

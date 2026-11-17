@@ -52,6 +52,16 @@ case "$SCREEN" in new-runner|new-runner-progress) HAS_SHEET=1 ;; *) HAS_SHEET=0 
 # The mockups show active windows, so never capture an inactive one.
 [ "$WINDOW_ID" = "0" ] || require_active_window "$APP_PID" "$WINDOW_ID" "$HAS_SHEET"
 if [ "$WINDOW_ID" = "0" ]; then
+    # The menu-bar fixture opens its menu and names the row MenuBar.png highlights: hovering it
+    # highlights the row and opens its submenu, as the mockup shows.
+    if [[ "$READY" == *" hover="* ]]; then
+        HOVER="$(sed -E 's/.* hover=([0-9-]+,[0-9-]+).*/\1/' <<<"$READY")"
+        # The menu draws after the fixture announces it (a first launch is slower).
+        sleep 1.5
+        peekaboo move --at "$HOVER" --foreground >/dev/null 2>&1 || die "peekaboo couldn't move the pointer to $HOVER"
+        # Submenus open after a short hover delay.
+        sleep 1
+    fi
     # Region capture of the whole virtual display, x,y,w,h in global points.
     peek_region "$VD_ORIGIN,1440,900" "$OUT_PNG"
 elif [ "$HAS_SHEET" = "1" ]; then

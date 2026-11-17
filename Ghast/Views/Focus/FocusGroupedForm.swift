@@ -4,6 +4,7 @@ import SwiftUI
 struct FocusFormSection<Content: View>: View {
     let caption: String
     @ViewBuilder let content: () -> Content
+    @Environment(\.focusFormBoxRadius) private var boxRadius
 
     var body: some View {
         VStack(alignment: .leading, spacing: FocusMetrics.formCaptionGap) {
@@ -15,7 +16,7 @@ struct FocusFormSection<Content: View>: View {
                 content()
             }
             .background(
-                RoundedRectangle(cornerRadius: FocusMetrics.formBoxRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: boxRadius, style: .continuous)
                     .fill(FocusColor.group)
             )
         }
@@ -45,5 +46,17 @@ struct FocusFormDivider: View {
         FocusColor.separator
             .frame(height: 1)
             .padding(.leading, FocusMetrics.formRowInset)
+    }
+}
+
+private struct FocusFormBoxRadiusKey: EnvironmentKey {
+    static let defaultValue = FocusMetrics.formBoxRadius
+}
+
+extension EnvironmentValues {
+    /// Group corner radius: Configuration.png measures 10, Settings.png the kit's 12.
+    var focusFormBoxRadius: CGFloat {
+        get { self[FocusFormBoxRadiusKey.self] }
+        set { self[FocusFormBoxRadiusKey.self] = newValue }
     }
 }

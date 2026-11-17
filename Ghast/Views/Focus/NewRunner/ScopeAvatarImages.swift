@@ -16,18 +16,27 @@ final class ScopeAvatarImages {
     }
 
     func image(for choice: NewRunnerScopeChoice) -> NSImage {
-        loaded[choice.avatarURL] ?? Self.monogram(for: choice.name)
+        image(name: choice.name, avatarURL: choice.avatarURL)
+    }
+
+    /// The avatar at `avatarURL` once loaded, `name`'s monogram until then.
+    func image(name: String, avatarURL: String) -> NSImage {
+        loaded[avatarURL] ?? Self.monogram(for: name)
     }
 
     /// Starts loading every avatar not yet requested. Failures keep the monogram.
     func load(_ choices: [NewRunnerScopeChoice]) {
-        for choice in choices where !choice.avatarURL.isEmpty && !requested.contains(choice.avatarURL) {
-            requested.insert(choice.avatarURL)
-            guard let url = URL(string: choice.avatarURL) else { continue }
+        load(avatarURLs: choices.map(\.avatarURL))
+    }
+
+    func load(avatarURLs: [String]) {
+        for avatarURL in avatarURLs where !avatarURL.isEmpty && !requested.contains(avatarURL) {
+            requested.insert(avatarURL)
+            guard let url = URL(string: avatarURL) else { continue }
             let fetch = fetch
             Task {
                 guard let data = try? await fetch(url), let image = NSImage(data: data) else { return }
-                loaded[choice.avatarURL] = Self.round(image)
+                loaded[avatarURL] = Self.round(image)
             }
         }
     }

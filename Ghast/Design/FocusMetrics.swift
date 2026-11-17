@@ -211,4 +211,31 @@ enum FocusMetrics {
     // MARK: Account
     static let accountAvatar: CGFloat = 64
     static let accountInitialsFontSize: CGFloat = 24
+    /// The kit's `--accent-soft`: accent at 12%.
+    static let accountAvatarFillOpacity: Double = 0.12
+
+    // MARK: Settings (measured from Settings.png)
+    /// The mockup's windows are 660 pt tall; content fills what the tab toolbar leaves.
+    static let settingsContentMinHeight: CGFloat = 572
+    static let settingsSectionGap: CGFloat = 20
+    static let settingsBoxRadius: CGFloat = 12
+
+    // MARK: Menu bar extra (measured from MenuBar.png)
+    static let menuBarMenuWidth: CGFloat = 300
+    /// The status word's right edge, from the title's origin.
+    static let menuBarStatusTab: CGFloat = 220
+    /// Help text sits this far under its group.
+    static let settingsHelpTop: CGFloat = 6
+    static let settingsButtonRowHeight: CGFloat = 44
+    static let settingsVersionRowHeight: CGFloat = 52
+    static let settingsVersionLineGap: CGFloat = 1
+    static let settingsAvatarTop: CGFloat = 16
+    static let settingsAvatarBottom: CGFloat = 8
+    static let settingsNameTop: CGFloat = 13.5
+    static let settingsSignedInTop: CGFloat = 2.5
+    static let settingsStatusGlyphGap: CGFloat = 6
+    static let settingsGrantGap: CGFloat = 4
+    static let settingsOrgAvatarGap: CGFloat = 10
+    static let settingsOrgRowHeight: CGFloat = 40
+    static let settingsSignOutHelpGap: CGFloat = 8
 }

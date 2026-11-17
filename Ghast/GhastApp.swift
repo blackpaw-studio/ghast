@@ -20,6 +20,14 @@ struct AppDependencies {
     let flowServices: RunnerFlowServices
     /// Remove, Reconfigure and Remove from GitHub, with their confirmations.
     let flowCoordinator: RunnerFlowCoordinator
+    /// Opens windows for notification clicks and the menu bar extra.
+    let router: AppWindowRouter
+    /// Crash and job-failure notifications.
+    let notificationService: NotificationService
+    /// Settings › Startup: open at login, from `SMAppService`.
+    let openAtLogin: OpenAtLoginModel
+    /// Settings › Updates.
+    let updateStatus: UpdateStatusModel
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -41,7 +49,11 @@ struct AppDependencies {
         settings: AppSettings,
         remoteStore: RemoteRunnerStore? = nil,
         runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
-        scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner()
+        scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
+        notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
+        router: AppWindowRouter = AppWindowRouter(),
+        loginItemService: any LoginItemService = InertLoginItemService(),
+        updater: any UpdaterDriving = InertUpdater()
     ) {
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
@@ -70,6 +82,15 @@ struct AppDependencies {
         )
         self.flowServices = flowServices
         flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }
+        self.router = router
+        notificationService = NotificationService(
+            center: notificationCenter,
+            settings: settings,
+            runnerName: { id in runnerService.localRunners.first { $0.id == id }?.name },
+            openRunner: { router.showOutput(runnerID: $0) }
+        )
+        openAtLogin = OpenAtLoginModel(service: loginItemService)
+        updateStatus = UpdateStatusModel(updater: updater)
     }
 
 
@@ -85,26 +106,80 @@ struct AppDependencies {
         )
     }
 
-    /// Starts the always-on services: output tailing for every local runner. GitHub's runner
-    /// lists load once the account is signed in (the main window), since the stored token
-    /// isn't applied yet at launch. Never called under test.
+    /// Starts the always-on services: output tailing for every local runner and notifications.
+    /// GitHub's runner lists load once the account is signed in (the main window), since the
+    /// stored token isn't applied yet at launch. Never called under test.
     func startServices() async {
         activityStore.observe(runnerService)
+        let notificationService = notificationService
+        let liveEvents = activityStore.liveEvents
+        let processExits = runnerService.processExits
+        Task { await notificationService.run(liveEvents: liveEvents, processExits: processExits) }
         await authService.checkStoredAuthentication()
     }
 
-    static func live() -> AppDependencies {
+    /// The menu bar extra over `host`: this Mac's runners (never GitHub's), following the setting.
+    func makeMenuBarController(host: any StatusItemHosting) -> MenuBarController {
+        let runnerService = runnerService, activityStore = activityStore, authService = authService
+        let settings = settings, router = router
+        let actions = RunnerActions(runnerService: runnerService, flows: flowCoordinator)
+        return MenuBarController(
+            host: host,
+            state: {
+                let catalog = RunnerCatalog.merge(
+                    local: runnerService.localRunners,
+                    processStates: runnerService.processStates,
+                    activities: activityStore.activities,
+                    remote: [:]
+                )
+                let busy = Set(runnerService.localRunners.map(\.id).filter(actions.isFlowBusy))
+                return MenuBarState(
+                    isShown: settings.showMenuBarExtra,
+                    entries: MenuBarMenuModel.make(runners: catalog.thisMac, isSignedIn: authService.isAuthenticated, busyRunnerIDs: busy)
+                )
+            },
+            perform: { action in
+                switch action {
+                case let .showOutput(id): router.showOutput(runnerID: id)
+                case let .start(id): actions.start(id)
+                case let .stop(id): actions.stop(id)
+                case let .restart(id): actions.restart(id)
+                case .command(.startAll): actions.startAll()
+                case .command(.stopAll): actions.stopAll()
+                case .command(.newRunner): router.newRunner()
+                case .command(.openGhast): router.openMain()
+                case .command(.settings): router.openSettings()
+                case .command(.quit): NSApp.terminate(nil)
+                }
+            }
+        )
+    }
+
+    /// Starts the runners that were running when Ghast last quit. Not in the design fixture,
+    /// which seeds its own process states.
+    func restartRunnersAtLaunch() async {
+        let flows = flowCoordinator
+        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, starter: runnerService, sleeper: sleeper, isBusy: flows.isBusy)
+    }
+
+    static func live(updater: SPUUpdater, updateEvents: SparkleUpdateEvents) -> AppDependencies {
         let apiService = GitHubAPIService()
         let clock = SystemClock()
         let launcher = ProcessRunnerLauncher()
-        return AppDependencies(
+        let dependencies = AppDependencies(
             runnerService: RunnerService(clock: clock, launcher: launcher),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
             processLauncher: launcher,
-            settings: AppSettings(defaults: .standard)
+            settings: AppSettings(defaults: .standard),
+            notificationCenter: SystemNotificationCenter(),
+            loginItemService: MainAppLoginItemService(),
+            updater: updater
         )
+        let updateStatus = dependencies.updateStatus
+        updateEvents.onEvent = { updateStatus.handle($0) }
+        return dependencies
     }
 }
 
@@ -112,9 +187,11 @@ struct AppDependencies {
 struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     static let mainWindowID = AuthWindow.mainID
+    /// The main window's title, which also names its Window menu item.
+    static let mainWindowTitle = "Ghast"
     
     var body: some Scene {
-        Window("Ghast", id: Self.mainWindowID) {
+        Window(Self.mainWindowTitle, id: Self.mainWindowID) {
             if !isRunningTests() {
                 let dependencies = appDelegate.dependencies
                 ContentView(authService: dependencies.authService)
@@ -126,23 +203,42 @@ struct GhastApp: App {
                     .environment(\.runnerFlowServices, dependencies.flowServices)
                     .environment(dependencies.flowCoordinator)
                     .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
+                    .environment(\.appWindowRouter, dependencies.router)
+                    .installsWindowRouter(dependencies.router)
             } else {
                 EmptyView()
             }
         }
         .windowResizability(.contentMinSize)
         .defaultSize(FocusMetrics.mainWindowSize)
-        .defaultLaunchBehavior(appDelegate.launchesSignedIn ? .presented : .suppressed)
+        .defaultLaunchBehavior(appDelegate.launchesSignedIn && !appDelegate.suppressesAuthWindows ? .presented : .suppressed)
         Window("Welcome to Ghast", id: AuthWindow.welcomeID) {
             if !isRunningTests() {
                 WelcomeWindowRoot(authService: appDelegate.dependencies.authService)
                     .environment(\.focusContext, appDelegate.dependencies.focusContext)
+                    .installsWindowRouter(appDelegate.dependencies.router)
             }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(FocusMetrics.welcomeWindow)
-        .defaultLaunchBehavior(appDelegate.launchesSignedIn ? .suppressed : .presented)
+        .defaultLaunchBehavior(appDelegate.launchesSignedIn || appDelegate.suppressesAuthWindows ? .suppressed : .presented)
+        Settings {
+            if !isRunningTests() {
+                let dependencies = appDelegate.dependencies
+                SettingsWindow()
+                    .environment(dependencies.settings)
+                    .environment(dependencies.openAtLogin)
+                    .environment(dependencies.notificationService)
+                    .environment(dependencies.updateStatus)
+                    .environment(dependencies.runnerService)
+                    .environment(dependencies.remoteStore)
+                    .environment(dependencies.authService)
+                    .environment(\.focusContext, dependencies.focusContext)
+                    .environment(\.appWindowRouter, dependencies.router)
+                    .environment(\.settingsTabPreset, appDelegate.settingsTabPreset)
+            }
+        }
         .commands {
             MainWindowCommands()
             CommandGroup(after: .appInfo) {
@@ -161,8 +257,14 @@ struct GhastApp: App {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController: SPUStandardUpdaterController
+    /// Sparkle's delegate; must outlive the controller, which holds it weakly.
+    private let updateEvents = SparkleUpdateEvents()
     private var builtDependencies: AppDependencies?
     private var signalSources: [DispatchSourceSignal] = []
+    private var menuBarController: MenuBarController?
+    /// Whether quitting stops the runners. Set by launch from its plan (never in the XCTest
+    /// host or the design fixture), and for services a caller injected, which are its own.
+    private var cleansUpRunnersOnQuit = false
     #if DEBUG
     /// Set in design fixture mode: no single-instance check, Sparkle, signal handlers or
     /// runner cleanup (that cleanup `pkill`s the real runners).
@@ -180,7 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app's services, built on first use. Never built under test unless injected.
     var dependencies: AppDependencies {
         if let builtDependencies { return builtDependencies }
-        let dependencies = AppDependencies.live()
+        let dependencies = AppDependencies.live(updater: updaterController.updater, updateEvents: updateEvents)
         builtDependencies = dependencies
         return dependencies
     }
@@ -194,7 +296,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         let fixture: Void? = nil
         #endif
-        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest && fixture == nil, updaterDelegate: nil, userDriverDelegate: nil)
+        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest && fixture == nil, updaterDelegate: updateEvents, userDriverDelegate: nil)
         super.init()
         #if DEBUG
         if let fixture {
@@ -211,6 +313,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return isUnderTest || dependencies.authService.hasStoredToken
     }()
 
+    /// The design fixture's Settings and menu bar screens show neither the main nor the
+    /// Welcome window.
+    var suppressesAuthWindows: Bool {
+        #if DEBUG
+        return fixtureStage?.suppressesAuthWindows ?? false
+        #else
+        return false
+        #endif
+    }
+
+    /// The Settings tab the design fixture opens; nil on a normal launch.
+    var settingsTabPreset: SettingsTab? {
+        #if DEBUG
+        return fixtureStage?.settingsTabPreset
+        #else
+        return nil
+        #endif
+    }
+
     /// The selection the design fixture opens on; nil on a normal launch.
     var mainWindowPreset: MainWindowPreset? {
         #if DEBUG
@@ -220,8 +341,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     
+    private static var isUnderTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     init(dependencies: AppDependencies) {
         builtDependencies = dependencies
+        cleansUpRunnersOnQuit = true
         updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
     }
@@ -230,40 +356,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         if let fixtureStage {
             NSApp.setActivationPolicy(.regular)
+            if fixtureStage.showsMenuBarExtra {
+                let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
+                menuBarController = controller
+                controller.start()
+                fixtureStage.openMenuBar = { point, opened in controller.openMenu(at: point, opened: opened) }
+            }
             fixtureStage.start()
             return
         }
         #endif
         
-        // Ensure single instance behavior
-        let runningApps = NSWorkspace.shared.runningApplications
-        let ghastApps = runningApps.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
-        
-        if ghastApps.count > 1 {
-            // Another instance is running, terminate this one
-            NSApp.terminate(nil)
-            return
+        let plan = LaunchPlan.make(isUnderTest: Self.isUnderTest)
+        cleansUpRunnersOnQuit = plan.cleansUpRunnersOnQuit
+
+        if plan.checksSingleInstance {
+            let ghastApps = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+            if ghastApps.count > 1 {
+                // Another instance is running, terminate this one
+                NSApp.terminate(nil)
+                return
+            }
         }
         
         // Set activation policy to ensure we can become active
         NSApp.setActivationPolicy(.regular)
         
-        // Install signal handlers for cleanup on abnormal termination
-        installSignalHandlers()
+        if plan.installsSignalHandlers {
+            // Install signal handlers for cleanup on abnormal termination
+            installSignalHandlers()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleTermination),
+                name: NSApplication.willTerminateNotification,
+                object: nil
+            )
+            // Disable sudden termination to ensure cleanup
+            ProcessInfo.processInfo.disableSuddenTermination()
+        }
         
-        // Register for termination notifications
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleTermination),
-            name: NSApplication.willTerminateNotification,
-            object: nil
-        )
-        
-        // Disable sudden termination to ensure cleanup
-        ProcessInfo.processInfo.disableSuddenTermination()
-        
+        // The XCTest host stops here: its services would be built over the user's real
+        // defaults and runner folders.
+        guard plan.startsServices else { return }
         let dependencies = dependencies
         Task { await dependencies.startServices() }
+        if plan.restartsRunners {
+            Task { await dependencies.restartRunnersAtLaunch() }
+        }
+        if plan.showsMenuBarExtra {
+            let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
+            menuBarController = controller
+            controller.start()
+        }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -293,9 +437,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func performRunnerCleanup() {
-        // Nothing to clean up if the services were never built (test host), and a fixture
+        // Never in the XCTest host's own services (its plan has no quit cleanup), and a fixture
         // must never stop the user's real runners.
-        guard !isFixtureMode, let runnerService = builtDependencies?.runnerService else { return }
+        guard !isFixtureMode, cleansUpRunnersOnQuit,
+              let runnerService = builtDependencies?.runnerService else { return }
         
         // Stop all running runners when app terminates
         // This must be synchronous to ensure cleanup completes before termination

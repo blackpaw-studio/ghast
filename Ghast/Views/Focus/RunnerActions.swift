@@ -41,9 +41,12 @@ struct RunnerActions {
     }
 
     /// A user stop of every running runner (unlike quitting, it clears their run intent),
-    /// leaving any a flow is working on.
+    /// leaving any a flow is working on. Runners still waiting to restart at launch lose their
+    /// intent too, so the restart loop leaves them stopped.
     func stopAll() {
-        for runner in runnerService.localRunners where isRunning(runner.id) && !isFlowBusy(runner.id) { stop(runner.id) }
+        for runner in runnerService.localRunners where (isRunning(runner.id) || runner.shouldBeRunning) && !isFlowBusy(runner.id) {
+            stop(runner.id)
+        }
     }
 
     var canStartAll: Bool { runnerService.localRunners.contains { !isRunning($0.id) } }

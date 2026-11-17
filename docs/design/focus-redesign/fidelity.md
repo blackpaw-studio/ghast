@@ -130,20 +130,41 @@ PR 2 captures, light and dark. The content layer is placed at the kit's window c
 
 ## settings-general
 
+Captures: `build/fidelity/settings-general{,-dark}-side.png`. Content is locked by `FocusSettingsSnapshotTests`.
+
 | Deviation | Status |
 |---|---|
-| Toolbar tab metrics | native: system Settings tab toolbar |
+| Tab toolbar is about 24 pt taller than the kit (88 against 64 pt), so the content sits 24 pt lower; the traffic lights centre on it and minimize/zoom are disabled | native: system `Settings` scene `TabView` toolbar |
+| Selected tab is an accent-tinted label in a bordered capsule, not the kit's grey pill | native: system Settings tab selection |
+| Switches are the system small switch, 44 × 20 pt (kit 38 × 22) | native: `Toggle(.switch)` at `.controlSize(.small)` |
+| Group fill is `quaternarySystemFill` (248 against the kit's 243 in light), as on Configuration | native: system fill colour |
+| Pane title and the bar under the tabs | fixed (2852aa5): `.toolbar(removing: .title)`, hidden toolbar background |
+| Switch size, folder row height (40 pt), help spacing, curly apostrophes | fixed (2852aa5) |
 
 ## settings-account
 
+Captures: `build/fidelity/settings-account{,-dark}-side.png`. The not-granted state has no mockup and is locked by the `account-not-granted` snapshot only.
+
 | Deviation | Status |
 |---|---|
-| Toolbar tab metrics | native: system Settings tab toolbar |
-| Avatar image | native: fixture stand-in |
+| Tab toolbar height and selected-tab style, as on settings-general | native: system `Settings` scene `TabView` toolbar |
+| Initials and tab glyph use the system blue accent, not the kit's `--accent-ink` | native: system accent colour |
+| Organization avatar is a monogram, not the kit's paw image | native: fixture stand-in (no network in the fixture) |
+| Group fill, as on settings-general | native: system fill colour |
+| Dark window background is the system's, slightly lighter than the kit | native: system window background |
 
 ## menu-bar
 
+Captures: `build/fidelity/menu-bar{,-dark}-side.png` (region capture of the whole screen; the fixture pops the menu at the kit's coordinates and hovers dionysus-xcode).
+
 | Deviation | Status |
 |---|---|
-| Submenu opens on the side the system chooses | native: system menu placement |
-| Notification banner chrome | native: drawn by Notification Center |
+| Menu is placed at the kit's coordinates on the capture display, not under Ghast's status item; the system positions the status item among the host's other items | native: status item placement belongs to the system |
+| Menu bar shows the host's own items and app menus | native: capture host |
+| Ghost status item is not drawn pressed | native: the fixture pops the menu without clicking the item |
+| Submenu opens to the right, the kit shows left | native: system menu placement |
+| Section header ("This Mac") is lighter than the kit | native: `NSMenuItem.sectionHeader` style |
+| Shortcut glyph spacing (⌘, and ⌘Q) | native: system key-equivalent drawing |
+| Status word is a tab-aligned secondary attributed title, not `NSMenuItem.badge` | fixed (72f6150): the PNG shows plain text, and the badge draws a pill |
+| Status dots missing (macOS 27 hides menu-item images by default) | fixed (72f6150): `preferredImageVisibility = .visible` on macOS 27 |
+| Crash notification banner | native: drawn by Notification Center. Not captured: posting it for real would request notification authorization for `net.evancoleman.ghast` on the build host. Its words are locked by `NotificationPolicyTests` |

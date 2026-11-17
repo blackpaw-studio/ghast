@@ -10,6 +10,7 @@ struct FocusMainView: View {
     @Environment(\.runnerFlowServices) private var flowServices
     @Environment(RunnerFlowCoordinator.self) private var flows: RunnerFlowCoordinator?
     @Environment(\.controlActiveState) private var controlActiveState
+    @Environment(\.appWindowRouter) private var router
 
     @SceneStorage("main.selection") private var storedSelection = ""
     @SceneStorage("main.tab") private var storedTab = DetailTab.output.rawValue
@@ -113,6 +114,24 @@ struct FocusMainView: View {
             if resolved.storageValue != storedSelection { storedSelection = resolved.storageValue }
         }
         .onAppear(perform: applyPreset)
+        .onChange(of: router?.showOutputRequest, initial: true) { _, request in
+            if let request { showOutput(request) }
+        }
+        .onChange(of: router?.newRunnerRequest, initial: true) { _, request in
+            guard let request else { return }
+            router?.consumeNewRunner(request)
+            if !isShowingNewRunner { newRunner() }
+        }
+    }
+
+    /// A notification or the menu bar asked for a runner's output: select it, show Output and
+    /// follow the end.
+    private func showOutput(_ request: AppWindowRouter.ShowOutputRequest) {
+        router?.consumeShowOutput(request)
+        guard runnerService.localRunners.contains(where: { $0.id == request.runnerID }) else { return }
+        storedSelection = MainSelection.runner(request.runnerID).storageValue
+        storedTab = DetailTab.output.rawValue
+        outputPane(for: request.runnerID).follow.follow()
     }
 
     @ViewBuilder

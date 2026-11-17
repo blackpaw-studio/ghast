@@ -14,8 +14,12 @@ import Foundation
 enum RunnerWrapperScript {
     static let defaultRestartDelay = 5
     static let logFileName = "ghast-runner.log"
+    /// Seconds between the wrapper's checks that Ghast is still running.
+    static let defaultParentPollInterval = 1.0
+    /// Seconds the runner gets to end on SIGTERM, once Ghast is gone, before SIGKILL.
+    static let stopGracePeriod = 2
 
-    static func make(runnerPath: String, logFile: String, parentPID: Int32, restartDelay: Int) -> String {
+    static func make(runnerPath: String, logFile: String, parentPID: Int32, restartDelay: Int, parentPollInterval: Double = defaultParentPollInterval) -> String {
         """
         #!/bin/bash
 
@@ -40,6 +44,27 @@ enum RunnerWrapperScript {
             exit 127
         fi
         [ -x ./run.sh ] || chmod +x ./run.sh
+
+        # Don't outlive Ghast, even mid-run: if Ghast dies without stopping the runner (a crash,
+        # SIGKILL), end this wrapper's process group, so no Runner.Listener is left behind for
+        # the next launch to start a second one beside. Only ever the group this wrapper leads,
+        # never Ghast's. The watcher ends with the wrapper, so it never signals a reused group ID.
+        WRAPPER_PID=$$
+        if [ "$(ps -o pgid= -p "$WRAPPER_PID" | tr -d ' ')" = "$WRAPPER_PID" ]; then
+            (
+                trap '' TERM
+                while kill -0 "$WRAPPER_PID" 2>/dev/null; do
+                    if ! kill -0 "$PARENT_PID" 2>/dev/null; then
+                        log_line "ghast: Ghast is no longer running, stopping the runner"
+                        kill -TERM -- "-$WRAPPER_PID" 2>/dev/null
+                        sleep \(stopGracePeriod)
+                        kill -KILL -- "-$WRAPPER_PID" 2>/dev/null
+                        exit 0
+                    fi
+                    sleep \(parentPollInterval)
+                done
+            ) < /dev/null > /dev/null 2>&1 &
+        fi
 
         while true; do
             log_line "ghast: start"

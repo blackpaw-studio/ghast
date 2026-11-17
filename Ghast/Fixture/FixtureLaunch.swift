@@ -111,6 +111,15 @@ extension FixtureScreen {
         }
     }
 
+    /// The Settings tab this screen shows; nil for screens without the Settings window.
+    var settingsTab: SettingsTab? {
+        switch self {
+        case .settingsGeneral: return .general
+        case .settingsAccount: return .account
+        default: return nil
+        }
+    }
+
     /// The first-run screen is the window right after sign-in: no runners on this Mac yet.
     var hasLocalRunners: Bool { self != .firstRun }
 
