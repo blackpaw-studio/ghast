@@ -2,7 +2,7 @@
 
 # Script to record/update snapshot tests for Ghast
 # Usage: ./Scripts/record-snapshots.sh [test-filter]
-# Example: ./Scripts/record-snapshots.sh SimpleSnapshotTest
+# Example: ./Scripts/record-snapshots.sh FocusMainSnapshotTests
 
 echo "🎬 Recording snapshot tests..."
 
