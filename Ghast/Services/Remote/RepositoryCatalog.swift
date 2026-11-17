@@ -41,6 +41,13 @@ final class RepositoryCatalog {
         await fetch()
     }
 
+    /// Starts a load without waiting for it, so New Runner opens warm. Failures stay silent
+    /// here; the sheet offers Try Again.
+    @discardableResult
+    func preload(account: String?) -> Task<Void, Never> {
+        Task { await load(account: account) }
+    }
+
     /// Loads the list now, whatever its age (Retry).
     func retry(account: String?) async {
         switchAccount(to: account)

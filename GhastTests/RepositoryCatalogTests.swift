@@ -132,6 +132,26 @@ import Foundation
         #expect(catalog.repositories?.map(\.fullName) == ["octo/ghast"])
     }
 
+    @Test func aPreloadAtSignInWarmsTheSheetWithOneRequest() async {
+        api.holdsRepositoriesPending = true
+        api.mockRepositories = [repo(1, "octo/ghast")]
+        let catalog = makeCatalog()
+
+        let preload = catalog.preload(account: "octo")
+        await settle { api.repositoryFetchCount == 1 }
+        #expect(api.repositoryFetchCount == 1, "signing in starts the load before the sheet opens")
+        // The sheet opens while the preload is still in flight, and again once it has landed.
+        let sheetWhileLoading = Task { await catalog.load(account: "octo") }
+        for _ in 0..<50 { await Task.yield() }
+        api.releasePendingRequests()
+        await preload.value
+        await sheetWhileLoading.value
+        await catalog.load(account: "octo")
+
+        #expect(api.repositoryFetchCount == 1)
+        #expect(catalog.repositories?.map(\.fullName) == ["octo/ghast"])
+    }
+
     @Test func anotherAccountNeverSeesThePreviousAccountsList() async {
         api.mockRepositories = [repo(1, "octo/private")]
         let catalog = makeCatalog()

@@ -5,6 +5,8 @@ struct FocusMainView: View {
     @Environment(RunnerService.self) private var runnerService
     @Environment(RunnerActivityStore.self) private var activityStore
     @Environment(RemoteRunnerStore.self) private var remoteStore
+    @Environment(RepositoryCatalog.self) private var repositoryCatalog: RepositoryCatalog?
+    @Environment(GitHubAuthService.self) private var authService: GitHubAuthService?
     @Environment(\.focusContext) private var context
     @Environment(\.mainWindowPreset) private var preset
     @Environment(\.runnerFlowServices) private var flowServices
@@ -100,6 +102,8 @@ struct FocusMainView: View {
         .background(OutputFindResponderInstaller(target: commandTarget(for: selected)))
         // This view exists only while signed in, so the first fetch runs with the token set.
         .task {
+            // Warms New Runner's repository list; a failure waits for the sheet's Try Again.
+            repositoryCatalog?.preload(account: authService?.currentUser?.login)
             await remoteStore.refresh(.launch)
             await remoteStore.pollWhileAlive(sleeper: context.sleeper)
         }
