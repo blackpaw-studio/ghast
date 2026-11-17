@@ -20,17 +20,17 @@ When you need to record new reference snapshots (e.g., after UI changes):
 
 1. **Record:**
    ```bash
-   TEST_RUNNER_SNAPSHOT_RECORD_MODE=true xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/FocusMainSnapshots
+   TEST_RUNNER_SNAPSHOT_RECORD_MODE=true xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/FocusMainSnapshotTests
    ```
-   Suites: `FocusMainSnapshots`, `FocusFlowSnapshots`, `FocusSettingsSnapshots`.
+   Suites: `FocusMainSnapshotTests`, `FocusFlowSnapshotTests`, `FocusSettingsSnapshotTests`.
 
 2. **Re-run without the variable** to confirm green, then commit `GhastTests/__Snapshots__/`.
 
 ## What Gets Tested
 
-- **FocusMainSnapshots**: the main window's detail column in each runner state, light and dark
-- **FocusFlowSnapshots**: welcome, device code, New Runner and its progress
-- **FocusSettingsSnapshots**: Settings General and Account
+- **FocusMainSnapshotTests**: the main window's detail column in each runner state, light and dark
+- **FocusFlowSnapshotTests**: welcome, device code, New Runner and its progress
+- **FocusSettingsSnapshotTests**: Settings General and Account
 
 ## Snapshot Location
 

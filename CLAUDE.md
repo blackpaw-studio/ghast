@@ -63,9 +63,9 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 
 #### Snapshot Testing
 Snapshots lock layout (glass and backdrop differ per macOS version, so they are covered by fidelity captures). All three suites are Swift Testing, parameterised over light and dark, and render against fixture dependencies:
-- `FocusMainSnapshots`: detail column in states running, idle, stopped, starting, error, remote, empty, configuration
-- `FocusFlowSnapshots`: welcome, welcome-failed, device-code, new-runner, new-runner-progress
-- `FocusSettingsSnapshots`: General, Account, Account with organization access not granted
+- `FocusMainSnapshotTests`: detail column in states running, idle, stopped, starting, error, remote, empty, configuration
+- `FocusFlowSnapshotTests`: welcome, welcome-failed, device-code, new-runner, new-runner-progress
+- `FocusSettingsSnapshotTests`: General, Account, Account with organization access not granted
 
 #### Design fixture mode and fidelity scripts
 - Debug builds launch into a canned screen with `-GhastDesignFixture <screen>` (`-GhastAppearance dark` for dark). Screens: main, configuration, remote, error, first-run, welcome, device-code, new-runner, new-runner-progress, settings-general, settings-account, menu-bar (`Ghast/Fixture/`). Fixture mode uses a scratch folder, in-memory defaults and token store, and a fake GitHub API: it never touches real defaults, the Keychain, `~/.ghast`, Sparkle or running runners.
