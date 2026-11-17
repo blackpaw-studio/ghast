@@ -9,6 +9,10 @@ struct RunnerExit: Codable, Equatable, Sendable {
     let at: Date
     /// Ghast stopped it on request (Stop, Restart, Remove) rather than it exiting on its own.
     let wasRequested: Bool
+
+    /// The code recorded when Ghast could not launch a runner at all (as a shell reports a
+    /// command it cannot run).
+    static let launchFailureCode: Int32 = 127
 }
 
 struct LocalRunner: Codable, Identifiable, Hashable, Sendable {

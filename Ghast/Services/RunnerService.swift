@@ -239,6 +239,12 @@ class RunnerService {
         saveRunners()
     }
     
+    /// Shows a runner Ghast could not launch as an error, like an unexpected exit.
+    func recordStartFailure(id: String) {
+        guard runningProcesses[id] == nil else { return }
+        recordExit(id: id, code: RunnerExit.launchFailureCode, wasRequested: false)
+    }
+    
     /// How long a stopping runner gets to exit on SIGTERM before SIGKILL, and then how long
     /// SIGKILL gets before Ghast gives up waiting for the exit report.
     static let stopGracePeriod: Duration = .seconds(1)

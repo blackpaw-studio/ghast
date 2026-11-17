@@ -85,12 +85,19 @@ struct AppDependencies {
         )
     }
 
-    /// Starts the always-on services: output tailing for every local runner. GitHub's runner
-    /// lists load once the account is signed in (the main window), since the stored token
-    /// isn't applied yet at launch. Never called under test.
+    /// Starts the always-on services: output tailing for every local runner, and the runners
+    /// that were running when Ghast quit. GitHub's runner lists load once the account is signed
+    /// in (the main window), since the stored token isn't applied yet at launch. Never called
+    /// under test.
     func startServices() async {
         activityStore.observe(runnerService)
+        async let restarted: Void = RestartAtLaunch.run(
+            isEnabled: settings.restartRunnersAtLaunch,
+            starter: runnerService,
+            sleeper: sleeper
+        )
         await authService.checkStoredAuthentication()
+        await restarted
     }
 
     static func live() -> AppDependencies {
