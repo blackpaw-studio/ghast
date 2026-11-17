@@ -51,7 +51,11 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         )
     }
     
+    /// How many times `fetchRepositories` was called.
+    private(set) var repositoryFetchCount = 0
+
     func fetchRepositories() async throws -> [GitHubRepository] {
+        repositoryFetchCount += 1
         if holdsRepositoriesPending {
             try await withCheckedThrowingContinuation { pendingRepositoryRequests.append($0) }
         }
