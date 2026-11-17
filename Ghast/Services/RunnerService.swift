@@ -14,7 +14,8 @@ class RunnerService {
     @ObservationIgnored private let launcher: any RunnerProcessLauncher
     @ObservationIgnored private let restartDelay: Int
     @ObservationIgnored private let sleeper: Sleeper
-    @ObservationIgnored private let runsStrayProcessCleanup: Bool
+    @ObservationIgnored private let signaling: any ProcessSignaling
+    @ObservationIgnored private let scanner: any RunnerProcessScanning
     
     var localRunners: [LocalRunner] = []
     /// Runtime process state per runner id. A runner with no entry is stopped.
@@ -26,11 +27,17 @@ class RunnerService {
         let launchToken: UUID
         /// The wrapper leads its own process group, so the group is signalled as one.
         let processGroupID: pid_t
+        /// Set once the wrapper has ended but its group has not: the runner is still shutting down.
+        var exitCode: Int32?
     }
     
     @ObservationIgnored private var runningProcesses: [String: RunningProcess] = [:]
     /// Runners Ghast has asked to stop; their next exit is a requested stop, not a crash.
     @ObservationIgnored private var stopRequested: Set<String> = []
+    /// Runners with a start in progress, including its wait for an old process to end.
+    @ObservationIgnored private var startsInFlight: Set<String> = []
+    /// Pending starts a stop has cancelled; the start checks before it launches.
+    @ObservationIgnored private var cancelledStarts: Set<String> = []
     /// Callers of `stopRunner` waiting for a runner's process to end.
     @ObservationIgnored private var terminationWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     /// Every runner process that ended, requested or not. One consumer.
@@ -44,8 +51,8 @@ class RunnerService {
     
     /// - Parameters:
     ///   - restartDelay: Seconds the wrapper waits before restarting a runner that updated itself.
-    ///   - runsStrayProcessCleanup: Whether quitting also `pkill`s runner processes machine-wide.
-    ///     Tests turn this off so they never touch the developer's real runners.
+    ///   - signaling: How runner processes are signalled and probed.
+    ///   - scanner: How leftover `Runner.Listener` processes from an earlier Ghast are found.
     init(
         defaults: UserDefaults = .standard,
         runnersDirectory: URL = RunnerService.defaultRunnersDirectory,
@@ -53,14 +60,16 @@ class RunnerService {
         launcher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
         restartDelay: Int = RunnerWrapperScript.defaultRestartDelay,
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
-        runsStrayProcessCleanup: Bool = true
+        signaling: any ProcessSignaling = SystemProcessSignaling(),
+        scanner: any RunnerProcessScanning = PSRunnerProcessScanner()
     ) {
         self.store = RunnerStore(defaults: defaults)
         self.clock = clock
         self.launcher = launcher
         self.restartDelay = restartDelay
         self.sleeper = sleeper
-        self.runsStrayProcessCleanup = runsStrayProcessCleanup
+        self.signaling = signaling
+        self.scanner = scanner
         self.runnersBaseDirectory = runnersDirectory
         (processExits, processExitSink) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         createRunnersDirectoryIfNeeded()
@@ -153,9 +162,44 @@ class RunnerService {
         saveRunners()
     }
     
+    /// Starts a runner. The runner reads as starting at once, even while the start waits for a
+    /// pending stop or a leftover listener to end, and a second start for it is ignored until
+    /// this one is done.
     func startRunner(id: String) async throws {
+        guard !startsInFlight.contains(id) else { return }
+        guard let runner = localRunners.first(where: { $0.id == id }) else { throw RunnerError.runnerNotFound }
+        startsInFlight.insert(id)
+        cancelledStarts.remove(id)
+        defer { startsInFlight.remove(id) }
+        
+        // Already running (and not stopping): nothing to show; the launch below reports it.
+        if runningProcesses[id] == nil || stopRequested.contains(id) { processStates[id] = .starting }
+        do {
+            try await launchRunner(id: id)
+        } catch {
+            settleAbandonedStart(id: id, lastExit: runner.lastExit)
+            throw error
+        }
+        settleAbandonedStart(id: id, lastExit: runner.lastExit)
+    }
+    
+    /// A start that ended without launching (it failed, or a stop cancelled it) must not leave
+    /// the runner reading as starting.
+    private func settleAbandonedStart(id: String, lastExit: RunnerExit?) {
+        guard processStates[id] == .starting, runningProcesses[id] == nil, localRunners.contains(where: { $0.id == id }) else { return }
+        processStates[id] = .restored(from: lastExit)
+    }
+    
+    private func launchRunner(id: String) async throws {
         // A stop that is still pending (its card already reads stopped) must finish first.
         await waitForPendingStop(id: id)
+        
+        // A listener left by an earlier Ghast would hold the runner's GitHub session, and a second
+        // copy would fight it ("A session for this runner already exists"). End it first. Done
+        // before the lookups below, which must not span an await.
+        if runningProcesses[id] == nil, let path = localRunners.first(where: { $0.id == id })?.path {
+            await stopLeftoverListeners(runnerID: id, path: path)
+        }
         
         guard let runnerIndex = localRunners.firstIndex(where: { $0.id == id }) else {
             throw RunnerError.runnerNotFound
@@ -177,6 +221,9 @@ class RunnerService {
             // Clean up the dead process reference
             runningProcesses.removeValue(forKey: id)
         }
+        
+        // A stop that came while this start waited cancels it.
+        if cancelledStarts.remove(id) != nil { return }
         
         let script = RunnerWrapperScript.make(
             runnerPath: runner.path,
@@ -214,8 +261,21 @@ class RunnerService {
     }
     
     /// Records how a launch ended. Ignores a callback from a launch that was already replaced.
+    /// A wrapper that ends on a requested stop while its group lives on (SIGTERM ends the bash
+    /// wrapper at once, but the listener is still deleting its GitHub session) is not the end:
+    /// the stop watcher finishes it once the group is gone.
     private func didTerminate(id: String, launchToken: UUID, exitCode: Int32) {
-        guard runningProcesses[id]?.launchToken == launchToken else { return }
+        guard let running = runningProcesses[id], running.launchToken == launchToken else { return }
+        if stopRequested.contains(id), signaling.isGroupAlive(running.processGroupID) {
+            var ended = running
+            ended.exitCode = exitCode
+            runningProcesses[id] = ended
+            return
+        }
+        completeTermination(id: id, exitCode: exitCode)
+    }
+    
+    private func completeTermination(id: String, exitCode: Int32) {
         runningProcesses.removeValue(forKey: id)
         recordExit(id: id, code: exitCode, wasRequested: stopRequested.remove(id) != nil)
         resumeTerminationWaiters(id: id)
@@ -234,9 +294,13 @@ class RunnerService {
             return
         }
         var startedAt: Date?
-        if case let .running(since)? = processStates[id] { startedAt = since }
+        switch processStates[id] {
+        case let .running(since)?, let .stopping(since)?: startedAt = since
+        default: break
+        }
         let exit = RunnerExit(code: code, startedAt: startedAt, at: clock.now(), wasRequested: wasRequested)
-        processStates[id] = wasRequested ? .stopped : .exited(exit)
+        // A start queued behind this stop keeps reading as starting.
+        processStates[id] = wasRequested ? (processStates[id] == .starting ? .starting : .stopped) : .exited(exit)
         localRunners[index].lastExit = exit
         localRunners[index].status = .stopped
         if !wasRequested { localRunners[index].shouldBeRunning = false }
@@ -251,13 +315,21 @@ class RunnerService {
         recordExit(id: id, code: RunnerExit.launchFailureCode, wasRequested: false, announces: false)
     }
     
-    /// How long a stopping runner gets to exit on SIGTERM before SIGKILL, and then how long
-    /// SIGKILL gets before Ghast gives up waiting for the exit report.
-    static let stopGracePeriod: Duration = .seconds(1)
+    /// How long a stopping runner gets to end on SIGTERM before SIGKILL. The listener ends its
+    /// running job and deletes its GitHub session first; SIGKILL before that leaves a session
+    /// behind, and the next start fails with "A session for this runner already exists".
+    static let stopGracePeriod: Duration = .seconds(15)
+    /// How long a listener gets, once its worker has been SIGKILLed, to delete its GitHub session
+    /// before the whole group is SIGKILLed.
+    static let listenerSignOutWindow: Duration = .seconds(5)
+    /// How long SIGKILL gets before Ghast gives up waiting for the exit report.
+    static let killWait: Duration = .seconds(1)
+    /// How often a stopping runner's process group is checked for being gone.
+    static let stopPollInterval: Duration = .milliseconds(100)
     
-    /// Stops a runner and returns once its process has ended, so a start right after succeeds.
-    /// Bounded: SIGTERM, then SIGKILL after the grace period, then Ghast records the stop itself
-    /// after another grace period if the exit is never reported.
+    /// Stops a runner and returns once its process group has ended, so a start right after
+    /// succeeds. Bounded: SIGTERM, SIGKILL after `stopGracePeriod`, then Ghast records the stop
+    /// itself after `killWait` if the exit is never reported.
     func stopRunner(id: String) async {
         requestStop(id: id)
         await waitForTermination(of: id)
@@ -275,19 +347,25 @@ class RunnerService {
     }
     
     /// Asks a runner to stop and returns immediately; the process ends (and is recorded) later.
-    private func requestStop(id: String) {
-        // A stop request always ends the intent to keep running, even with no process to kill.
-        if let index = localRunners.firstIndex(where: { $0.id == id }), localRunners[index].shouldBeRunning {
+    /// `keepingRunIntent` is for a quit: the runner stays marked to run, so the next launch
+    /// starts it again.
+    private func requestStop(id: String, keepingRunIntent: Bool = false) {
+        // A stop request ends the intent to keep running, even with no process to kill.
+        if !keepingRunIntent, let index = localRunners.firstIndex(where: { $0.id == id }), localRunners[index].shouldBeRunning {
             localRunners[index].shouldBeRunning = false
             saveRunners()
         }
+        if startsInFlight.contains(id) { cancelledStarts.insert(id) }
         guard let running = runningProcesses[id] else {
+            if startsInFlight.contains(id) { settleCancelledStart(id: id) }
             #if DEBUG
             print("🏃 No running process found for runner ID: \(id)")
             #endif
             return
         }
-        stopRequested.insert(id)
+        // Already stopping: the escalation task from the first request is still running.
+        guard stopRequested.insert(id).inserted else { return }
+        if case let .running(since)? = processStates[id] { processStates[id] = .stopping(since: since) }
         if let index = localRunners.firstIndex(where: { $0.id == id }) {
             localRunners[index].status = .stopped
             saveRunners()
@@ -295,131 +373,117 @@ class RunnerService {
         
         // Graceful first. The wrapper leads its own process group, so the group signal reaches
         // the runner and its helpers and nothing else; no pattern kill, which would match
-        // other runners whose folder name merely starts the same.
+        // other runners whose folder name merely starts the same. SIGTERM is what Runner.Listener
+        // answers by ending its job and deleting its GitHub session; `run.sh` forwards nothing,
+        // so the signal has to reach the listener itself.
         send(SIGTERM, to: running)
         
         let launchToken = running.launchToken
-        Task { [weak self, sleeper] in
-            try? await sleeper(Self.stopGracePeriod)
-            guard let self, self.forceKill(id: id, launchToken: launchToken) else { return }
-            try? await sleeper(Self.stopGracePeriod)
-            self.giveUpWaiting(id: id, launchToken: launchToken)
+        Task { [weak self] in await self?.escalateStop(id: id, launchToken: launchToken) }
+    }
+    
+    /// A stop with no process to stop only cancels the pending start; the runner reads stopped.
+    private func settleCancelledStart(id: String) {
+        guard processStates[id] == .starting else { return }
+        processStates[id] = .stopped
+    }
+    
+    /// Waits for the stop to finish. Past the grace period the job's worker is SIGKILLed first:
+    /// the listener deletes its GitHub session only after the worker has exited (JobDispatcher
+    /// `ShutdownAsync` awaits it), so a worker that is slow to cancel its job would otherwise
+    /// cost the session. The listener then gets `listenerSignOutWindow`; only then the group.
+    private func escalateStop(id: String, launchToken: UUID) async {
+        if await waitForEnd(id: id, launchToken: launchToken, upTo: Self.stopGracePeriod) { return }
+        await killWorkers(id: id, launchToken: launchToken)
+        if await waitForEnd(id: id, launchToken: launchToken, upTo: Self.listenerSignOutWindow) { return }
+        forceKill(id: id, launchToken: launchToken)
+        if await waitForEnd(id: id, launchToken: launchToken, upTo: Self.killWait) { return }
+        // The exit report never came after SIGKILL: record the stop here so callers aren't left waiting.
+        if runningProcesses[id]?.launchToken == launchToken {
+            completeTermination(id: id, exitCode: 128 + SIGKILL)
+        }
+    }
+    
+    /// SIGKILLs the `Runner.Worker` processes in the launch's group, leaving the listener to sign out.
+    private func killWorkers(id: String, launchToken: UUID) async {
+        guard let group = runningProcesses[id]?.processGroupID else { return }
+        let processes = await scanner.scan()
+        guard runningProcesses[id]?.launchToken == launchToken else { return }
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        for pid in LeftoverListeners.workerPIDs(in: processes, inGroup: group, excluding: ownPID) {
+            signaling.signal(SIGKILL, toProcess: pid)
+        }
+    }
+    
+    /// Polls until the launch has ended, wrapper and group both, or `limit` has passed.
+    /// Returns whether it ended. Time is counted in sleeps, so a test's sleeper drives it.
+    private func waitForEnd(id: String, launchToken: UUID, upTo limit: Duration) async -> Bool {
+        var waited = Duration.zero
+        while true {
+            guard let running = runningProcesses[id], running.launchToken == launchToken else { return true }
+            if let code = running.exitCode, !signaling.isGroupAlive(running.processGroupID) {
+                completeTermination(id: id, exitCode: code)
+                return true
+            }
+            guard waited < limit else { return false }
+            try? await sleeper(Self.stopPollInterval)
+            waited += Self.stopPollInterval
         }
     }
     
     /// Whether `kill(-pgid, …)` is safe: never Ghast's own group (that would signal Ghast itself),
     /// and never 0, 1 or negative values, which `kill` reads as "everything".
     nonisolated static func canSignalGroup(_ pgid: pid_t, ownGroup: pid_t = getpgrp()) -> Bool {
-        pgid > 1 && pgid != ownGroup
+        SystemProcessSignaling.isSignalable(group: pgid, ownGroup: ownGroup)
     }
     
     /// Signals the process and, when that is safe, its whole group.
     private func send(_ signal: Int32, to running: RunningProcess) {
         if Self.canSignalGroup(running.processGroupID) {
-            kill(-running.processGroupID, signal)
+            signaling.signal(signal, toGroup: running.processGroupID)
         }
-        kill(running.handle.processIdentifier, signal)
+        signaling.signal(signal, toProcess: running.handle.processIdentifier)
     }
     
-    /// SIGKILLs the launch if it is still running. Returns whether it was.
-    private func forceKill(id: String, launchToken: UUID) -> Bool {
-        guard let running = runningProcesses[id], running.launchToken == launchToken, running.handle.isRunning else {
-            return false
-        }
+    /// SIGKILLs the launch if any of it is still running.
+    private func forceKill(id: String, launchToken: UUID) {
+        guard let running = runningProcesses[id], running.launchToken == launchToken,
+              running.handle.isRunning || signaling.isGroupAlive(running.processGroupID) else { return }
         send(SIGKILL, to: running)
-        return true
     }
     
-    /// The exit report never came after SIGKILL: record the stop here so callers aren't left waiting.
-    private func giveUpWaiting(id: String, launchToken: UUID) {
-        didTerminate(id: id, launchToken: launchToken, exitCode: 128 + SIGKILL)
+    /// Stops every runner for a quit and returns once they have ended, or after the same
+    /// bounded grace period a single stop gets. Keeps `shouldBeRunning`, so the next launch can
+    /// start them again.
+    func stopAllRunners() async {
+        let ids = Array(runningProcesses.keys)
+        for id in ids { requestStop(id: id, keepingRunIntent: true) }
+        for id in ids { await waitForTermination(of: id) }
     }
     
-    /// Stops every runner for a quit. A requested stop that keeps `shouldBeRunning`, so the next
-    /// launch can start them again. Synchronous: it must finish before the app exits.
-    func stopAllRunners() {
-        #if DEBUG
-        print("🏃 Stopping all running runners due to app termination...")
-        #endif
+    /// SIGKILLs whatever runner processes are still tracked, without waiting. The last step of a
+    /// quit, for anything `stopAllRunners` did not get to.
+    func killRemainingRunners() {
+        for running in runningProcesses.values { send(SIGKILL, to: running) }
+    }
+    
+    /// Ends listeners from an earlier Ghast that are still running from this runner's folder:
+    /// SIGTERM so they delete their GitHub session, SIGKILL if they outlast the grace period.
+    /// Only processes found in the runner's own folder are signalled.
+    private func stopLeftoverListeners(runnerID: String, path: String) async {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let found = LeftoverListeners.pids(in: await scanner.scan(), forRunnerAt: path, excluding: ownPID)
+        // Ghast may have launched the runner while the scan ran; those listeners are its own.
+        guard !found.isEmpty, runningProcesses[runnerID] == nil else { return }
+        for pid in found { signaling.signal(SIGTERM, toProcess: pid) }
         
-        for (id, running) in Array(runningProcesses) {
-            // Graceful first: the process, then its whole group.
-            running.handle.terminate()
-            send(SIGTERM, to: running)
-            
-            let deadline = Date().addingTimeInterval(1.0)
-            while running.handle.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            
-            var code = 128 + SIGTERM
-            if running.handle.isRunning {
-                send(SIGKILL, to: running)
-                Thread.sleep(forTimeInterval: 0.1)
-                code = 128 + SIGKILL
-            }
-            
-            // The termination callback may never run (the app is exiting), so record it here.
-            runningProcesses.removeValue(forKey: id)
-            stopRequested.remove(id)
-            recordExit(id: id, code: code, wasRequested: true)
-            resumeTerminationWaiters(id: id)
+        var waited = Duration.zero
+        while waited < Self.stopGracePeriod, found.contains(where: signaling.isProcessAlive) {
+            try? await sleeper(Self.stopPollInterval)
+            waited += Self.stopPollInterval
         }
-        
-        if runsStrayProcessCleanup {
-            comprehensiveRunnerCleanup()
-        }
-        
-        #if DEBUG
-        print("🏃 All runners stopped")
-        #endif
-    }
-    
-    private func comprehensiveRunnerCleanup() {
-        #if DEBUG
-        print("🏃 Starting fast runner process cleanup...")
-        #endif
-        
-        // Fast cleanup script with minimal delays and no verbose output
-        let cleanupScript = """
-        #!/bin/bash
-        
-        # Fast kill all runner-related processes - no verbose output during app quit
-        # Kill common GitHub Actions processes immediately
-        pkill -f "Runner.Listener" 2>/dev/null || true
-        pkill -f "run-helper.sh" 2>/dev/null || true
-        pkill -f "./run.sh" 2>/dev/null || true
-        pkill -f ".ghast/runners" 2>/dev/null || true
-        
-        # Brief pause for graceful termination
-        sleep 0.5
-        
-        # Force kill any remaining processes
-        pkill -9 -f "Runner.Listener" 2>/dev/null || true
-        pkill -9 -f "run-helper.sh" 2>/dev/null || true
-        pkill -9 -f "./run.sh" 2>/dev/null || true
-        pkill -9 -f ".ghast/runners" 2>/dev/null || true
-        
-        exit 0
-        """
-        
-        // Run cleanup asynchronously to avoid blocking app termination
-        DispatchQueue.global(qos: .utility).async {
-            let cleanupProcess = Process()
-            cleanupProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-            cleanupProcess.arguments = ["-c", cleanupScript]
-            
-            do {
-                try cleanupProcess.run()
-                // Don't wait for completion - let it run in background
-                #if DEBUG
-                print("🏃 Fast cleanup initiated")
-                #endif
-            } catch {
-                #if DEBUG
-                print("🏃 Warning: Could not run fast cleanup: \(error)")
-                #endif
-            }
+        for pid in found where signaling.isProcessAlive(pid) {
+            signaling.signal(SIGKILL, toProcess: pid)
         }
     }
     
@@ -460,6 +524,9 @@ class RunnerService {
         localRunners[index].outputClearOffset = size ?? 0
         saveRunners()
     }
+    
+    /// Whether any runner process is still tracked, including one that is stopping.
+    var hasRunningProcesses: Bool { !runningProcesses.isEmpty }
     
     func isRunnerRunning(id: String) -> Bool {
         return runningProcesses[id]?.handle.isRunning == true

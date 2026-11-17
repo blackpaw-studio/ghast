@@ -29,7 +29,7 @@ struct FlowHarness {
             runnersDirectory: runnersDirectory,
             launcher: launcher,
             sleeper: { _ in },
-            runsStrayProcessCleanup: false
+            scanner: NoRunnerProcessScanner()
         )
     }
 
@@ -68,7 +68,11 @@ struct FlowHarness {
     /// Starts `flow` and waits until it is connecting.
     func runToConnecting(_ flow: RunnerSetupFlow) async throws -> String {
         flow.start()
-        let connecting = await eventually { flow.progress.state(.start) == .active(detail: "Connecting to GitHub…") }
+        // The step reads "Connecting" before the runner launches; a start first looks for
+        // leftover listeners, which takes a suspension, so wait for the launch itself.
+        let connecting = await eventually {
+            flow.progress.state(.start) == .active(detail: "Connecting to GitHub…") && log.all.contains("launch dionysus-3")
+        }
         try #require(connecting)
         return try #require(flow.runnerID)
     }

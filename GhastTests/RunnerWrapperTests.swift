@@ -26,8 +26,7 @@ struct RunnerWrapperTests {
             runnersDirectory: root,
             clock: clock,
             launcher: ProcessRunnerLauncher(),
-            restartDelay: 0,
-            runsStrayProcessCleanup: false
+            restartDelay: 0
         )
         let folder = root.appendingPathComponent(folderName, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -203,7 +202,7 @@ struct RunnerWrapperTests {
         #expect(siblingRunner.shouldBeRunning)
         #expect(siblingRunner.lastExit == nil)
 
-        service.stopAllRunners()
+        await service.stopAllRunners()
     }
 
     @Test("stop returns only once the process has ended, so a start right after it succeeds")
@@ -251,8 +250,7 @@ struct RunnerWrapperTests {
             runnersDirectory: root,
             clock: clock,
             launcher: StuckRunnerLauncher(),
-            sleeper: { _ in },
-            runsStrayProcessCleanup: false
+            sleeper: { _ in }
         )
         let folder = root.appendingPathComponent("stuck", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -273,14 +271,14 @@ struct RunnerWrapperTests {
         let (service, runner) = (harness.service, harness.runner)
         try await service.startRunner(id: runner.id)
 
-        service.stopAllRunners()
+        await service.stopAllRunners()
 
         #expect(service.processStates[runner.id] == .stopped)
         #expect(service.localRunners[0].shouldBeRunning)
         #expect(service.localRunners[0].lastExit?.wasRequested == true)
         #expect(!service.isRunnerRunning(id: runner.id))
 
-        let reloaded = RunnerService(defaults: harness.defaults, runnersDirectory: harness.root, runsStrayProcessCleanup: false)
+        let reloaded = RunnerService(defaults: harness.defaults, runnersDirectory: harness.root)
         #expect(reloaded.localRunners.first?.shouldBeRunning == true)
     }
 
@@ -307,11 +305,11 @@ struct RunnerWrapperTests {
         crashed.lastExit = RunnerExit(code: 1, startedAt: nil, at: clock.now(), wasRequested: false)
         var stopped = LocalRunner(name: "s", scope: .organization(login: "acme"), path: "/tmp/ghast-none-s")
         stopped.lastExit = RunnerExit(code: 143, startedAt: nil, at: clock.now(), wasRequested: true)
-        let first = RunnerService(defaults: isolated.defaults, runnersDirectory: root, runsStrayProcessCleanup: false)
+        let first = RunnerService(defaults: isolated.defaults, runnersDirectory: root)
         first.addLocalRunner(crashed)
         first.addLocalRunner(stopped)
 
-        let second = RunnerService(defaults: isolated.defaults, runnersDirectory: root, runsStrayProcessCleanup: false)
+        let second = RunnerService(defaults: isolated.defaults, runnersDirectory: root)
 
         #expect(second.processStates[crashed.id] == .exited(crashed.lastExit!))
         #expect(second.processStates[stopped.id] == .stopped)

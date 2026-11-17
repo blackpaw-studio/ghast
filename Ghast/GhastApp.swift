@@ -430,33 +430,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func handleTermination() {
-        performRunnerCleanup()
+        // Reached after `applicationShouldTerminate` has already stopped the runners gracefully;
+        // this only SIGKILLs anything that got past that (a quit that skipped the delegate).
+        guard shouldCleanUpRunners, let runnerService = builtDependencies?.runnerService else { return }
+        runnerService.killRemainingRunners()
+        ProcessInfo.processInfo.enableSuddenTermination()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
         #if DEBUG
         fixtureStage?.shutdown()
         #endif
-        performRunnerCleanup()
+        handleTermination()
     }
     
-    private func performRunnerCleanup() {
-        // Never in the XCTest host's own services (its plan has no quit cleanup), and a fixture
-        // must never stop the user's real runners.
-        guard !isFixtureMode, cleansUpRunnersOnQuit,
-              let runnerService = builtDependencies?.runnerService else { return }
-        
-        // Stop all running runners when app terminates
-        // This must be synchronous to ensure cleanup completes before termination
-        print("🏃 Application terminating - stopping all runners...")
-        
-        // Re-enable sudden termination after cleanup
-        defer {
-            ProcessInfo.processInfo.enableSuddenTermination()
+    /// Never in the XCTest host's own services (its plan has no quit cleanup), and a fixture
+    /// must never stop the user's real runners.
+    private var shouldCleanUpRunners: Bool { !isFixtureMode && cleansUpRunnersOnQuit }
+    
+    /// Quits after the runners have ended. Their listeners need time to delete their GitHub
+    /// session, and a quit that kills them first leaves a session behind. Covers a Sparkle
+    /// relaunch too, which quits through `NSApp.terminate`. `stopAllRunners` is bounded, so a
+    /// stuck runner delays the quit by at most the grace period.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard shouldCleanUpRunners, builtDependencies?.runnerService.hasRunningProcesses == true else { return .terminateNow }
+        Task { @MainActor in
+            await stopRunnersForQuit()
+            sender.reply(toApplicationShouldTerminate: true)
         }
-        
-        runnerService.stopAllRunners()
-        
+        return .terminateLater
+    }
+    
+    /// Stops every runner and returns once they have ended (bounded by the stop grace period).
+    func stopRunnersForQuit() async {
+        guard let runnerService = builtDependencies?.runnerService else { return }
+        print("🏃 Application terminating - stopping all runners...")
+        await runnerService.stopAllRunners()
         print("🏃 Runner cleanup completed")
     }
     
@@ -474,11 +483,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { [weak self] in
+            source.setEventHandler {
                 MainActor.assumeIsolated {
                     print("🏃 Received signal \(sig) - cleaning up runners...")
-                    self?.performRunnerCleanup()
-                    exit(0)
+                    // Through the normal quit: it stops the runners first, then exits.
+                    NSApp.terminate(nil)
                 }
             }
             source.resume()

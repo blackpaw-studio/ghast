@@ -37,7 +37,7 @@ struct RunnerPersistenceTests {
     }
 
     private func makeService(_ defaults: UserDefaults, root: URL = makeTemporaryDirectory()) -> RunnerService {
-        RunnerService(defaults: defaults, runnersDirectory: root, runsStrayProcessCleanup: false)
+        RunnerService(defaults: defaults, runnersDirectory: root)
     }
 
     @Test("an unreadable record does not hide the readable ones next to it")

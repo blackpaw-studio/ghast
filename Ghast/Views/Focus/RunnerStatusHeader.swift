@@ -16,7 +16,7 @@ struct RunnerStatusHeader<Actions: View>: View {
                     HStack(spacing: FocusMetrics.headerDotSpacing) {
                         StatusDot(status: status, size: FocusMetrics.statusDotHeader)
                         Text(status.title).font(FocusType.title2)
-                        if status == .starting {
+                        if status == .starting || status == .stopping {
                             ProgressView().controlSize(.small)
                         }
                     }

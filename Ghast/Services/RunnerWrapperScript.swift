@@ -17,7 +17,7 @@ enum RunnerWrapperScript {
     /// Seconds between the wrapper's checks that Ghast is still running.
     static let defaultParentPollInterval = 1.0
     /// Seconds the runner gets to end on SIGTERM, once Ghast is gone, before SIGKILL.
-    static let stopGracePeriod = 2
+    static let stopGracePeriod = 15
 
     static func make(runnerPath: String, logFile: String, parentPID: Int32, restartDelay: Int, parentPollInterval: Double = defaultParentPollInterval) -> String {
         """

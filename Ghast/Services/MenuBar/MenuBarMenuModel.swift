@@ -76,7 +76,7 @@ enum MenuBarMenuModel {
             submenu: isRunning(runner.status)
                 ? [.showOutput, .separator, .restart, .stop]
                 : [.showOutput, .separator, .start],
-            canControl: !isBusy
+            canControl: !isBusy && runner.status != .stopping
         )
     }
 
@@ -84,7 +84,7 @@ enum MenuBarMenuModel {
     static func isRunning(_ status: RunnerDisplayStatus) -> Bool {
         switch status {
         case .idle, .runningJob, .starting, .remoteBusy: return true
-        case .stopped, .error, .offline: return false
+        case .stopping, .stopped, .error, .offline: return false
         }
     }
 
@@ -93,7 +93,7 @@ enum MenuBarMenuModel {
         case .idle: return .idle
         case .runningJob, .remoteBusy: return .running
         case .error: return .error
-        case .starting, .stopped, .offline: return .hollow
+        case .starting, .stopping, .stopped, .offline: return .hollow
         }
     }
 
@@ -103,6 +103,7 @@ enum MenuBarMenuModel {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running"
         case .starting: return "Connecting"
+        case .stopping: return "Stopping"
         case .stopped: return "Stopped"
         case .error: return "Exited"
         case .offline: return "Offline"
