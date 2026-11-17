@@ -9,12 +9,12 @@ struct NewRunnerConfigureView: View {
 
     @Environment(RunnerService.self) private var runnerService
     @Environment(RemoteRunnerStore.self) private var remoteStore
+    @Environment(RepositoryCatalog.self) private var repositoryCatalog
     @Environment(GitHubAuthService.self) private var authService
     @Environment(\.gitHubAPIService) private var api
     @Environment(\.focusContext) private var context
     @Environment(\.openSettings) private var openSettings
 
-    @State private var repositories: [GitHubRepository] = []
     @State private var scope: RunnerScope?
     @State private var name = ""
     @State private var isNameEdited = false
@@ -30,7 +30,20 @@ struct NewRunnerConfigureView: View {
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "new-runner")
 
     private var choices: NewRunnerScopeChoices {
-        NewRunnerScopeChoices(organizations: remoteStore.adminOrganizations, repositories: repositories)
+        NewRunnerScopeChoices(organizations: remoteStore.adminOrganizations, repositories: repositoryCatalog.repositories ?? [])
+    }
+
+    /// No repository list yet and none has failed: the first load is still on its way.
+    private var isLoadingRepositories: Bool {
+        guard repositoryCatalog.repositories == nil else { return false }
+        if case .failed = repositoryCatalog.status { return false }
+        return true
+    }
+
+    /// Why the repositories didn't load, while there is no list to show instead.
+    private var repositoryFailure: String? {
+        guard repositoryCatalog.repositories == nil, case let .failed(message) = repositoryCatalog.status else { return nil }
+        return message
     }
 
     private var tokens: LabelTokenList {
@@ -52,7 +65,8 @@ struct NewRunnerConfigureView: View {
     }
 
     private var canCreate: Bool {
-        NewRunnerName.canCreate(name: name, scope: scope, localRunners: runnerService.localRunners, gitHubNames: scope.map(gitHubNames) ?? [])
+        choices.choice(for: scope) != nil
+            && NewRunnerName.canCreate(name: name, scope: scope, localRunners: runnerService.localRunners, gitHubNames: scope.map(gitHubNames) ?? [])
     }
 
     var body: some View {
@@ -68,7 +82,7 @@ struct NewRunnerConfigureView: View {
             advanced.padding(.top, FocusMetrics.sheetAdvancedTop)
             footer.padding(.top, FocusMetrics.sheetFooterTop)
         }
-        .task { await loadRepositories() }
+        .task { await repositoryCatalog.load(account: authService.currentUser?.login) }
         .task(id: scope) { await loadScopeDetails() }
         .onAppear {
             isNameFocused = true
@@ -76,7 +90,8 @@ struct NewRunnerConfigureView: View {
         }
         .onChange(of: choices) { _, new in
             avatars.load(new.all)
-            if scope == nil { choose(new.first?.scope) }
+            // A refresh can drop the chosen repository (admin access removed).
+            if new.choice(for: scope) == nil { choose(new.first?.scope) }
         }
     }
 
@@ -85,9 +100,19 @@ struct NewRunnerConfigureView: View {
     private var form: some View {
         VStack(spacing: 0) {
             row("Add to") {
-                HStack {
+                HStack(spacing: FocusMetrics.formCaptionGap) {
                     Spacer(minLength: 0)
-                    scopePicker.fixedSize()
+                    if isLoadingRepositories {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Loading repositories")
+                    }
+                    // Sized to its widest item, like NewRunner.png, until that no longer fits the
+                    // column; then it takes the column and truncates the chosen name.
+                    ViewThatFits(in: .horizontal) {
+                        scopePicker.fixedSize()
+                        scopePicker
+                    }
                 }
             }
             FocusFormDivider()
@@ -130,6 +155,15 @@ struct NewRunnerConfigureView: View {
                 Section("Repositories") {
                     ForEach(choices.repositories) { scopeItem($0) }
                 }
+            } else if isLoadingRepositories {
+                Section("Repositories") {
+                    Text("Loading Repositories…").tag(ScopeMenuItem.loading).disabled(true)
+                }
+            } else if repositoryFailure != nil {
+                Section("Repositories") {
+                    Text("Couldn't Load Repositories").tag(ScopeMenuItem.loadFailed).disabled(true)
+                    Text("Try Again").tag(ScopeMenuItem.retry)
+                }
             }
             if authService.needsScopeUpgrade {
                 Divider()
@@ -157,11 +191,22 @@ struct NewRunnerConfigureView: View {
                 .font(FocusType.callout)
                 .foregroundStyle(.red)
                 .padding(.horizontal, FocusMetrics.formRowInset)
+        } else if let failure = repositoryFailure {
+            HStack(alignment: .firstTextBaseline, spacing: FocusMetrics.formCaptionGap) {
+                Text("Couldn't load repositories.")
+                    .foregroundStyle(.secondary)
+                    .help(failure)
+                Button("Try Again", action: retryRepositories)
+                    .buttonStyle(.link)
+            }
+            .font(FocusType.subheadline)
+            .padding(.horizontal, FocusMetrics.formRowInset)
         } else {
             Text(scope.map { "Names must be unique in \($0.displayName). Default labels are added for you." }
                  ?? "Default labels are added for you.")
                 .font(FocusType.subheadline)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, FocusMetrics.formRowInset)
         }
     }
@@ -255,16 +300,24 @@ struct NewRunnerConfigureView: View {
         case scope(RunnerScope)
         case note
         case grantAccess
+        case loading
+        case loadFailed
+        case retry
     }
 
     private var scopeMenuBinding: Binding<ScopeMenuItem> {
         Binding(
-            get: { scope.map(ScopeMenuItem.scope) ?? .note },
+            get: {
+                if let scope { return .scope(scope) }
+                if isLoadingRepositories { return .loading }
+                return repositoryFailure == nil ? .note : .loadFailed
+            },
             set: { item in
                 switch item {
                 case let .scope(new): choose(new)
                 case .grantAccess: openSettings()
-                case .note: break
+                case .retry: retryRepositories()
+                case .note, .loading, .loadFailed: break
                 }
             }
         )
@@ -295,14 +348,9 @@ struct NewRunnerConfigureView: View {
         )
     }
 
-    private func loadRepositories() async {
-        do {
-            repositories = try await api.fetchRepositories()
-        } catch {
-            if !error.isCancellation {
-                Self.logger.error("Couldn't load repositories: \(error.localizedDescription, privacy: .public)")
-            }
-        }
+    private func retryRepositories() {
+        let account = authService.currentUser?.login
+        Task { await repositoryCatalog.retry(account: account) }
     }
 
     /// The scope's runner names (for clashes) and, for organizations, its runner groups.

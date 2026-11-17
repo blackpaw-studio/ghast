@@ -50,15 +50,79 @@ enum FixtureWorld {
     ]
 }
 
+/// How the fixture's repository list arrives.
+enum FixtureRepositoryLoad: Equatable, Sendable {
+    case immediate
+    /// Arrives after the given delay, as a slow `/user/repos` would.
+    case delayed(Duration)
+    /// Never arrives: the sheet stays in its loading state.
+    case pending
+    /// GitHub can't be reached.
+    case failing
+}
+
+/// Which account the fixture's GitHub answers for.
+enum FixtureAccount: Equatable, Sendable {
+    /// The design kit's one organization and repository.
+    case kit
+    /// Many organizations and repositories, some with long names (New Runner's busy states).
+    case busy(repositories: FixtureRepositoryLoad)
+}
+
+extension FixtureWorld {
+    private static func owner(_ login: String, id: Int) -> GitHubUser {
+        GitHubUser(id: id, login: login, avatarURL: "", name: nil, email: nil)
+    }
+
+    private static let busyOrganizationLogins = [
+        "blackpaw-studio", "evandcoleman-labs", "olympus-homelab",
+        "an-extraordinarily-long-organization-name-collective",
+    ]
+
+    static let busyOrganizations: [GitHubOrganization] = busyOrganizationLogins.enumerated().map { index, login in
+        GitHubOrganization(login: login, id: 100 + index, avatarURL: "")
+    }
+
+    /// Thirty admin repositories across the organizations, a few with very long names, plus
+    /// some the user can't administer (left out of the menu).
+    static let busyRepositories: [GitHubRepository] = {
+        let names: [(owner: String, name: String, admin: Bool)] = [
+            ("blackpaw-studio", "ghast", true),
+            ("blackpaw-studio", "ghast-github-actions-self-hosted-runner-manager-for-macos-tahoe", true),
+            ("blackpaw-studio", "leo", true),
+            ("blackpaw-studio", "marketing-site", false),
+            ("evandcoleman", "dotfiles", true),
+            ("evandcoleman", "an-unreasonably-long-repository-name-that-keeps-going-and-going", true),
+            ("an-extraordinarily-long-organization-name-collective", "infrastructure-as-code-monorepo", true),
+            ("olympus-homelab", "nomad-jobs", true),
+            ("olympus-homelab", "consul-templates", false),
+        ] + (1...22).map { ("evandcoleman-labs", "experiment-\($0)", true) }
+        return names.enumerated().map { index, entry in
+            GitHubRepository(
+                id: 300 + index,
+                name: entry.name,
+                fullName: "\(entry.owner)/\(entry.name)",
+                description: nil,
+                isPrivate: false,
+                owner: owner(entry.owner, id: 400 + index),
+                htmlURL: "https://github.com/\(entry.owner)/\(entry.name)",
+                permissions: RepositoryPermissions(admin: entry.admin)
+            )
+        }
+    }()
+}
+
 /// A `GitHubAPIServiceProtocol` that answers from `FixtureWorld` and never leaves the process.
 @MainActor
 final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
     /// False on the first-run screen, where this Mac has no runners yet, so GitHub lists only
     /// the other machines'.
     private let listsThisMacRunners: Bool
+    private let account: FixtureAccount
 
-    init(listsThisMacRunners: Bool = true) {
+    init(listsThisMacRunners: Bool = true, account: FixtureAccount = .kit) {
         self.listsThisMacRunners = listsThisMacRunners
+        self.account = account
     }
 
     func setAccessToken(_ token: String) {}
@@ -67,9 +131,20 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
         AuthenticatedUser(user: FixtureWorld.user, grantedScopes: Set(GitHubAuthService.scopes))
     }
 
-    func fetchRepositories() async throws -> [GitHubRepository] { [FixtureWorld.repository] }
+    func fetchRepositories() async throws -> [GitHubRepository] {
+        guard case let .busy(load) = account else { return [FixtureWorld.repository] }
+        switch load {
+        case .immediate: break
+        case let .delayed(delay): try await Task.sleep(for: delay)
+        case .pending: try await Task.sleep(for: .seconds(3_600))
+        case .failing: throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))
+        }
+        return FixtureWorld.busyRepositories
+    }
 
-    func fetchAdminOrganizations() async throws -> [GitHubOrganization] { [FixtureWorld.organization] }
+    func fetchAdminOrganizations() async throws -> [GitHubOrganization] {
+        account == .kit ? [FixtureWorld.organization] : FixtureWorld.busyOrganizations
+    }
 
     func fetchRunners(in scope: RunnerScope) async throws -> [GitHubRunner] {
         switch scope {

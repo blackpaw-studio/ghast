@@ -48,7 +48,7 @@ RECT="$(sed -E 's/.* rect=([0-9,]+).*/\1/' <<<"$READY")"
 OUT_PNG="$OUT_DIR/$SCREEN$APPEARANCE.png"
 # Sheet screens: the sheet is its own window, so capture the main window's rect as a region,
 # and the sheet (not the window under it) holds key.
-case "$SCREEN" in new-runner|new-runner-progress) HAS_SHEET=1 ;; *) HAS_SHEET=0 ;; esac
+case "$SCREEN" in new-runner*) HAS_SHEET=1 ;; *) HAS_SHEET=0 ;; esac
 # The mockups show active windows, so never capture an inactive one.
 [ "$WINDOW_ID" = "0" ] || require_active_window "$APP_PID" "$WINDOW_ID" "$HAS_SHEET"
 if [ "$WINDOW_ID" = "0" ]; then

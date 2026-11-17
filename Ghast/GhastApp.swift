@@ -8,6 +8,8 @@ struct AppDependencies {
     let runnerService: RunnerService
     let activityStore: RunnerActivityStore
     let remoteStore: RemoteRunnerStore
+    /// New Runner's repository list, kept across sheet opens.
+    let repositoryCatalog: RepositoryCatalog
     let apiService: any GitHubAPIServiceProtocol
     let authService: GitHubAuthService
     let clock: any AppClock
@@ -62,6 +64,7 @@ struct AppDependencies {
             localScopes: { runnerService.localRunners.map(\.scope) }
         )
         self.activityStore = activityStore
+        repositoryCatalog = RepositoryCatalog(api: apiService, clock: clock)
         self.apiService = apiService
         self.authService = authService
         self.clock = clock
@@ -198,6 +201,7 @@ struct GhastApp: App {
                     .environment(dependencies.runnerService)
                     .environment(dependencies.activityStore)
                     .environment(dependencies.remoteStore)
+                    .environment(dependencies.repositoryCatalog)
                     .environment(\.gitHubAPIService, dependencies.apiService)
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.runnerFlowServices, dependencies.flowServices)
