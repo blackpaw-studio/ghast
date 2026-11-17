@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 @MainActor
 final class GitHubAPIService: GitHubAPIServiceProtocol {
@@ -6,6 +7,10 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     private static let apiVersion = "2022-11-28"
     private static let pageSize = 100 // Maximum allowed by GitHub API
     private static let maxPages = 50 // Safety limit: 5000 items per list
+    /// Pages fetched at once once GitHub names the last page; kept low to stay clear of
+    /// secondary rate limits.
+    private static let maxConcurrentPages = 4
+    private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "api")
 
     private var accessToken: String?
     private let transport: any HTTPTransport
@@ -23,7 +28,7 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     func fetchCurrentUser(token: String? = nil) async throws -> AuthenticatedUser {
         let request = makeRequest(method: "GET", path: "/user", token: token)
         let (data, response) = try await perform(request)
-        let user: GitHubUser = try decode(data)
+        let user: GitHubUser = try Self.decode(data)
         let scopes = AuthenticatedUser.scopes(fromHeader: response.value(forHTTPHeaderField: "X-OAuth-Scopes"))
         return AuthenticatedUser(user: user, grantedScopes: scopes)
     }
@@ -87,33 +92,112 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
 
     // MARK: - Transport
 
-    /// Follows `page`/`per_page` pagination until a short page or the safety limit.
-    private func fetchAllPages<Item: Decodable>(path: String, query: [URLQueryItem]) async throws -> [Item] {
+    /// Fetches every page of a list endpoint (see the enveloped variant).
+    private func fetchAllPages<Item: Decodable & Sendable>(path: String, query: [URLQueryItem]) async throws -> [Item] {
         try await fetchAllPages(path: path, query: query) { (page: [Item]) in page }
     }
 
     /// Paginates an endpoint whose page is an envelope (`{"total_count":…,"runners":[…]}`);
-    /// `items` pulls the list out of each page.
-    private func fetchAllPages<Page: Decodable, Item>(
+    /// `items` pulls the list out of each page. When the first page's `Link` header names the
+    /// last page, the rest are fetched together, `maxConcurrentPages` at a time, and kept in
+    /// GitHub's order. Otherwise pages are walked one by one until a short page.
+    private func fetchAllPages<Page: Decodable & Sendable, Item>(
         path: String,
         query: [URLQueryItem],
         items extract: (Page) -> [Item]
     ) async throws -> [Item] {
-        var items: [Item] = []
-        for page in 1...Self.maxPages {
-            let request = makeRequest(method: "GET", path: path, query: query + [
-                URLQueryItem(name: "page", value: String(page)),
-                URLQueryItem(name: "per_page", value: String(Self.pageSize)),
-            ])
-            let page: Page = try await send(request)
-            let pageItems = extract(page)
+        let (first, response): (Page, HTTPURLResponse) = try await sendForPage(path: path, query: query, page: 1)
+        let firstItems = extract(first)
+        guard let lastPage = Self.lastPage(fromLinkHeader: response.value(forHTTPHeaderField: "Link")) else {
+            return firstItems.count < Self.pageSize
+                ? firstItems
+                : try await walkPages(from: 2, path: path, query: query, collected: firstItems, items: extract)
+        }
+        if lastPage > Self.maxPages {
+            Self.logger.warning("Pagination limit reached for \(path, privacy: .public) (\(Self.maxPages * Self.pageSize) items)")
+        }
+        let remaining = lastPage > 1 ? Array(2...min(lastPage, Self.maxPages)) : []
+        let pages = try await fetchPages(remaining, path: path, query: query) as [Page]
+        return firstItems + pages.flatMap(extract)
+    }
+
+    /// Fetches `pages` with at most `maxConcurrentPages` in flight, returned in `pages` order.
+    private func fetchPages<Page: Decodable & Sendable>(
+        _ pages: [Int],
+        path: String,
+        query: [URLQueryItem]
+    ) async throws -> [Page] {
+        try await withThrowingTaskGroup(of: (Int, Page).self) { group in
+            var results: [Int: Page] = [:]
+            var next = 0
+            while next < pages.count || !group.isEmpty {
+                while next < pages.count, next - results.count < Self.maxConcurrentPages {
+                    let page = pages[next]
+                    let request = pageRequest(path: path, query: query, page: page)
+                    let transport = transport
+                    group.addTask {
+                        let (data, _) = try await Self.perform(request, on: transport)
+                        let decoded: Page = try Self.decode(data)
+                        return (page, decoded)
+                    }
+                    next += 1
+                }
+                if let (page, result) = try await group.next() {
+                    results[page] = result
+                }
+            }
+            return pages.compactMap { results[$0] }
+        }
+    }
+
+    /// Follows `page`/`per_page` pagination until a short page or the safety limit.
+    private func walkPages<Page: Decodable & Sendable, Item>(
+        from start: Int,
+        path: String,
+        query: [URLQueryItem],
+        collected: [Item],
+        items extract: (Page) -> [Item]
+    ) async throws -> [Item] {
+        var items = collected
+        for page in start...Self.maxPages {
+            let pageItems = extract(try await sendForPage(path: path, query: query, page: page).page as Page)
             items.append(contentsOf: pageItems)
             // A short page means we've reached the end
             if pageItems.count < Self.pageSize { return items }
         }
-
-        print("⚠️ Pagination limit reached for \(path) (\(Self.maxPages * Self.pageSize) items)")
+        Self.logger.warning("Pagination limit reached for \(path, privacy: .public) (\(Self.maxPages * Self.pageSize) items)")
         return items
+    }
+
+    private func sendForPage<Page: Decodable>(
+        path: String,
+        query: [URLQueryItem],
+        page: Int
+    ) async throws -> (page: Page, response: HTTPURLResponse) {
+        let (data, response) = try await perform(pageRequest(path: path, query: query, page: page))
+        return (try Self.decode(data), response)
+    }
+
+    private func pageRequest(path: String, query: [URLQueryItem], page: Int) -> URLRequest {
+        makeRequest(method: "GET", path: path, query: query + [
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "per_page", value: String(Self.pageSize)),
+        ])
+    }
+
+    /// The `page` of the `rel="last"` link in a GitHub `Link` header, if there is one.
+    static func lastPage(fromLinkHeader header: String?) -> Int? {
+        guard let header else { return nil }
+        for link in header.split(separator: ",") {
+            let parts = link.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.dropFirst().contains(#"rel="last""#),
+                  let target = parts.first, target.hasPrefix("<"), target.hasSuffix(">"),
+                  let components = URLComponents(string: String(target.dropFirst().dropLast())),
+                  let page = components.queryItems?.first(where: { $0.name == "page" })?.value.flatMap(Int.init)
+            else { continue }
+            return page
+        }
+        return nil
     }
 
     /// Every request carries `Accept` and the API version; `Authorization` only when a
@@ -138,10 +222,10 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     }
 
     private func send<Response: Decodable>(_ request: URLRequest) async throws -> Response {
-        try decode(try await perform(request).data)
+        try Self.decode(try await perform(request).data)
     }
 
-    private func decode<Response: Decodable>(_ data: Data) throws -> Response {
+    private nonisolated static func decode<Response: Decodable>(_ data: Data) throws -> Response {
         do {
             return try JSONDecoder().decode(Response.self, from: data)
         } catch {
@@ -153,6 +237,13 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     /// passes through untouched so callers can tell it apart from a failure.
     @discardableResult
     private func perform(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
+        try await Self.perform(request, on: transport)
+    }
+
+    private nonisolated static func perform(
+        _ request: URLRequest,
+        on transport: any HTTPTransport
+    ) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data
         let response: HTTPURLResponse
         do {
@@ -170,7 +261,7 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
     /// A 403 or 429 is a rate limit when GitHub says when to come back: `Retry-After`
     /// (secondary limits), or `X-RateLimit-Reset` once `X-RateLimit-Remaining` is 0. A 429
     /// is always one.
-    private static func error(for response: HTTPURLResponse) -> GitHubAPIError {
+    private nonisolated static func error(for response: HTTPURLResponse) -> GitHubAPIError {
         let status = response.statusCode
         guard status == 403 || status == 429 else { return error(forStatus: status) }
         let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
@@ -182,7 +273,7 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
         return .rateLimited(status: status, retryAfter: retryAfter, resetAt: resetAt)
     }
 
-    private static func error(forStatus status: Int) -> GitHubAPIError {
+    private nonisolated static func error(forStatus status: Int) -> GitHubAPIError {
         switch status {
         case 401: .unauthorized
         case 404: .notFound
@@ -200,12 +291,12 @@ extension Error {
     }
 }
 
-private struct OrganizationMembership: Decodable {
+private struct OrganizationMembership: Decodable, Sendable {
     let role: String
     let organization: GitHubOrganization
 }
 
-private struct RunnersResponse: Codable {
+private struct RunnersResponse: Codable, Sendable {
     let totalCount: Int
     let runners: [GitHubRunner]
     
@@ -215,7 +306,7 @@ private struct RunnersResponse: Codable {
     }
 }
 
-private struct RunnerGroupsResponse: Decodable {
+private struct RunnerGroupsResponse: Decodable, Sendable {
     let runnerGroups: [GitHubRunnerGroup]
 
     enum CodingKeys: String, CodingKey {
