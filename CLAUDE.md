@@ -44,16 +44,16 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 - Process lifecycle: start/stop runners using `./run.sh` in runner directories
 
 **UI Architecture**:
-- `AppState`: Central navigation state (`SelectedView` enum)
-- Navigation: Dashboard → Repository Detail → Local Runners → Settings
+- Focus design: one main window (`FocusMainView`, sidebar of runners + detail with Output and Configuration tabs), a Welcome window for sign-in, a Settings window (General, Account), the New Runner sheet and a menu bar extra. Design tokens live in `Ghast/Design/` (`FocusColor`, `FocusType`, `FocusMetrics`)
+- `MainSelection` (selected runner) and `AppWindowRouter` (opens windows from notifications and the menu bar) replace the old `AppState` navigation
+- `AppDependencies` builds the services once; views read them from the environment (`focusContext`, `RunnerService`, `RemoteRunnerStore`, `GitHubAuthService`)
 - `GitHubAPIService`: URLSession-based GitHub REST API client over an injected `HTTPTransport`
-- Environment objects flow: `GitHubAuthService` + `AppState` injected throughout
 
 ### Project Configuration
 - **Bundle ID**: `net.evancoleman.ghast`
 - **Single Instance**: `LSMultipleInstancesProhibited: true`
 - **Dependencies**: Sparkle (updates), SnapshotTesting (UI testing); networking and Keychain use system frameworks
-- **Target**: macOS 15.0+, SwiftUI lifecycle
+- **Target**: macOS 26.0+ (Liquid Glass, floating sidebar), SwiftUI lifecycle. Built with Xcode 27 locally; release CI pins Xcode 26.6 on `macos-26`
 
 ### Testing Strategy
 - **Unit Tests**: Device Flow polling rules and auth state transitions, with fake transport and sleeper (Swift Testing)
@@ -62,17 +62,17 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 - **Mock Testing**: GitHub API responses and Device Flow responses
 
 #### Snapshot Testing
-UI components are tested with visual snapshots to prevent layout regressions:
-- **Split view widths**: Main sidebar (280-320-400px), Local runners (300-350-450px)
-- **Dialog sizes**: New runner flow (800-900-1200px), Add runner sheet (750-850-1100px)
-- **Layout states**: Empty states, populated lists, different window sizes
+Snapshots lock layout (glass and backdrop differ per macOS version, so they are covered by fidelity captures). All three suites are Swift Testing, parameterised over light and dark, and render against fixture dependencies:
+- `FocusMainSnapshots`: detail column in states running, idle, stopped, starting, error, remote, empty, configuration
+- `FocusFlowSnapshots`: welcome, welcome-failed, device-code, new-runner, new-runner-progress
+- `FocusSettingsSnapshots`: General, Account, Account with organization access not granted
+
+#### Design fixture mode and fidelity scripts
+- Debug builds launch into a canned screen with `-GhastDesignFixture <screen>` (`-GhastAppearance dark` for dark). Screens: main, configuration, remote, error, first-run, welcome, device-code, new-runner, new-runner-progress, settings-general, settings-account, menu-bar (`Ghast/Fixture/`). Fixture mode uses a scratch folder, in-memory defaults and token store, and a fake GitHub API: it never touches real defaults, the Keychain, `~/.ghast`, Sparkle or running runners.
+- `Scripts/fidelity/capture.sh <screen> [--dark]` builds Debug, starts a HiDPI virtual display, launches the fixture and captures it at 2x into `build/fidelity/` (needs Peekaboo with Screen Recording). `compare.sh <screen> [--dark]` writes a side-by-side and overlay against `docs/design/focus-redesign/`. Deviations are logged in `docs/design/focus-redesign/fidelity.md`.
 
 **Recording new snapshots**:
-1. Set `isRecording = true` in individual test files (e.g., `SimpleSnapshotTest.swift`)
-2. Run tests: `xcodebuild test -project Ghast.xcodeproj -scheme Ghast` or use MCP XcodeBuildMCP `test_macos_proj`
-3. Reset flag to `false` and commit snapshots in `GhastTests/__Snapshots__/`
-
-Alternatively record without editing files: `TEST_RUNNER_SNAPSHOT_RECORD_MODE=true xcodebuild test ...` (the `TEST_RUNNER_` prefix is what forwards the variable to the test host).
+Run `TEST_RUNNER_SNAPSHOT_RECORD_MODE=true xcodebuild test -project Ghast.xcodeproj -scheme Ghast -only-testing:GhastTests/<Suite>`, re-run without the variable to confirm green, then commit the PNGs in `GhastTests/__Snapshots__/` (the `TEST_RUNNER_` prefix is what forwards the variable to the test host).
 
 **Running snapshot tests**: Always run after UI changes to verify layouts
 
@@ -84,7 +84,7 @@ Look for `🔐 OAuth:` prefixed logs in Console.app when debugging authenticatio
 2. `RunnerSetupFlow` downloads the runner, moves it into place, gets a registration token and runs `config.sh`
 3. The registered runner is added to `RunnerService`; Remove, Reconfigure and Remove from GitHub go through `RunnerFlowCoordinator`, each behind a confirmation
 4. Ghast manages runner lifecycle via `Process` and streams logs via Combine
-5. Real-time log viewing in `RunnerLogsView` with automatic scroll-to-bottom
+5. Live output in `RunnerOutputView` (parsed by `OutputParser`, tailed by `LogTailer`) with scroll-to-end
 
 ## XcodeBuildMCP Tools
 
