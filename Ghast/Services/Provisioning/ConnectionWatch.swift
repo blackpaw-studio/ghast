@@ -79,8 +79,8 @@ final class ConnectionWatch {
         if cancelled { return .failure(CancellationError()) }
         switch state {
         case let .exited(exit)?: return .failure(Failure.exited(exit.code))
-        case .stopped?, nil: return .failure(Failure.stopped)
-        case .running?: break
+        case .stopped?, .stopping?, nil: return .failure(Failure.stopped)
+        case .running?, .starting?: break
         }
         let newLines = activity.lines.filter { line in baseline.map { line.id > $0 } ?? true }
         let isListening = activity.isListening && !newLines.isEmpty

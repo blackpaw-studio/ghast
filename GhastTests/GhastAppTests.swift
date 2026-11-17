@@ -120,10 +120,13 @@ final class GhastAppTests: XCTestCase {
         try await runnerService.startRunner(id: runner.id)
         XCTAssertEqual(runnerService.localRunners.first?.status, .running)
         
-        // Perform cleanup (would normally be called during termination)
-        appDelegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+        // The quit holds termination (.terminateLater) while a runner process exists. The reply
+        // itself goes to NSApplication, so the test drives the stop the quit awaits.
+        await appDelegate.stopRunnersForQuit()
         
         XCTAssertEqual(runnerService.localRunners.first?.status, .stopped)
+        XCTAssertFalse(runnerService.hasRunningProcesses)
+        XCTAssertEqual(appDelegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
     
     func testApplicationDidFinishLaunching() {

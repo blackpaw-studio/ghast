@@ -55,6 +55,8 @@ struct RunnerDisplayStatusTests {
         #expect(RunnerDisplayStatus.make(processState: .running(since: since), lastExit: nil, activity: runningJobActivity)
             == .runningJob(name: "build-and-notarize", since: at("10:08:15")))
         #expect(RunnerDisplayStatus.make(processState: .running(since: since), lastExit: nil, activity: RunnerActivity()) == .starting)
+        #expect(RunnerDisplayStatus.make(processState: .starting, lastExit: nil, activity: RunnerActivity()) == .starting)
+        #expect(RunnerDisplayStatus.make(processState: .stopping(since: since), lastExit: nil, activity: RunnerActivity()) == .stopping)
     }
 
     @Test("a stopped process is stopped, with the time of the last exit if there is one")
@@ -87,6 +89,7 @@ struct RunnerDisplayStatusTests {
     @Test("title, secondary line and sidebar subtitle", arguments: [
         (RunnerDisplayStatus.idle, "Idle", "Waiting for jobs", "Idle · blackpaw-studio"),
         (.starting, "Connecting…", "Connecting to GitHub…", "Connecting…"),
+        (.stopping, "Stopping…", "Waiting for the runner to sign out of GitHub…", "Stopping…"),
         (.stopped(at: nil), "Stopped", "Not started yet", "Stopped · blackpaw-studio"),
     ])
     func localWords(status: RunnerDisplayStatus, title: String, secondary: String, sidebar: String) {
@@ -141,6 +144,7 @@ struct RunnerDisplayStatusTests {
         (RunnerDisplayStatus.idle, [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
         (.runningJob(name: "x", since: nil), [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
         (.starting, [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
+        (.stopping, [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]),
         (.stopped(at: nil), [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]),
         (.error(code: 1, at: Date(timeIntervalSince1970: 0)), [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]),
     ])

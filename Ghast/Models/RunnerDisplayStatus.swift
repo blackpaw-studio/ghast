@@ -42,6 +42,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     case idle
     case runningJob(name: String, since: Date?)
     case starting
+    /// Asked to stop; waiting for the runner to sign out of GitHub.
+    case stopping
     case stopped(at: Date?)
     case error(code: Int32, at: Date)
     /// Remote only.
@@ -60,6 +62,10 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return .stopped(at: lastExit?.at)
         case let .exited(exit):
             return .error(code: exit.code, at: exit.at)
+        case .starting:
+            return .starting
+        case .stopping:
+            return .stopping
         case .running:
             if let job = activity.currentJob { return .runningJob(name: job.name, since: job.startedAt) }
             return activity.isListening ? .idle : .starting
@@ -80,6 +86,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running a job"
         case .starting: return "Connecting…"
+        case .stopping: return "Stopping…"
         case .stopped: return "Stopped"
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline"
@@ -96,6 +103,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "\(name) · \(DurationFormat.started(elapsed: time.now.timeIntervalSince(since)))"
         case .starting:
             return "Connecting to GitHub…"
+        case .stopping:
+            return "Waiting for the runner to sign out of GitHub…"
         case let .stopped(at):
             return at.map { "Stopped at \(time.timeOfDay.format($0))" } ?? "Not started yet"
         case let .error(_, at):
@@ -113,6 +122,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .idle: return "Idle · \(scope)"
         case let .runningJob(name, _): return "Running \(name)"
         case .starting: return "Connecting…"
+        case .stopping: return "Stopping…"
         case .stopped: return "Stopped · \(scope)"
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline · \(scope)"
@@ -127,6 +137,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         switch self {
         case .idle, .runningJob, .starting:
             return [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]
+        case .stopping:
+            return [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]
         case .stopped, .error, .offline, .remoteBusy:
             return [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]
         }
@@ -156,6 +168,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .runningJob(name, _): return "running \(name)"
         case .remoteBusy: return "running a job"
         case .starting: return "connecting"
+        case .stopping: return "stopping"
         case .stopped: return "stopped"
         case let .error(code, at): return "error, exited with code \(code) at \(time.timeOfDay.format(at))"
         case .offline: return "offline"
@@ -170,10 +183,10 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         let duration: TimeInterval?
         let label: String
         switch processState {
-        case let .running(since):
+        case let .running(since), let .stopping(since):
             label = "Uptime"
             duration = time.now.timeIntervalSince(since)
-        case .stopped, .exited:
+        case .starting, .stopped, .exited:
             label = "Last Run"
             duration = lastExit?.startedAt.map { lastExit!.at.timeIntervalSince($0) }
         }

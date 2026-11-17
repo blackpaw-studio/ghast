@@ -46,6 +46,7 @@ struct MenuBarMenuModelTests {
         (RunnerDisplayStatus.idle, MenuBarDot.idle, "Idle", true),
         (.runningJob(name: "build", since: nil), .running, "Running", true),
         (.starting, .hollow, "Connecting", true),
+        (.stopping, .hollow, "Stopping", false),
         (.stopped(at: nil), .hollow, "Stopped", false),
         (.error(code: 1, at: now), .error, "Exited", false),
     ])
@@ -74,6 +75,16 @@ struct MenuBarMenuModelTests {
     @Test("a runner that Remove or Reconfigure is working on can't be started, stopped or restarted")
     func busyRunner() {
         let menu = MenuBarMenuModel.make(runners: [local("a", .idle), local("b", .idle)], isSignedIn: true, busyRunnerIDs: ["id-a"])
+        let controllable = menu.compactMap { entry -> Bool? in
+            if case let .runner(runner) = entry { return runner.canControl }
+            return nil
+        }
+        #expect(controllable == [false, true])
+    }
+
+    @Test("a stopping runner can't be started, stopped or restarted until it has ended")
+    func stoppingRunner() {
+        let menu = MenuBarMenuModel.make(runners: [local("a", .stopping), local("b", .idle)], isSignedIn: true)
         let controllable = menu.compactMap { entry -> Bool? in
             if case let .runner(runner) = entry { return runner.canControl }
             return nil

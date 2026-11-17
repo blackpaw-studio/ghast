@@ -130,7 +130,8 @@ struct FixtureDependencies {
                 defaults: defaults,
                 runnersDirectory: runners,
                 clock: clock,
-                launcher: launcher
+                launcher: launcher,
+                scanner: NoRunnerProcessScanner()
             ),
             apiService: api,
             authService: GitHubAuthService(apiService: api, deviceFlow: FixtureDeviceFlowClient(), tokenStore: tokenStore),

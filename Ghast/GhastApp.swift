@@ -453,14 +453,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// relaunch too, which quits through `NSApp.terminate`. `stopAllRunners` is bounded, so a
     /// stuck runner delays the quit by at most the grace period.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard shouldCleanUpRunners, let runnerService = builtDependencies?.runnerService else { return .terminateNow }
-        print("🏃 Application terminating - stopping all runners...")
+        guard shouldCleanUpRunners, builtDependencies?.runnerService.hasRunningProcesses == true else { return .terminateNow }
         Task { @MainActor in
-            await runnerService.stopAllRunners()
-            print("🏃 Runner cleanup completed")
+            await stopRunnersForQuit()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+    
+    /// Stops every runner and returns once they have ended (bounded by the stop grace period).
+    func stopRunnersForQuit() async {
+        guard let runnerService = builtDependencies?.runnerService else { return }
+        print("🏃 Application terminating - stopping all runners...")
+        await runnerService.stopAllRunners()
+        print("🏃 Runner cleanup completed")
     }
     
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
