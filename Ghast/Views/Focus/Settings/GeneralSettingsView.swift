@@ -10,6 +10,7 @@ struct GeneralSettingsView: View {
     @Environment(RunnerService.self) private var runnerService
     @Environment(\.focusContext) private var context
     @Environment(\.openURL) private var openURL
+    @Environment(\.appVersion) private var appVersion
 
     private static let notificationSettingsURL = URL(
         string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier ?? "net.evancoleman.ghast")"
@@ -73,7 +74,7 @@ struct GeneralSettingsView: View {
     private var versionRow: some View {
         HStack(spacing: FocusMetrics.formRowInset) {
             VStack(alignment: .leading, spacing: FocusMetrics.settingsVersionLineGap) {
-                Text("Ghast \(AppVersion.current.display)").font(FocusType.body)
+                Text("Ghast \(appVersion.display)").font(FocusType.body)
                 Text(updates.statusLine(now: context.clock.now()))
                     .font(FocusType.subheadline)
                     .foregroundStyle(.secondary)
@@ -118,4 +119,9 @@ struct AppVersion: Equatable {
             build: info["CFBundleVersion"] as? String ?? "?"
         )
     }
+}
+
+extension EnvironmentValues {
+    /// The version Settings › General shows; the running app's unless a snapshot pins one.
+    @Entry var appVersion: AppVersion = .current
 }
