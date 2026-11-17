@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import Ghast
 
@@ -35,5 +36,12 @@ struct AppWindowRouterTests {
         #expect(log.entries.filter { $0 == "open main through the app" }.count == 2)
         #expect(router.newRunnerRequest != nil)
         #expect(router.showOutputRequest?.runnerID == "r1")
+    }
+
+    @Test("the main scene's Window menu item is titled mainWindowTitle, the item the no-window fallback chooses")
+    func mainWindowMenuItemMatchesTitle() throws {
+        // The test host is Ghast itself, so its Window menu lists the real scenes.
+        let menu = try #require(NSApp.windowsMenu)
+        #expect(menu.items.contains { $0.title == GhastApp.mainWindowTitle && $0.action != nil })
     }
 }
