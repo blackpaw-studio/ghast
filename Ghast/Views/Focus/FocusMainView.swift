@@ -117,6 +117,11 @@ struct FocusMainView: View {
         .onChange(of: router?.showOutputRequest, initial: true) { _, request in
             if let request { showOutput(request) }
         }
+        .onChange(of: router?.newRunnerRequest, initial: true) { _, request in
+            guard let request else { return }
+            router?.consumeNewRunner(request)
+            if !isShowingNewRunner { newRunner() }
+        }
     }
 
     /// A notification or the menu bar asked for a runner's output: select it, show Output and

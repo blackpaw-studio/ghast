@@ -219,6 +219,11 @@ enum FocusMetrics {
     static let settingsContentMinHeight: CGFloat = 572
     static let settingsSectionGap: CGFloat = 20
     static let settingsBoxRadius: CGFloat = 12
+
+    // MARK: Menu bar extra (measured from MenuBar.png)
+    static let menuBarMenuWidth: CGFloat = 300
+    /// The status word's right edge, from the title's origin.
+    static let menuBarStatusTab: CGFloat = 220
     /// Help text sits this far under its group.
     static let settingsHelpTop: CGFloat = 6
     static let settingsButtonRowHeight: CGFloat = 44

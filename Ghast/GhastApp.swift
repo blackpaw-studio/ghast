@@ -118,6 +118,43 @@ struct AppDependencies {
         await authService.checkStoredAuthentication()
     }
 
+    /// The menu bar extra over `host`: this Mac's runners (never GitHub's), following the setting.
+    func makeMenuBarController(host: any StatusItemHosting) -> MenuBarController {
+        let runnerService = runnerService, activityStore = activityStore, authService = authService
+        let settings = settings, router = router
+        let actions = RunnerActions(runnerService: runnerService, flows: flowCoordinator)
+        return MenuBarController(
+            host: host,
+            state: {
+                let catalog = RunnerCatalog.merge(
+                    local: runnerService.localRunners,
+                    processStates: runnerService.processStates,
+                    activities: activityStore.activities,
+                    remote: [:]
+                )
+                let busy = Set(runnerService.localRunners.map(\.id).filter(actions.isFlowBusy))
+                return MenuBarState(
+                    isShown: settings.showMenuBarExtra,
+                    entries: MenuBarMenuModel.make(runners: catalog.thisMac, isSignedIn: authService.isAuthenticated, busyRunnerIDs: busy)
+                )
+            },
+            perform: { action in
+                switch action {
+                case let .showOutput(id): router.showOutput(runnerID: id)
+                case let .start(id): actions.start(id)
+                case let .stop(id): actions.stop(id)
+                case let .restart(id): actions.restart(id)
+                case .command(.startAll): actions.startAll()
+                case .command(.stopAll): actions.stopAll()
+                case .command(.newRunner): router.newRunner()
+                case .command(.openGhast): router.openMain()
+                case .command(.settings): router.openSettings()
+                case .command(.quit): NSApp.terminate(nil)
+                }
+            }
+        )
+    }
+
     /// Starts the runners that were running when Ghast last quit. Not in the design fixture,
     /// which seeds its own process states.
     func restartRunnersAtLaunch() async {
@@ -221,6 +258,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let updateEvents = SparkleUpdateEvents()
     private var builtDependencies: AppDependencies?
     private var signalSources: [DispatchSourceSignal] = []
+    private var menuBarController: MenuBarController?
     #if DEBUG
     /// Set in design fixture mode: no single-instance check, Sparkle, signal handlers or
     /// runner cleanup (that cleanup `pkill`s the real runners).
@@ -349,6 +387,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // or add a status item from it.
         guard !Self.isUnderTest else { return }
         Task { await dependencies.restartRunnersAtLaunch() }
+        let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
+        menuBarController = controller
+        controller.start()
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

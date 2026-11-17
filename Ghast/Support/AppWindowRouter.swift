@@ -15,6 +15,8 @@ final class AppWindowRouter {
 
     /// Pending until the main window applies it (see `consumeShowOutput`).
     private(set) var showOutputRequest: ShowOutputRequest?
+    /// Set by the menu bar's New Runner…; the main window opens the sheet and clears it.
+    private(set) var newRunnerRequest: UUID?
 
     @ObservationIgnored private var openWindow: OpenWindowAction?
     @ObservationIgnored private var openSettingsAction: OpenSettingsAction?
@@ -38,7 +40,17 @@ final class AppWindowRouter {
 
     func openSettings() {
         activate()
-        openSettingsAction?()
+        if let openSettingsAction { openSettingsAction() } else { AppMenu.openSettings() }
+    }
+
+    /// Opens the main window with the New Runner sheet.
+    func newRunner() {
+        newRunnerRequest = UUID()
+        openMain()
+    }
+
+    func consumeNewRunner(_ request: UUID) {
+        if newRunnerRequest == request { newRunnerRequest = nil }
     }
 
     /// Opens the main window on `runnerID`'s Output tab, following the end.
