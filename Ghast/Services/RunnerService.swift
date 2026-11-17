@@ -33,6 +33,9 @@ class RunnerService {
     @ObservationIgnored private var stopRequested: Set<String> = []
     /// Callers of `stopRunner` waiting for a runner's process to end.
     @ObservationIgnored private var terminationWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    /// Every runner process that ended, requested or not. One consumer.
+    @ObservationIgnored let processExits: AsyncStream<RunnerProcessExit>
+    @ObservationIgnored private let processExitSink: AsyncStream<RunnerProcessExit>.Continuation
     
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     @ObservationIgnored private let runnersBaseDirectory: URL
@@ -59,6 +62,7 @@ class RunnerService {
         self.sleeper = sleeper
         self.runsStrayProcessCleanup = runsStrayProcessCleanup
         self.runnersBaseDirectory = runnersDirectory
+        (processExits, processExitSink) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         createRunnersDirectoryIfNeeded()
         loadRunners()
         // Discover any existing runners not in our database
@@ -223,7 +227,7 @@ class RunnerService {
     
     /// Updates state for a process that has ended. A requested stop leaves the runner `.stopped`;
     /// an unexpected exit leaves it `.exited` and clears the intent to keep running.
-    private func recordExit(id: String, code: Int32, wasRequested: Bool) {
+    private func recordExit(id: String, code: Int32, wasRequested: Bool, announces: Bool = true) {
         guard let index = localRunners.firstIndex(where: { $0.id == id }) else {
             // The runner was removed while it stopped: nothing to record.
             processStates.removeValue(forKey: id)
@@ -237,12 +241,14 @@ class RunnerService {
         localRunners[index].status = .stopped
         if !wasRequested { localRunners[index].shouldBeRunning = false }
         saveRunners()
+        if announces { processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit)) }
     }
     
     /// Shows a runner Ghast could not launch as an error, like an unexpected exit.
     func recordStartFailure(id: String) {
         guard runningProcesses[id] == nil else { return }
-        recordExit(id: id, code: RunnerExit.launchFailureCode, wasRequested: false)
+        // Not a process exit: the runner never ran, so nothing announces it.
+        recordExit(id: id, code: RunnerExit.launchFailureCode, wasRequested: false, announces: false)
     }
     
     /// How long a stopping runner gets to exit on SIGTERM before SIGKILL, and then how long

@@ -20,6 +20,10 @@ struct AppDependencies {
     let flowServices: RunnerFlowServices
     /// Remove, Reconfigure and Remove from GitHub, with their confirmations.
     let flowCoordinator: RunnerFlowCoordinator
+    /// Opens windows for notification clicks and the menu bar extra.
+    let router: AppWindowRouter
+    /// Crash and job-failure notifications.
+    let notificationService: NotificationService
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -41,7 +45,9 @@ struct AppDependencies {
         settings: AppSettings,
         remoteStore: RemoteRunnerStore? = nil,
         runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
-        scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner()
+        scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
+        notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
+        router: AppWindowRouter = AppWindowRouter()
     ) {
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
@@ -70,6 +76,13 @@ struct AppDependencies {
         )
         self.flowServices = flowServices
         flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }
+        self.router = router
+        notificationService = NotificationService(
+            center: notificationCenter,
+            settings: settings,
+            runnerName: { id in runnerService.localRunners.first { $0.id == id }?.name },
+            openRunner: { router.showOutput(runnerID: $0) }
+        )
     }
 
 
@@ -91,6 +104,10 @@ struct AppDependencies {
     /// under test.
     func startServices() async {
         activityStore.observe(runnerService)
+        let notificationService = notificationService
+        let liveEvents = activityStore.liveEvents
+        let processExits = runnerService.processExits
+        Task { await notificationService.run(liveEvents: liveEvents, processExits: processExits) }
         async let restarted: Void = RestartAtLaunch.run(
             isEnabled: settings.restartRunnersAtLaunch,
             starter: runnerService,
@@ -110,7 +127,8 @@ struct AppDependencies {
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
             processLauncher: launcher,
-            settings: AppSettings(defaults: .standard)
+            settings: AppSettings(defaults: .standard),
+            notificationCenter: SystemNotificationCenter()
         )
     }
 }
@@ -133,6 +151,8 @@ struct GhastApp: App {
                     .environment(\.runnerFlowServices, dependencies.flowServices)
                     .environment(dependencies.flowCoordinator)
                     .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
+                    .environment(\.appWindowRouter, dependencies.router)
+                    .installsWindowRouter(dependencies.router)
             } else {
                 EmptyView()
             }
@@ -144,6 +164,7 @@ struct GhastApp: App {
             if !isRunningTests() {
                 WelcomeWindowRoot(authService: appDelegate.dependencies.authService)
                     .environment(\.focusContext, appDelegate.dependencies.focusContext)
+                    .installsWindowRouter(appDelegate.dependencies.router)
             }
         }
         .windowStyle(.hiddenTitleBar)
