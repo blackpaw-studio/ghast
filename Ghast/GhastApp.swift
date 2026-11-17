@@ -260,6 +260,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var builtDependencies: AppDependencies?
     private var signalSources: [DispatchSourceSignal] = []
     private var menuBarController: MenuBarController?
+    /// What this launch set up; nil until launch finishes, and in the design fixture.
+    private var launchPlan: LaunchPlan?
     #if DEBUG
     /// Set in design fixture mode: no single-instance check, Sparkle, signal handlers or
     /// runner cleanup (that cleanup `pkill`s the real runners).
@@ -361,42 +363,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         
-        // Ensure single instance behavior
-        let runningApps = NSWorkspace.shared.runningApplications
-        let ghastApps = runningApps.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
-        
-        if ghastApps.count > 1 {
-            // Another instance is running, terminate this one
-            NSApp.terminate(nil)
-            return
+        let plan = LaunchPlan.make(isUnderTest: Self.isUnderTest)
+        launchPlan = plan
+
+        if plan.checksSingleInstance {
+            let ghastApps = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+            if ghastApps.count > 1 {
+                // Another instance is running, terminate this one
+                NSApp.terminate(nil)
+                return
+            }
         }
         
         // Set activation policy to ensure we can become active
         NSApp.setActivationPolicy(.regular)
         
-        // Install signal handlers for cleanup on abnormal termination
-        installSignalHandlers()
+        if plan.installsSignalHandlers {
+            // Install signal handlers for cleanup on abnormal termination
+            installSignalHandlers()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleTermination),
+                name: NSApplication.willTerminateNotification,
+                object: nil
+            )
+            // Disable sudden termination to ensure cleanup
+            ProcessInfo.processInfo.disableSuddenTermination()
+        }
         
-        // Register for termination notifications
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleTermination),
-            name: NSApplication.willTerminateNotification,
-            object: nil
-        )
-        
-        // Disable sudden termination to ensure cleanup
-        ProcessInfo.processInfo.disableSuddenTermination()
-        
+        // The XCTest host stops here: its services would be built over the user's real
+        // defaults and runner folders.
+        guard plan.startsServices else { return }
         let dependencies = dependencies
         Task { await dependencies.startServices() }
-        // The XCTest host is this app with the user's real defaults: never start their runners
-        // or add a status item from it.
-        guard !Self.isUnderTest else { return }
-        Task { await dependencies.restartRunnersAtLaunch() }
-        let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
-        menuBarController = controller
-        controller.start()
+        if plan.restartsRunners {
+            Task { await dependencies.restartRunnersAtLaunch() }
+        }
+        if plan.showsMenuBarExtra {
+            let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
+            menuBarController = controller
+            controller.start()
+        }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -426,9 +433,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func performRunnerCleanup() {
-        // Nothing to clean up if the services were never built (test host), and a fixture
+        // Never in the XCTest host (its plan has no quit cleanup) or before launch, and a fixture
         // must never stop the user's real runners.
-        guard !isFixtureMode, let runnerService = builtDependencies?.runnerService else { return }
+        guard !isFixtureMode, launchPlan?.cleansUpRunnersOnQuit == true,
+              let runnerService = builtDependencies?.runnerService else { return }
         
         // Stop all running runners when app terminates
         // This must be synchronous to ensure cleanup completes before termination
