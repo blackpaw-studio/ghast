@@ -24,6 +24,10 @@ struct AppDependencies {
     let router: AppWindowRouter
     /// Crash and job-failure notifications.
     let notificationService: NotificationService
+    /// Settings › Startup: open at login, from `SMAppService`.
+    let openAtLogin: OpenAtLoginModel
+    /// Settings › Updates.
+    let updateStatus: UpdateStatusModel
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -47,7 +51,9 @@ struct AppDependencies {
         runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
         scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
-        router: AppWindowRouter = AppWindowRouter()
+        router: AppWindowRouter = AppWindowRouter(),
+        loginItemService: any LoginItemService = InertLoginItemService(),
+        updater: any UpdaterDriving = InertUpdater()
     ) {
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
@@ -83,6 +89,8 @@ struct AppDependencies {
             runnerName: { id in runnerService.localRunners.first { $0.id == id }?.name },
             openRunner: { router.showOutput(runnerID: $0) }
         )
+        openAtLogin = OpenAtLoginModel(service: loginItemService)
+        updateStatus = UpdateStatusModel(updater: updater)
     }
 
 
@@ -117,19 +125,24 @@ struct AppDependencies {
         await restarted
     }
 
-    static func live() -> AppDependencies {
+    static func live(updater: SPUUpdater, updateEvents: SparkleUpdateEvents) -> AppDependencies {
         let apiService = GitHubAPIService()
         let clock = SystemClock()
         let launcher = ProcessRunnerLauncher()
-        return AppDependencies(
+        let dependencies = AppDependencies(
             runnerService: RunnerService(clock: clock, launcher: launcher),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
             processLauncher: launcher,
             settings: AppSettings(defaults: .standard),
-            notificationCenter: SystemNotificationCenter()
+            notificationCenter: SystemNotificationCenter(),
+            loginItemService: MainAppLoginItemService(),
+            updater: updater
         )
+        let updateStatus = dependencies.updateStatus
+        updateEvents.onEvent = { updateStatus.handle($0) }
+        return dependencies
     }
 }
 
@@ -189,6 +202,8 @@ struct GhastApp: App {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController: SPUStandardUpdaterController
+    /// Sparkle's delegate; must outlive the controller, which holds it weakly.
+    private let updateEvents = SparkleUpdateEvents()
     private var builtDependencies: AppDependencies?
     private var signalSources: [DispatchSourceSignal] = []
     #if DEBUG
@@ -208,7 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app's services, built on first use. Never built under test unless injected.
     var dependencies: AppDependencies {
         if let builtDependencies { return builtDependencies }
-        let dependencies = AppDependencies.live()
+        let dependencies = AppDependencies.live(updater: updaterController.updater, updateEvents: updateEvents)
         builtDependencies = dependencies
         return dependencies
     }
@@ -222,7 +237,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         let fixture: Void? = nil
         #endif
-        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest && fixture == nil, updaterDelegate: nil, userDriverDelegate: nil)
+        updaterController = SPUStandardUpdaterController(startingUpdater: !isUnderTest && fixture == nil, updaterDelegate: updateEvents, userDriverDelegate: nil)
         super.init()
         #if DEBUG
         if let fixture {
