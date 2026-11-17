@@ -3,7 +3,8 @@ import Observation
 import SwiftUI
 
 /// Opens Ghast's windows from places with no SwiftUI environment: notification clicks and the
-/// menu bar extra. The window actions are captured from the first window that appears.
+/// menu bar extra. The window actions are captured from the first window that appears; until
+/// then the main window opens through the app's Window menu.
 @MainActor
 @Observable
 final class AppWindowRouter {
@@ -21,9 +22,16 @@ final class AppWindowRouter {
     @ObservationIgnored private var openWindow: OpenWindowAction?
     @ObservationIgnored private var openSettingsAction: OpenSettingsAction?
     @ObservationIgnored private let activate: @MainActor () -> Void
+    @ObservationIgnored private let openMainWithoutWindow: @MainActor () -> Void
 
-    init(activate: @escaping @MainActor () -> Void = { NSApp.activate() }) {
+    /// - Parameter openMainWithoutWindow: Opens the main window before any window has given
+    ///   the router SwiftUI's open action: the Window menu's item for the main scene.
+    init(
+        activate: @escaping @MainActor () -> Void = { NSApp.activate() },
+        openMainWithoutWindow: @escaping @MainActor () -> Void = { AppMenu.openWindow(titled: GhastApp.mainWindowTitle) }
+    ) {
         self.activate = activate
+        self.openMainWithoutWindow = openMainWithoutWindow
     }
 
     /// Keeps the first window's actions; both stay valid for the app's life.
@@ -35,7 +43,7 @@ final class AppWindowRouter {
     /// Brings the main window forward (Welcome takes over when signed out).
     func openMain() {
         activate()
-        openWindow?(id: AuthWindow.mainID)
+        if let openWindow { openWindow(id: AuthWindow.mainID) } else { openMainWithoutWindow() }
     }
 
     func openSettings() {

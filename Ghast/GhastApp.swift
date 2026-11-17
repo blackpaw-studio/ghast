@@ -187,9 +187,11 @@ struct AppDependencies {
 struct GhastApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     static let mainWindowID = AuthWindow.mainID
+    /// The main window's title, which also names its Window menu item.
+    static let mainWindowTitle = "Ghast"
     
     var body: some Scene {
-        Window("Ghast", id: Self.mainWindowID) {
+        Window(Self.mainWindowTitle, id: Self.mainWindowID) {
             if !isRunningTests() {
                 let dependencies = appDelegate.dependencies
                 ContentView(authService: dependencies.authService)

@@ -10,4 +10,13 @@ enum AppMenu {
         else { return }
         appMenu.performActionForItem(at: index)
     }
+
+    /// Chooses the Window menu's item for the SwiftUI `Window` scene titled `title`, which opens
+    /// that window, or brings it forward, as clicking it would.
+    static func openWindow(titled title: String) {
+        guard let menu = NSApp.windowsMenu,
+              let index = menu.items.firstIndex(where: { $0.title == title && $0.action != nil })
+        else { return }
+        menu.performActionForItem(at: index)
+    }
 }
