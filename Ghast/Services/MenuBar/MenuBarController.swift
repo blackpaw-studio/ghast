@@ -131,7 +131,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let item = NSMenuItem(title: runner.name, action: nil, keyEquivalent: "")
         item.image = MenuBarImages.dot(runner.dot)
         // macOS 27 hides menu-item images unless asked; the status dot is the row's meaning.
+        // The property exists only in the macOS 27 SDK (Swift 6.4, Xcode 27); CI's Xcode 26.x lacks it.
+        #if compiler(>=6.4)
         if #available(macOS 27, *) { item.preferredImageVisibility = .visible }
+        #endif
         // MenuBar.png sets the status word as plain secondary text before the chevron, not as a
         // badge pill: a right tab stop in the title.
         item.attributedTitle = Self.title(runner.name, status: runner.badge)

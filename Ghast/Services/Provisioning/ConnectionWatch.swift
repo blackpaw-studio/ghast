@@ -66,13 +66,13 @@ final class ConnectionWatch {
 
     private func evaluate() {
         guard let milestone = waiter?.milestone else { return }
-        let outcome = withObservationTracking {
+        let result = withObservationTracking {
             let (state, activity) = read(runnerID)
             return outcome(for: milestone, state: state, activity: activity)
         } onChange: {
             Task { @MainActor [weak self] in self?.evaluate() }
         }
-        if let outcome { resume(outcome) }
+        if let result { resume(result) }
     }
 
     private func outcome(for milestone: Milestone, state: RunnerProcessState?, activity: RunnerActivity) -> Result<Void, Error>? {
