@@ -262,8 +262,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var builtDependencies: AppDependencies?
     private var signalSources: [DispatchSourceSignal] = []
     private var menuBarController: MenuBarController?
-    /// What this launch set up; nil until launch finishes, and in the design fixture.
-    private var launchPlan: LaunchPlan?
+    /// Whether quitting stops the runners. Set by launch from its plan (never in the XCTest
+    /// host or the design fixture), and for services a caller injected, which are its own.
+    private var cleansUpRunnersOnQuit = false
     #if DEBUG
     /// Set in design fixture mode: no single-instance check, Sparkle, signal handlers or
     /// runner cleanup (that cleanup `pkill`s the real runners).
@@ -346,6 +347,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     init(dependencies: AppDependencies) {
         builtDependencies = dependencies
+        cleansUpRunnersOnQuit = true
         updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
     }
@@ -366,7 +368,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         
         let plan = LaunchPlan.make(isUnderTest: Self.isUnderTest)
-        launchPlan = plan
+        cleansUpRunnersOnQuit = plan.cleansUpRunnersOnQuit
 
         if plan.checksSingleInstance {
             let ghastApps = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
@@ -435,9 +437,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func performRunnerCleanup() {
-        // Never in the XCTest host (its plan has no quit cleanup) or before launch, and a fixture
+        // Never in the XCTest host's own services (its plan has no quit cleanup), and a fixture
         // must never stop the user's real runners.
-        guard !isFixtureMode, launchPlan?.cleansUpRunnersOnQuit == true,
+        guard !isFixtureMode, cleansUpRunnersOnQuit,
               let runnerService = builtDependencies?.runnerService else { return }
         
         // Stop all running runners when app terminates
