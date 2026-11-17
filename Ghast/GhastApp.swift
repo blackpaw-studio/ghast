@@ -297,6 +297,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     
+    private static var isUnderTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     init(dependencies: AppDependencies) {
         builtDependencies = dependencies
         updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
@@ -341,6 +345,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let dependencies = dependencies
         Task { await dependencies.startServices() }
+        // The XCTest host is this app with the user's real defaults: never start their runners
+        // or add a status item from it.
+        guard !Self.isUnderTest else { return }
         Task { await dependencies.restartRunnersAtLaunch() }
     }
     
