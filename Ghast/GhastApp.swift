@@ -158,7 +158,8 @@ struct AppDependencies {
     /// Starts the runners that were running when Ghast last quit. Not in the design fixture,
     /// which seeds its own process states.
     func restartRunnersAtLaunch() async {
-        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, starter: runnerService, sleeper: sleeper)
+        let flows = flowCoordinator
+        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, starter: runnerService, sleeper: sleeper, isBusy: flows.isBusy)
     }
 
     static func live(updater: SPUUpdater, updateEvents: SparkleUpdateEvents) -> AppDependencies {

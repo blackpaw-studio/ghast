@@ -75,6 +75,60 @@ struct RestartAtLaunchTests {
         #expect(starter.log.isEmpty)
     }
 
+    @Test("a runner a flow is working on is skipped, checked just before its start")
+    func skipsBusyRunner() async {
+        let a = runner("a", shouldBeRunning: true)
+        let c = runner("c", shouldBeRunning: true)
+        let d = runner("d", shouldBeRunning: true)
+        let starter = FakeRunnerStarter([a, c, d])
+        var busy: Set<String> = []
+        // A Remove flow takes c while the loop waits after starting a.
+        let sleeper: Sleeper = { duration in
+            await MainActor.run { busy.insert(c.id) }
+            try await starter.sleeper(duration)
+        }
+
+        await RestartAtLaunch.run(isEnabled: true, starter: starter, sleeper: sleeper, isBusy: { busy.contains($0) })
+
+        #expect(starter.log == [.start(a.id), .sleep(.seconds(1)), .start(d.id)])
+    }
+
+    @Test("Stop All while the loop is waiting means no further starts")
+    func stopAllMidLoop() async throws {
+        let isolated = makeIsolatedDefaults()
+        defer { isolated.cleanup() }
+        let root = makeTemporaryDirectory()
+        let launches = CallLog()
+        let service = RunnerService(
+            defaults: isolated.defaults,
+            runnersDirectory: root,
+            launcher: ControllableLauncher(log: launches),
+            sleeper: { _ in },
+            runsStrayProcessCleanup: false
+        )
+        for name in ["a", "b", "c"] {
+            let folder = root.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var local = LocalRunner(name: name, scope: .organization(login: "blackpaw-studio"), path: folder.path)
+            local.shouldBeRunning = true
+            service.addLocalRunner(local)
+        }
+        let actions = RunnerActions(runnerService: service)
+        var didStopAll = false
+
+        await RestartAtLaunch.run(isEnabled: true, starter: service, sleeper: { _ in
+            await MainActor.run {
+                guard !didStopAll else { return }
+                didStopAll = true
+                actions.stopAll()
+            }
+            for _ in 0..<20 { await Task.yield() }
+        })
+
+        #expect(launches.all == ["launch a"])
+        #expect(service.localRunners.allSatisfy { !$0.shouldBeRunning })
+    }
+
     @Test("a recorded start failure shows the runner as an error and ends its run intent")
     func recordedFailureIsError() throws {
         let isolated = makeIsolatedDefaults()
