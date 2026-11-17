@@ -34,6 +34,10 @@ class RunnerService {
     @ObservationIgnored private var runningProcesses: [String: RunningProcess] = [:]
     /// Runners Ghast has asked to stop; their next exit is a requested stop, not a crash.
     @ObservationIgnored private var stopRequested: Set<String> = []
+    /// Runners with a start in progress, including its wait for an old process to end.
+    @ObservationIgnored private var startsInFlight: Set<String> = []
+    /// Pending starts a stop has cancelled; the start checks before it launches.
+    @ObservationIgnored private var cancelledStarts: Set<String> = []
     /// Callers of `stopRunner` waiting for a runner's process to end.
     @ObservationIgnored private var terminationWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     /// Every runner process that ended, requested or not. One consumer.
@@ -158,7 +162,35 @@ class RunnerService {
         saveRunners()
     }
     
+    /// Starts a runner. The runner reads as starting at once, even while the start waits for a
+    /// pending stop or a leftover listener to end, and a second start for it is ignored until
+    /// this one is done.
     func startRunner(id: String) async throws {
+        guard !startsInFlight.contains(id) else { return }
+        guard let runner = localRunners.first(where: { $0.id == id }) else { throw RunnerError.runnerNotFound }
+        startsInFlight.insert(id)
+        cancelledStarts.remove(id)
+        defer { startsInFlight.remove(id) }
+        
+        // Already running (and not stopping): nothing to show; the launch below reports it.
+        if runningProcesses[id] == nil || stopRequested.contains(id) { processStates[id] = .starting }
+        do {
+            try await launchRunner(id: id)
+        } catch {
+            settleAbandonedStart(id: id, lastExit: runner.lastExit)
+            throw error
+        }
+        settleAbandonedStart(id: id, lastExit: runner.lastExit)
+    }
+    
+    /// A start that ended without launching (it failed, or a stop cancelled it) must not leave
+    /// the runner reading as starting.
+    private func settleAbandonedStart(id: String, lastExit: RunnerExit?) {
+        guard processStates[id] == .starting, runningProcesses[id] == nil, localRunners.contains(where: { $0.id == id }) else { return }
+        processStates[id] = .restored(from: lastExit)
+    }
+    
+    private func launchRunner(id: String) async throws {
         // A stop that is still pending (its card already reads stopped) must finish first.
         await waitForPendingStop(id: id)
         
@@ -189,6 +221,9 @@ class RunnerService {
             // Clean up the dead process reference
             runningProcesses.removeValue(forKey: id)
         }
+        
+        // A stop that came while this start waited cancels it.
+        if cancelledStarts.remove(id) != nil { return }
         
         let script = RunnerWrapperScript.make(
             runnerPath: runner.path,
@@ -259,9 +294,13 @@ class RunnerService {
             return
         }
         var startedAt: Date?
-        if case let .running(since)? = processStates[id] { startedAt = since }
+        switch processStates[id] {
+        case let .running(since)?, let .stopping(since)?: startedAt = since
+        default: break
+        }
         let exit = RunnerExit(code: code, startedAt: startedAt, at: clock.now(), wasRequested: wasRequested)
-        processStates[id] = wasRequested ? .stopped : .exited(exit)
+        // A start queued behind this stop keeps reading as starting.
+        processStates[id] = wasRequested ? (processStates[id] == .starting ? .starting : .stopped) : .exited(exit)
         localRunners[index].lastExit = exit
         localRunners[index].status = .stopped
         if !wasRequested { localRunners[index].shouldBeRunning = false }
@@ -280,6 +319,9 @@ class RunnerService {
     /// running job and deletes its GitHub session first; SIGKILL before that leaves a session
     /// behind, and the next start fails with "A session for this runner already exists".
     static let stopGracePeriod: Duration = .seconds(15)
+    /// How long a listener gets, once its worker has been SIGKILLed, to delete its GitHub session
+    /// before the whole group is SIGKILLed.
+    static let listenerSignOutWindow: Duration = .seconds(5)
     /// How long SIGKILL gets before Ghast gives up waiting for the exit report.
     static let killWait: Duration = .seconds(1)
     /// How often a stopping runner's process group is checked for being gone.
@@ -313,7 +355,9 @@ class RunnerService {
             localRunners[index].shouldBeRunning = false
             saveRunners()
         }
+        if startsInFlight.contains(id) { cancelledStarts.insert(id) }
         guard let running = runningProcesses[id] else {
+            if startsInFlight.contains(id) { settleCancelledStart(id: id) }
             #if DEBUG
             print("🏃 No running process found for runner ID: \(id)")
             #endif
@@ -321,6 +365,7 @@ class RunnerService {
         }
         // Already stopping: the escalation task from the first request is still running.
         guard stopRequested.insert(id).inserted else { return }
+        if case let .running(since)? = processStates[id] { processStates[id] = .stopping(since: since) }
         if let index = localRunners.firstIndex(where: { $0.id == id }) {
             localRunners[index].status = .stopped
             saveRunners()
@@ -337,14 +382,36 @@ class RunnerService {
         Task { [weak self] in await self?.escalateStop(id: id, launchToken: launchToken) }
     }
     
-    /// Waits for the stop to finish, SIGKILLing what outlasts the grace period.
+    /// A stop with no process to stop only cancels the pending start; the runner reads stopped.
+    private func settleCancelledStart(id: String) {
+        guard processStates[id] == .starting else { return }
+        processStates[id] = .stopped
+    }
+    
+    /// Waits for the stop to finish. Past the grace period the job's worker is SIGKILLed first:
+    /// the listener deletes its GitHub session only after the worker has exited (JobDispatcher
+    /// `ShutdownAsync` awaits it), so a worker that is slow to cancel its job would otherwise
+    /// cost the session. The listener then gets `listenerSignOutWindow`; only then the group.
     private func escalateStop(id: String, launchToken: UUID) async {
         if await waitForEnd(id: id, launchToken: launchToken, upTo: Self.stopGracePeriod) { return }
+        await killWorkers(id: id, launchToken: launchToken)
+        if await waitForEnd(id: id, launchToken: launchToken, upTo: Self.listenerSignOutWindow) { return }
         forceKill(id: id, launchToken: launchToken)
         if await waitForEnd(id: id, launchToken: launchToken, upTo: Self.killWait) { return }
         // The exit report never came after SIGKILL: record the stop here so callers aren't left waiting.
         if runningProcesses[id]?.launchToken == launchToken {
             completeTermination(id: id, exitCode: 128 + SIGKILL)
+        }
+    }
+    
+    /// SIGKILLs the `Runner.Worker` processes in the launch's group, leaving the listener to sign out.
+    private func killWorkers(id: String, launchToken: UUID) async {
+        guard let group = runningProcesses[id]?.processGroupID else { return }
+        let processes = await scanner.scan()
+        guard runningProcesses[id]?.launchToken == launchToken else { return }
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        for pid in LeftoverListeners.workerPIDs(in: processes, inGroup: group, excluding: ownPID) {
+            signaling.signal(SIGKILL, toProcess: pid)
         }
     }
     
@@ -457,6 +524,9 @@ class RunnerService {
         localRunners[index].outputClearOffset = size ?? 0
         saveRunners()
     }
+    
+    /// Whether any runner process is still tracked, including one that is stopping.
+    var hasRunningProcesses: Bool { !runningProcesses.isEmpty }
     
     func isRunnerRunning(id: String) -> Bool {
         return runningProcesses[id]?.handle.isRunning == true

@@ -51,6 +51,14 @@ struct RunnerShutdownTests {
         signaling.events.filter { $0.signal == SIGKILL }
     }
 
+    private var groupKills: [FakeSignaling.Event] {
+        kills.filter { if case .group = $0 { true } else { false } }
+    }
+
+    private func worker(pid: pid_t, group: pid_t = FakeLauncher.pid) -> ListenerProcess {
+        ListenerProcess(pid: pid, pgid: group, command: folder.path + "/bin/Runner.Worker spawnclient 3 4")
+    }
+
     // MARK: - Stop
 
     @Test("stop asks the runner's group to end with SIGTERM and does not SIGKILL inside the grace period")
@@ -70,19 +78,52 @@ struct RunnerShutdownTests {
         #expect(service.processStates[runner.id] == .stopped)
     }
 
-    @Test("a runner still alive after the grace period is SIGKILLed, and the stop still ends")
-    func escalatesAfterGrace() async throws {
+    @Test("past the grace period only the job's worker is SIGKILLed first, so the listener can still sign out")
+    func workerFirst() async throws {
+        scanner.listeners = [worker(pid: 700), worker(pid: 701, group: 123)]
         try await service.startRunner(id: runner.id)
         let stop = Task { await service.stopRunner(id: runner.id) }
         await settle()
 
         await tick(through: RunnerService.stopGracePeriod + RunnerService.stopPollInterval * 2)
-        #expect(kills.contains(.group(SIGKILL, FakeLauncher.pid)))
+        #expect(kills == [.process(SIGKILL, 700)])
+
+        signaling.setGroupAlive(false)
+        launcher.finish(code: 143)
+        await stop.value
+        #expect(groupKills.isEmpty)
+        #expect(service.processStates[runner.id] == .stopped)
+    }
+
+    @Test("a listener that outlasts its sign-out window after the worker is killed gets the group SIGKILL")
+    func groupAfterSignOutWindow() async throws {
+        scanner.listeners = [worker(pid: 700)]
+        try await service.startRunner(id: runner.id)
+        let stop = Task { await service.stopRunner(id: runner.id) }
+        await settle()
+
+        await tick(through: RunnerService.stopGracePeriod + RunnerService.listenerSignOutWindow - RunnerService.stopPollInterval * 2)
+        #expect(groupKills.isEmpty)
+        await tick(through: RunnerService.stopPollInterval * 6)
+        #expect(groupKills == [.group(SIGKILL, FakeLauncher.pid)])
 
         signaling.setGroupAlive(false)
         launcher.finish(code: 137)
         await stop.value
         #expect(service.processStates[runner.id] == .stopped)
+    }
+
+    @Test("a runner with no worker goes straight to the sign-out window, then the group SIGKILL")
+    func noWorker() async throws {
+        try await service.startRunner(id: runner.id)
+        let stop = Task { await service.stopRunner(id: runner.id) }
+        await settle()
+
+        await tick(through: RunnerService.stopGracePeriod + RunnerService.listenerSignOutWindow + RunnerService.stopPollInterval * 2)
+        #expect(groupKills == [.group(SIGKILL, FakeLauncher.pid)])
+        signaling.setGroupAlive(false)
+        launcher.finish(code: 137)
+        await stop.value
     }
 
     @Test("the wrapper ending at once does not end the stop while its group is still signing out")
@@ -99,8 +140,8 @@ struct RunnerShutdownTests {
         await settle()
         #expect(!finished)
         #expect(service.isRunnerRunning(id: runner.id) == false)
-        if case .running? = service.processStates[runner.id] {} else {
-            Issue.record("the runner reads as ended while its group is alive: \(String(describing: service.processStates[runner.id]))")
+        if case .stopping? = service.processStates[runner.id] {} else {
+            Issue.record("the runner should read as stopping while its group is alive: \(String(describing: service.processStates[runner.id]))")
         }
 
         signaling.setGroupAlive(false)
@@ -136,7 +177,7 @@ struct RunnerShutdownTests {
         try await service.startRunner(id: runner.id)
         let stop = Task { await service.stopRunner(id: runner.id) }
         await settle()
-        await tick(through: RunnerService.stopGracePeriod + RunnerService.stopPollInterval * 2)
+        await tick(through: RunnerService.stopGracePeriod + RunnerService.listenerSignOutWindow + RunnerService.stopPollInterval * 2)
         launcher.finish(code: 137)
         signaling.setGroupAlive(false)
         await stop.value
@@ -173,7 +214,7 @@ struct RunnerShutdownTests {
         try await service.startRunner(id: runner.id)
         let quit = Task { await service.stopAllRunners() }
         await settle()
-        await tick(through: RunnerService.stopGracePeriod + RunnerService.stopPollInterval * 2)
+        await tick(through: RunnerService.stopGracePeriod + RunnerService.listenerSignOutWindow + RunnerService.stopPollInterval * 2)
         #expect(kills.contains(.group(SIGKILL, FakeLauncher.pid)))
         signaling.setGroupAlive(false)
         launcher.finish(code: 137)
@@ -186,6 +227,98 @@ struct RunnerShutdownTests {
         #expect(signaling.events.isEmpty)
     }
 
+    // MARK: - Visible progress
+
+    @Test("a stop reads as stopping until the group is gone, then stopped")
+    func stoppingState() async throws {
+        try await service.startRunner(id: runner.id)
+        let stop = Task { await service.stopRunner(id: runner.id) }
+        await settle()
+        if case .stopping? = service.processStates[runner.id] {} else {
+            Issue.record("expected stopping, got \(String(describing: service.processStates[runner.id]))")
+        }
+
+        signaling.setGroupAlive(false)
+        launcher.finish(code: 143)
+        await stop.value
+        #expect(service.processStates[runner.id] == .stopped)
+    }
+
+    @Test("a quit shows every running runner as stopping while it waits")
+    func quitShowsStopping() async throws {
+        try await service.startRunner(id: runner.id)
+        let quit = Task { await service.stopAllRunners() }
+        await settle()
+        if case .stopping? = service.processStates[runner.id] {} else {
+            Issue.record("expected stopping, got \(String(describing: service.processStates[runner.id]))")
+        }
+        signaling.setGroupAlive(false)
+        launcher.finish(code: 143)
+        await quit.value
+    }
+
+    @Test("a start waiting on a leftover listener reads as starting at once, and a second click is ignored")
+    func startingState() async throws {
+        scanner.listeners = [ListenerProcess(pid: 555, pgid: 555, command: folder.path + "/bin/Runner.Listener run")]
+        signaling.setAlive(process: 555, true)
+
+        let first = Task { try await service.startRunner(id: runner.id) }
+        await settle()
+        #expect(service.processStates[runner.id] == .starting)
+
+        try await service.startRunner(id: runner.id)
+        #expect(launcher.launchCount == 0)
+
+        signaling.setAlive(process: 555, false)
+        await tick()
+        try await first.value
+        #expect(launcher.launchCount == 1)
+        if case .running? = service.processStates[runner.id] {} else {
+            Issue.record("expected running, got \(String(describing: service.processStates[runner.id]))")
+        }
+    }
+
+    @Test("a start clicked during a pending stop reads as starting until the old group is gone")
+    func startingDuringStop() async throws {
+        try await service.startRunner(id: runner.id)
+        let stop = Task { await service.stopRunner(id: runner.id) }
+        await settle()
+        let start = Task { try await service.startRunner(id: runner.id) }
+        await settle()
+        #expect(service.processStates[runner.id] == .starting)
+
+        signaling.setGroupAlive(false)
+        launcher.finish(code: 143)
+        await stop.value
+        #expect(service.processStates[runner.id] == .starting)
+        try await start.value
+        #expect(launcher.launchCount == 2)
+    }
+
+    @Test("stopping a runner whose start is pending cancels the start")
+    func stopCancelsPendingStart() async throws {
+        scanner.listeners = [ListenerProcess(pid: 555, pgid: 555, command: folder.path + "/bin/Runner.Listener run")]
+        signaling.setAlive(process: 555, true)
+        let start = Task { try await service.startRunner(id: runner.id) }
+        await settle()
+
+        await service.stopRunner(id: runner.id)
+        signaling.setAlive(process: 555, false)
+        await tick()
+        try await start.value
+
+        #expect(launcher.launchCount == 0)
+        #expect(service.processStates[runner.id] == .stopped)
+        #expect(!service.localRunners[0].shouldBeRunning)
+    }
+
+    @Test("a start that fails leaves the runner as it was, not stuck on starting")
+    func failedStartRestoresState() async throws {
+        try FileManager.default.removeItem(at: folder)
+        await #expect(throws: RunnerError.self) { try await service.startRunner(id: runner.id) }
+        #expect(service.processStates[runner.id] == .stopped)
+    }
+
     // MARK: - Leftover listeners
 
     private var listenerPath: String { folder.path + "/bin/Runner.Listener" }
@@ -193,9 +326,9 @@ struct RunnerShutdownTests {
     @Test("a leftover listener in the runner's folder is asked to end, and the start waits for it")
     func leftoverStopped() async throws {
         scanner.listeners = [
-            ListenerProcess(pid: 555, command: listenerPath + " run"),
-            ListenerProcess(pid: 556, command: folder.path + "-arm/bin/Runner.Listener run"),
-            ListenerProcess(pid: 557, command: "/elsewhere/bin/Runner.Listener run"),
+            ListenerProcess(pid: 555, pgid: 555, command: listenerPath + " run"),
+            ListenerProcess(pid: 556, pgid: 556, command: folder.path + "-arm/bin/Runner.Listener run"),
+            ListenerProcess(pid: 557, pgid: 557, command: "/elsewhere/bin/Runner.Listener run"),
         ]
         signaling.setAlive(process: 555, true)
 
@@ -215,7 +348,7 @@ struct RunnerShutdownTests {
 
     @Test("a leftover listener that ignores the request is SIGKILLed after the grace period")
     func leftoverEscalates() async throws {
-        scanner.listeners = [ListenerProcess(pid: 555, command: listenerPath + " run")]
+        scanner.listeners = [ListenerProcess(pid: 555, pgid: 555, command: listenerPath + " run")]
         signaling.setAlive(process: 555, true)
 
         let start = Task { try await service.startRunner(id: runner.id) }
@@ -269,15 +402,34 @@ struct LeftoverListenerTests {
     @Test("parses ps output, keeping spaces in the command")
     func parsesPS() {
         let output = """
-          123 /Users/e/.ghast/runners/my runner/bin/Runner.Listener run
-           45 /bin/zsh -l
+          123   120 /Users/e/.ghast/runners/my runner/bin/Runner.Listener run
+           45    45 /bin/zsh -l
 
         bogus line
         """
         #expect(RunnerProcessList.parse(output) == [
-            ListenerProcess(pid: 123, command: "/Users/e/.ghast/runners/my runner/bin/Runner.Listener run"),
-            ListenerProcess(pid: 45, command: "/bin/zsh -l"),
+            ListenerProcess(pid: 123, pgid: 120, command: "/Users/e/.ghast/runners/my runner/bin/Runner.Listener run"),
+            ListenerProcess(pid: 45, pgid: 45, command: "/bin/zsh -l"),
         ])
+    }
+
+    @Test("workers are the Runner.Worker processes in the runner's own group, never Ghast's pid")
+    func workersInGroup() {
+        let processes = [
+            ListenerProcess(pid: 700, pgid: 50, command: "/r/mac/bin/Runner.Worker spawnclient 1 2"),
+            ListenerProcess(pid: 701, pgid: 51, command: "/r/mac/bin/Runner.Worker spawnclient 1 2"),
+            ListenerProcess(pid: 702, pgid: 50, command: "/r/mac/bin/Runner.Listener run"),
+            ListenerProcess(pid: 703, pgid: 50, command: "/usr/bin/sleep 60"),
+            ListenerProcess(pid: own, pgid: 50, command: "/r/mac/bin/Runner.Worker spawnclient 1 2"),
+        ]
+        #expect(LeftoverListeners.workerPIDs(in: processes, inGroup: 50, excluding: own) == [700])
+    }
+
+    @Test("a group id that means everything or is Ghast's own matches no worker")
+    func noWorkersInReservedGroups() {
+        let processes = [ListenerProcess(pid: 700, pgid: 0, command: "/r/mac/bin/Runner.Worker spawnclient 1 2")]
+        #expect(LeftoverListeners.workerPIDs(in: processes, inGroup: 0, excluding: own).isEmpty)
+        #expect(LeftoverListeners.workerPIDs(in: processes, inGroup: 1, excluding: own).isEmpty)
     }
 }
 
