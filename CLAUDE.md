@@ -53,7 +53,7 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 - **Bundle ID**: `net.evancoleman.ghast`
 - **Single Instance**: `LSMultipleInstancesProhibited: true`
 - **Dependencies**: Sparkle (updates), SnapshotTesting (UI testing); networking and Keychain use system frameworks
-- **Target**: macOS 26.0+ (Liquid Glass, floating sidebar), SwiftUI lifecycle. Built with Xcode 27 locally; release CI pins Xcode 26.6 on `macos-26`
+- **Target**: macOS 26.0+ (Liquid Glass, floating sidebar), SwiftUI lifecycle. Built with Xcode 27 locally; release CI pins Xcode 27.0 on the `xcode-27` image (GitHub preview, macOS 27 base). The code also compiles on Xcode 26.x
 
 ### Testing Strategy
 - **Unit Tests**: Device Flow polling rules and auth state transitions, with fake transport and sleeper (Swift Testing)
