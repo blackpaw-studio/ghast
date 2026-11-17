@@ -42,6 +42,8 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 - `LocalRunner` model: Persisted via UserDefaults, tracks process state
 - Real-time log streaming via Combine `PassthroughSubject`
 - Process lifecycle: start/stop runners using `./run.sh` in runner directories
+- Shutdown: `/bin/bash` wrapper leads its own process group (Foundation `Process`); Ghast signals the group, never its own. Stop and quit send SIGTERM (Runner.Listener's handler ends its job and deletes its GitHub session; `run.sh` forwards nothing), then wait for the whole group to be gone, not just the wrapper, which dies at once. SIGKILL only after `RunnerService.stopGracePeriod` (15 s). `applicationShouldTerminate` returns `.terminateLater` until `stopAllRunners()` finishes, so Sparkle relaunches wait too. No machine-wide `pkill`
+- Launch: `startRunner` first ends any leftover `Runner.Listener` whose path is in that runner's folder (found with `ps` through the injected `RunnerProcessScanning`), so a second copy never hits "A session for this runner already exists"
 
 **UI Architecture**:
 - Focus design: one main window (`FocusMainView`, sidebar of runners + detail with Output and Configuration tabs), a Welcome window for sign-in, a Settings window (General, Account), the New Runner sheet and a menu bar extra. Design tokens live in `Ghast/Design/` (`FocusColor`, `FocusType`, `FocusMetrics`)
