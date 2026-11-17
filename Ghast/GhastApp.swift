@@ -349,6 +349,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         if let fixtureStage {
             NSApp.setActivationPolicy(.regular)
+            if fixtureStage.showsMenuBarExtra {
+                let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
+                menuBarController = controller
+                controller.start()
+                fixtureStage.openMenuBar = { point, opened in controller.openMenu(at: point, opened: opened) }
+            }
             fixtureStage.start()
             return
         }

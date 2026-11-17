@@ -17,6 +17,8 @@ final class FixtureStage {
     private let removeScratch: @MainActor () -> Void
     private let prepare: @MainActor () async -> Void
     private var backdrop: NSWindow?
+    /// Opens the menu bar extra's menu and calls back once it shows (the `menu-bar` screen).
+    var openMenuBar: (@MainActor (NSPoint, @escaping @MainActor (NSMenu) -> Void) -> Void)?
     private var task: Task<Void, Never>?
     private var signalSources: [DispatchSourceSignal] = []
 
@@ -37,6 +39,7 @@ final class FixtureStage {
 
     var mainWindowPreset: MainWindowPreset? { launch.screen.mainWindowPreset }
     var settingsTabPreset: SettingsTab? { launch.screen.settingsTab }
+    var showsMenuBarExtra: Bool { launch.screen == .menuBar }
     var suppressesAuthWindows: Bool { launch.screen.settingsTab != nil || launch.screen == .menuBar }
 
     func shutdown() {
@@ -71,7 +74,7 @@ final class FixtureStage {
         backdrop = makeBackdrop(on: screen)
         task = Task { [weak self] in
             await self?.prepare()
-            if self?.settingsTabPreset != nil { Self.openSettings() }
+            if self?.settingsTabPreset != nil { AppMenu.openSettings() }
             await self?.placeWindowAndAnnounce(on: screen)
         }
     }
@@ -84,13 +87,10 @@ final class FixtureStage {
         } ?? NSScreen.main
     }
 
-    /// Chooses the app menu's Settings… item, as ⌘, would.
-    private static func openSettings() {
-        guard let appMenu = NSApp.mainMenu?.items.first?.submenu,
-              let index = appMenu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command })
-        else { return }
-        appMenu.performActionForItem(at: index)
-    }
+    /// MenuBar.png's menu: top-left at (739.5, 29.75) pt on the 1440 × 900 screen, and the
+    /// highlighted dionysus-xcode row centred 64 pt below its top.
+    private static let kitMenuOrigin = CGPoint(x: 739.5, y: 29.75)
+    private static let kitHoverRowOffset: CGFloat = 64
 
     // MARK: - Backdrop
 
@@ -111,7 +111,24 @@ final class FixtureStage {
 
     private func placeWindowAndAnnounce(on screen: NSScreen?) async {
         guard let placement = launch.screen.placement else {
-            emit("\(Self.readyPrefix) window=0 rect=0,0,1440,900")
+            guard let openMenuBar else {
+                emit("\(Self.readyPrefix) window=0 rect=0,0,1440,900")
+                return
+            }
+            NSApp.activate()
+            let frame = screen?.frame ?? .zero
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? frame.maxY
+            let menuTopLeft = NSPoint(x: frame.minX + Self.kitMenuOrigin.x, y: frame.maxY - Self.kitMenuOrigin.y)
+            // The highlighted row's centre, in global top-left points like the window rects.
+            let hover = (
+                x: Int((frame.minX + Self.kitMenuOrigin.x + FocusMetrics.menuBarMenuWidth / 2).rounded()),
+                y: Int((primaryHeight - frame.maxY + Self.kitMenuOrigin.y + Self.kitHoverRowOffset).rounded())
+            )
+            // Announced as the menu opens: nothing on the main actor runs while it tracks, so the
+            // capture script waits for it to draw.
+            openMenuBar(menuTopLeft) { [weak self] _ in
+                self?.emit("\(Self.readyPrefix) window=0 rect=0,0,1440,900 hover=\(hover.x),\(hover.y)")
+            }
             return
         }
         guard let window = await waitForContentWindow() else {
