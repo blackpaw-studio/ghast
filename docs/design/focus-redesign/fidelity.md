@@ -18,6 +18,9 @@ Known native differences from the spec (seeded; each repeats on every screen it 
 - Avatar images: the fixture bundles a stand-in, and the New Runner and Settings mockups disagree on it.
 - Menu submenu side: the system chooses it (the mockup shows left).
 - Notification banner chrome: drawn by Notification Center, not by Ghast.
+- Capture focus state: a capture can catch the window active or inactive (grey traffic lights and controls). It varies run to run with no code change (PR 5 recapture: welcome, error and configuration-dark each differed from the PR 4 captures only in active state). Recapture before judging a control's colour.
+
+PR 5 recapture: all 12 screens, light and dark, re-run after the old UI was deleted. Pixel-identical (10% fuzz) to the PR 4 captures for 16 of 24, and the other 8 differ only in window active state, a few menu bar clock pixels, or sub-0.01% anti-aliasing. No regressions; no open rows.
 
 ## Main window chrome
 

@@ -15,8 +15,7 @@ Record all snapshot tests:
 
 Record snapshots for a specific test class:
 ```bash
-./Scripts/record-snapshots.sh SimpleSnapshotTest
-./Scripts/record-snapshots.sh RunnerConfigurationViewSnapshotTests
+./Scripts/record-snapshots.sh FocusMainSnapshotTests
 ```
 
 ### How it works

@@ -18,7 +18,7 @@ A native macOS app for managing GitHub Actions self-hosted runners with a deligh
 ## Installation
 
 ### Requirements
-- macOS 15.0 or later
+- macOS 26.0 or later
 - GitHub account with repository access
 - GitHub Actions enabled on your repositories
 
@@ -47,23 +47,10 @@ open Ghast.xcodeproj
 
 1. **Launch Ghast** and click "Sign in with GitHub"
 2. **Approve Ghast on GitHub**: the app shows a one-time code, copies it, and opens github.com/login/device; paste the code and authorize
-3. **Browse your repositories** from the dashboard
-4. **Select a repository** to view its runners
-5. **Add a local runner** by:
-   - Clicking "New Runner" to register with GitHub
-   - Following the setup instructions
-   - Adding the runner directory to Ghast
-   - Starting the runner from within the app
+3. **Create a runner**: click New Runner (the + in the toolbar), pick a repository or organization, name it and set labels; Ghast downloads, registers and starts it
+4. **Manage it** from the sidebar: Start, Stop and Restart from the toolbar, live output on the Output tab, labels, folder and environment on the Configuration tab
 
 ## Managing Runners
-
-### Adding a New Runner
-1. Navigate to a repository's runner page
-2. Click "New Runner" 
-3. Select your runner configuration (OS, architecture)
-4. Follow GitHub's setup instructions to download and configure the runner
-5. Use "Add Existing Runner" to register the runner directory with Ghast
-6. Start/stop the runner using the controls in the app
 
 ### Viewing Runner Logs
 - Click on any running runner to view real-time logs
@@ -90,7 +77,7 @@ open Ghast.xcodeproj
 - Ensure no other instance of the runner is already running
 
 ### App Won't Launch
-- Verify you're running macOS 15.0 or later
+- Verify you're running macOS 26.0 or later
 - Check if Gatekeeper is blocking the app (System Preferences > Security & Privacy)
 - Try removing the app from quarantine: `xattr -d com.apple.quarantine /Applications/Ghast.app`
 
