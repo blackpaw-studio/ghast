@@ -22,11 +22,11 @@ struct FixtureLaunchTests {
         #expect(launch == FixtureLaunch(screen: .menuBar, isDark: true))
     }
 
-    @Test("every one of the 12 mockup screens has a name")
+    @Test("every one of the 12 mockup screens, plus New Runner's busy-account states, has a name")
     func twelveScreens() {
         #expect(FixtureScreen.allCases.map(\.rawValue) == [
             "main", "configuration", "remote", "error", "first-run", "welcome", "device-code",
-            "new-runner", "new-runner-progress", "settings-general", "settings-account", "menu-bar",
+            "new-runner", "new-runner-progress", "new-runner-loading", "new-runner-loaded", "settings-general", "settings-account", "menu-bar",
         ])
     }
 

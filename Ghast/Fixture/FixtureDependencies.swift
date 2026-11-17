@@ -117,7 +117,7 @@ struct FixtureDependencies {
         }
         defaults.removePersistentDomain(forName: suite)
 
-        let api = FixtureGitHubAPIService(listsThisMacRunners: launch.screen.hasLocalRunners)
+        let api = FixtureGitHubAPIService(listsThisMacRunners: launch.screen.hasLocalRunners, account: launch.screen.world)
         let tokenStore = InMemoryFixtureTokenStore(token: launch.screen.isSignedOut ? nil : "fixture-token")
         let clock = FrozenClock()
         let launcher = ScriptedRunnerLauncher(exitCodes: Dictionary(

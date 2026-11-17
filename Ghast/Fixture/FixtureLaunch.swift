@@ -1,7 +1,7 @@
 #if DEBUG
 import Foundation
 
-/// The 12 mockup screens a design fixture can show.
+/// The 12 mockup screens a design fixture can show, plus New Runner's busy-account states.
 enum FixtureScreen: String, CaseIterable, Sendable {
     case main
     case configuration
@@ -12,6 +12,11 @@ enum FixtureScreen: String, CaseIterable, Sendable {
     case deviceCode = "device-code"
     case newRunner = "new-runner"
     case newRunnerProgress = "new-runner-progress"
+    /// New Runner for an account with many organizations and long repository names, while
+    /// the repositories are still loading (they never arrive).
+    case newRunnerLoading = "new-runner-loading"
+    /// The same account once its repositories have arrived, shortly after the sheet opens.
+    case newRunnerLoaded = "new-runner-loaded"
     case settingsGeneral = "settings-general"
     case settingsAccount = "settings-account"
     case menuBar = "menu-bar"
@@ -103,6 +108,8 @@ extension FixtureScreen {
             return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output, newRunner: .configure(customLabels: ["xcode"]))
         case .newRunnerProgress:
             return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output, newRunner: .progress(FixtureWorld.setupProgress))
+        case .newRunnerLoading, .newRunnerLoaded:
+            return MainWindowPreset(runnerName: "dionysus-xcode", tab: .output, newRunner: .configure(customLabels: []))
         case .configuration: return MainWindowPreset(runnerName: "dionysus-xcode", tab: .configuration)
         case .remote: return MainWindowPreset(runnerName: "helios-linux", tab: .output)
         case .error: return MainWindowPreset(runnerName: "ghast-release", tab: .output)
@@ -123,10 +130,21 @@ extension FixtureScreen {
     /// The first-run screen is the window right after sign-in: no runners on this Mac yet.
     var hasLocalRunners: Bool { self != .firstRun }
 
+    /// What GitHub lists for the account: the kit's one organization and repository, or a busy
+    /// account with many of both.
+    var world: FixtureAccount {
+        switch self {
+        case .newRunnerLoading: return .busy(repositories: .pending)
+        case .newRunnerLoaded: return .busy(repositories: .delayed(.milliseconds(300)))
+        default: return .kit
+        }
+    }
+
     /// nil when the screen has no window of its own (the menu bar extra).
     var placement: FixtureWindowPlacement? {
         switch self {
-        case .main, .configuration, .remote, .error, .firstRun, .newRunner, .newRunnerProgress:
+        case .main, .configuration, .remote, .error, .firstRun, .newRunner, .newRunnerProgress,
+             .newRunnerLoading, .newRunnerLoaded:
             return Self.mainWindow
         case .welcome:
             return FixtureWindowPlacement(size: CGSize(width: 560, height: 520), topLeft: CGPoint(x: 120, y: 190))

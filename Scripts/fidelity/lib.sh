@@ -177,7 +177,7 @@ mockup_name() {
         error) echo ErrorRunner ;;
         first-run) echo FirstRun ;;
         welcome|device-code) echo Welcome ;;
-        new-runner|new-runner-progress) echo NewRunner ;;
+        new-runner|new-runner-progress|new-runner-loading|new-runner-loaded) echo NewRunner ;;
         settings-general|settings-account) echo Settings ;;
         menu-bar) echo MenuBar ;;
         *) die "unknown screen '$1'" ;;
