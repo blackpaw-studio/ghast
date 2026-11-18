@@ -15,6 +15,8 @@ struct RunnerFlowServices {
     /// A runner's process state and parsed output. Read inside observation tracking, so it
     /// must read observable state.
     let readRunner: @MainActor (String) -> (RunnerProcessState?, RunnerActivity)
+    /// Finds Tart for the New Runner sheet's Run in choice.
+    var tartLocator = TartLocator()
 
     var remover: RunnerRemover {
         RunnerRemover(api: api, runnerService: runnerService, registrar: registrar, trasher: trasher)

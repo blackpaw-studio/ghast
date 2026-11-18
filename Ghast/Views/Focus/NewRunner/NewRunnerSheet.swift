@@ -2,7 +2,8 @@ import SwiftUI
 
 /// What the design fixture opens the New Runner sheet on.
 enum NewRunnerSheetPreset: Equatable, Sendable {
-    case configure(customLabels: [String])
+    /// `tart` pins what Tart detection found (the fixture and snapshots); nil detects it.
+    case configure(customLabels: [String], runIn: NewRunnerRunIn = .thisMac, tart: TartInstallation? = nil)
     /// A frozen "Setting Up" screen; nothing runs.
     case progress(SetupProgress)
 }
@@ -55,13 +56,30 @@ struct NewRunnerSheet: View {
         } else if case let .progress(progress) = preset {
             NewRunnerProgressView(progress: progress, phase: .working, cancel: { finish(nil) }, done: {}, tryAgain: {})
         } else {
-            NewRunnerConfigureView(initialCustomLabels: initialCustomLabels, create: start, cancel: { finish(nil) })
+            NewRunnerConfigureView(
+                initialCustomLabels: initialCustomLabels,
+                initialRunIn: initialRunIn,
+                initialTartInstallation: presetTartInstallation,
+                tartLocator: services.tartLocator,
+                create: start,
+                cancel: { finish(nil) }
+            )
         }
     }
 
     private var initialCustomLabels: [String] {
-        if case let .configure(labels) = preset { return labels }
+        if case let .configure(labels, _, _) = preset { return labels }
         return []
+    }
+
+    private var initialRunIn: NewRunnerRunIn {
+        if case let .configure(_, runIn, _) = preset { return runIn }
+        return .thisMac
+    }
+
+    private var presetTartInstallation: TartInstallation? {
+        if case let .configure(_, _, tart) = preset { return tart }
+        return nil
     }
 
     private func start(_ request: NewRunnerRequest) {

@@ -52,6 +52,7 @@ struct AppDependencies {
         remoteStore: RemoteRunnerStore? = nil,
         runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
         scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
+        tartLocator: TartLocator = TartLocator(),
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
         router: AppWindowRouter = AppWindowRouter(),
         loginItemService: any LoginItemService = InertLoginItemService(),
@@ -81,7 +82,8 @@ struct AppDependencies {
             registrar: RunnerRegistrar(scripts: scriptRunner),
             trasher: fileTrasher,
             sleeper: sleeper,
-            readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) }
+            readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) },
+            tartLocator: tartLocator
         )
         self.flowServices = flowServices
         flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }

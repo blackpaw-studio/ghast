@@ -141,6 +141,7 @@ struct FixtureDependencies {
             settings: AppSettings(defaults: defaults),
             runnerDownloader: FixtureRunnerDownloader(),
             scriptRunner: FixtureScriptRunner(),
+            tartLocator: TartLocator(environment: FixtureTartEnvironment(.installed)),
             loginItemService: InertLoginItemService(status: .enabled)
         )
         // Settings.png: open at login is on and the last check found nothing new.

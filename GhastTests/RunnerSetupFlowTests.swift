@@ -13,9 +13,11 @@ struct FlowHarness {
     let launcher: ControllableLauncher
     let output = FakeRunnerOutput()
     let timeout = ManualSleeper()
+    let tart: FakeTartCLI
     let service: RunnerService
     let runnersDirectory = makeTemporaryDirectory()
     static let org = RunnerScope.organization(login: "blackpaw-studio")
+    static let tartImage = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
 
     init() {
         api = FlowGitHubAPI(log: log)
@@ -23,13 +25,26 @@ struct FlowHarness {
         scripts = FakeScriptRunner(log: log)
         trasher = LoggingFileTrasher(log: log)
         launcher = ControllableLauncher(log: log)
+        let defaults = makeIsolatedDefaults().defaults
+        let tart = FakeTartCLI(log: log, entries: [TartVMEntry(name: Self.tartImage, source: "OCI", isRunning: false)])
+        self.tart = tart
+        let tartBackend = TartBackend(
+            cliProvider: { tart },
+            api: api,
+            tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: FakeArchiveFetcher()),
+            leases: TartLeaseStore(defaults: defaults),
+            logAppender: RecordingLogAppender(),
+            clock: SystemClock(),
+            sleeper: { _ in await Task.yield() }
+        )
         // An immediate stop grace period: a stop is recorded at once.
         service = RunnerService(
-            defaults: makeIsolatedDefaults().defaults,
+            defaults: defaults,
             runnersDirectory: runnersDirectory,
             launcher: launcher,
             sleeper: { _ in },
-            scanner: NoRunnerProcessScanner()
+            scanner: NoRunnerProcessScanner(),
+            tartBackend: tartBackend
         )
     }
 
@@ -47,15 +62,18 @@ struct FlowHarness {
         )
     }
 
-    static func request(architecture: HostArchitecture = .arm64, scope: RunnerScope = org) -> NewRunnerRequest {
+    static func request(architecture: HostArchitecture = .arm64, scope: RunnerScope = org, backend: RunnerBackendKind = .host) -> NewRunnerRequest {
         NewRunnerRequest(
             name: "dionysus-3",
             scope: scope,
             labels: LabelTokenList(architecture: architecture).committing("xcode").tokens,
             runnerGroup: scope.isOrganization ? "Default" : nil,
-            workFolder: "_work"
+            workFolder: "_work",
+            backend: backend
         )
     }
+
+    static var tartRequest: NewRunnerRequest { request(backend: .tart(image: tartImage)) }
 
     func flow(_ request: NewRunnerRequest = FlowHarness.request()) -> RunnerSetupFlow {
         RunnerSetupFlow(request: request, services: services)
@@ -315,5 +333,57 @@ struct FlowHarness {
         #expect(h.trasher.trashed.map(\.lastPathComponent) == ["dionysus-3"])
         #expect(h.service.localRunners.isEmpty)
         #expect(flow.phase == .cancelled)
+    }
+
+    // MARK: Tart VM runners
+
+    @Test func vmRunnerSkipsDownloadAndRegistrationAndStartsTheSlot() async throws {
+        let flow = h.flow(FlowHarness.tartRequest)
+        flow.start()
+
+        #expect(await eventually { flow.phase == .finished })
+        let runner = try #require(h.service.localRunners.first)
+        #expect(runner.backend == .tart(image: FlowHarness.tartImage))
+        #expect(runner.name == "dionysus-3")
+        #expect(runner.scope == FlowHarness.org)
+        #expect(runner.runnerGroup == "Default")
+        #expect(runner.labels == ["self-hosted", "macOS", "ARM64", "xcode"])
+        #expect(runner.shouldBeRunning)
+        #expect(flow.runnerID == runner.id)
+        #expect(FileManager.default.fileExists(atPath: h.folder().path))
+        #expect(await eventually { h.log.all.contains { $0.hasPrefix("clone ") } })
+        let log = h.log.all
+        #expect(!log.contains { $0.hasPrefix("download") || $0.hasPrefix("registration-token") || $0.hasPrefix("config") || $0.hasPrefix("launch") })
+        #expect(await h.scripts.calls.isEmpty)
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test func vmRunnerShowsOneStep() async throws {
+        let flow = h.flow(FlowHarness.tartRequest)
+        #expect(flow.progress.steps == [.start])
+        #expect(flow.progress.title(.start) == "Create VM runner")
+        flow.start()
+
+        #expect(await eventually { flow.phase == .finished })
+        #expect(flow.progress.state(.start) == .done(detail: nil))
+        if let id = flow.runnerID { await h.service.stopRunner(id: id) }
+    }
+
+    @Test func cancellingAVMRunnerNeverAsksAboutGitHub() async throws {
+        let flow = h.flow(FlowHarness.tartRequest)
+        flow.start()
+        #expect(await eventually { flow.phase == .finished })
+
+        #expect(!flow.requiresCancelConfirmation)
+        if let id = flow.runnerID { await h.service.stopRunner(id: id) }
+    }
+
+    @Test func vmRunnerFailsWhenItsFolderExists() async throws {
+        try FileManager.default.createDirectory(at: h.folder(), withIntermediateDirectories: true)
+        let flow = h.flow(FlowHarness.tartRequest)
+        flow.start()
+
+        #expect(await eventually { flow.phase == .failed(.start) })
+        #expect(h.service.localRunners.isEmpty)
     }
 }

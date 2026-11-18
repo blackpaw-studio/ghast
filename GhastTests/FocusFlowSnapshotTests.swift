@@ -18,6 +18,9 @@ struct FocusFlowSnapshotTests {
         /// inside the sheet.
         case newRunnerLoading = "new-runner-loading", newRunnerLongNames = "new-runner-long-names"
         case newRunnerLoadFailed = "new-runner-load-failed"
+        /// Run in Tart VM with its image picker, and with Tart missing (the option is off and the
+        /// install command shows).
+        case newRunnerTart = "new-runner-tart", newRunnerTartMissing = "new-runner-tart-missing"
 
         var account: FixtureAccount {
             switch self {
@@ -81,6 +84,14 @@ struct FocusFlowSnapshotTests {
             NewRunnerSheet(services: dependencies.flowServices, preset: .configure(customLabels: []), finish: { _ in })
         case .newRunnerProgress:
             NewRunnerSheet(services: dependencies.flowServices, preset: .progress(FixtureWorld.setupProgress), finish: { _ in })
+        case .newRunnerTart:
+            NewRunnerSheet(
+                services: dependencies.flowServices,
+                preset: .configure(customLabels: ["xcode"], runIn: .tartVM, tart: .found(URL(fileURLWithPath: "/opt/homebrew/bin/tart"), version: TartVersion(2, 42, 0))),
+                finish: { _ in }
+            )
+        case .newRunnerTartMissing:
+            NewRunnerSheet(services: dependencies.flowServices, preset: .configure(customLabels: ["xcode"], tart: .missing), finish: { _ in })
         }
     }
 }

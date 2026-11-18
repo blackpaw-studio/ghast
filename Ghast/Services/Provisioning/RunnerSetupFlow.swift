@@ -8,6 +8,8 @@ struct NewRunnerRequest: Equatable, Sendable {
     let labels: LabelTokenList
     let runnerGroup: String?
     let workFolder: String
+    /// Where the runner's jobs run; a VM runner skips the download and registration steps.
+    var backend: RunnerBackendKind = .host
 
     var architecture: HostArchitecture { labels.architecture }
 
@@ -51,7 +53,7 @@ final class RunnerSetupFlow {
     private(set) var runnerID: String?
     /// Cancelling now would unregister a runner on GitHub, which needs the user's go-ahead.
     /// That holds from the moment config.sh starts: it may register before it returns.
-    var requiresCancelConfirmation: Bool { runnerID != nil || isRunningConfig }
+    var requiresCancelConfirmation: Bool { request.backend == .host && (runnerID != nil || isRunningConfig) }
     /// config.sh is running; its outcome on GitHub isn't known yet.
     private var isRunningConfig = false
 
@@ -68,7 +70,7 @@ final class RunnerSetupFlow {
     init(request: NewRunnerRequest, services: RunnerFlowServices) {
         self.request = request
         self.services = services
-        progress = SetupProgress(runnerName: request.name, scopeName: request.scope.displayName)
+        progress = SetupProgress(runnerName: request.name, scopeName: request.scope.displayName, isVirtualMachine: request.backend != .host)
     }
 
     private var runnersDirectory: URL { services.runnerService.runnersDirectory }
@@ -94,6 +96,7 @@ final class RunnerSetupFlow {
     }
 
     private func perform(from first: SetupStep) async {
+        if request.backend != .host { return await performVirtualMachine() }
         for step in SetupStep.allCases where step >= first {
             guard !Task.isCancelled else { return }
             do {
@@ -124,6 +127,40 @@ final class RunnerSetupFlow {
         // A runner that never connected isn't left running behind a failed step.
         if step >= .start, let runnerID { await services.runnerService.stopRunner(id: runnerID) }
         phase = .failed(step)
+    }
+
+    // MARK: VM runner
+
+    /// A VM runner has nothing to download or register: its slot registers a one-job runner
+    /// for each VM. One step saves the runner and starts its slot.
+    private func performVirtualMachine() async {
+        set(.start, .active(detail: nil))
+        do {
+            try await createVirtualMachineRunner()
+            set(.start, .done(detail: nil))
+            phase = .finished
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
+            await fail(.start, message: message(for: error))
+        }
+    }
+
+    private func createVirtualMachineRunner() async throws {
+        if runnerID == nil {
+            guard case let .tart(image) = request.backend else { throw SetupError.notRegistered }
+            guard !FileManager.default.fileExists(atPath: finalFolder.path) else { throw SetupError.folderExists(request.name) }
+            // The folder only holds the runner's log.
+            try FileManager.default.createDirectory(at: finalFolder, withIntermediateDirectories: true)
+            folder = finalFolder
+            var runner = LocalRunner(name: request.name, scope: request.scope, path: finalFolder.path, labels: request.labels.all)
+            runner.runnerGroup = request.registration.runnerGroup
+            runner.workFolder = request.workFolder
+            runner.backend = .tart(image: image)
+            services.runnerService.addLocalRunner(runner)
+            runnerID = runner.id
+        }
+        guard let runnerID else { throw SetupError.notRegistered }
+        try await services.runnerService.startRunner(id: runnerID)
     }
 
     // MARK: Steps
