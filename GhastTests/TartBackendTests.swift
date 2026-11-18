@@ -326,7 +326,8 @@ struct TartBackendTests {
         let vm = h.vmName(runner, iteration: 1)
 
         try await h.service.startRunner(id: runner.id)
-        #expect(await h.settled { h.state(runner) == .booting })
+        // Booting shows from the start of an iteration; the VM exists once it is being probed.
+        #expect(await h.settled { h.log.all.contains("probe \(vm)") })
         await h.service.stopRunner(id: runner.id)
 
         #expect(h.log.all.contains("delete \(vm)"))

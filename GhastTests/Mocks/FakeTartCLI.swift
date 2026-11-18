@@ -17,6 +17,12 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     /// `exec /usr/bin/true` fails this many times before it succeeds.
     var failedProbesBeforeReady = 0
     var cloneError: Error?
+    /// `stop` throws this (after logging) without stopping anything.
+    var stopError: Error?
+    /// While set, `list` waits here (cancellable) after recording the call.
+    var listGate: HoldGate?
+    /// While set, `exec pkill` waits here (cancellable) as a hung guest agent would.
+    var pkillGate: HoldGate?
     /// Each `list` throws the next of these before it succeeds.
     var listFailures: [Error] = []
     var deleteError: Error?
@@ -44,6 +50,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func list() async throws -> [TartVMEntry] {
         log.append("list")
         if let failure = lock.withLock({ listFailures.isEmpty ? nil : listFailures.removeFirst() }) { throw failure }
+        try await listGate?.wait()
         return entries
     }
 
@@ -82,6 +89,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
             }
         }
         log.append("exec \(vm) \(command.joined(separator: " "))")
+        if command.first == "pkill" { try await pkillGate?.wait() }
         if command.first == "pkill", pkillEndsJob { endJob(vm, code: 143) }
         return 0
     }
@@ -94,6 +102,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
 
     func stop(_ vm: String, timeout: Int) async throws {
         log.append("stop \(vm)")
+        if let stopError { throw stopError }
         let exit = lock.withLock { () -> (@Sendable (Int32) -> Void)? in
             setRunning(vm, false)
             return vmExits.removeValue(forKey: vm)

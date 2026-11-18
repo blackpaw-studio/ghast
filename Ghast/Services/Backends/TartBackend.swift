@@ -176,7 +176,7 @@ final class TartBackend: RunnerBackend {
     }
 
     /// What an iteration set up, so cleanup knows what to remove even after a failure.
-    private struct IterationResources {
+    private struct IterationResources: Sendable {
         var vm: String?
         var jitRunnerID: Int?
         var scope: RunnerScope?
@@ -184,16 +184,30 @@ final class TartBackend: RunnerBackend {
 
     private func runIteration(_ slot: Slot, runner: LocalRunner, image: String) async throws -> Int32 {
         var resources = IterationResources(scope: runner.scope)
+        // Not the last iteration's "Cleaning up", while the list, package and boot gate are awaited.
+        setPhase(.booting, slot: slot)
         let cli = try await cliProvider()
         slot.cli = cli
         do {
             let exitCode = try await perform(slot, runner: runner, image: image, cli: cli, resources: &resources)
-            await cleanUp(slot, runner: runner, cli: cli, resources: resources)
+            await cleanUpUncancelled(slot, runner: runner, cli: cli, resources: resources)
             return exitCode
         } catch {
-            await cleanUp(slot, runner: runner, cli: cli, resources: resources)
+            await cleanUpUncancelled(slot, runner: runner, cli: cli, resources: resources)
             throw error
         }
+    }
+
+    /// Cleanup runs to the end even when Stop cancelled the slot's task: it is what deletes
+    /// the VM and the GitHub registration, and a cancelled request would just throw.
+    private func cleanUpUncancelled(_ slot: Slot, runner: LocalRunner, cli: any TartCLI, resources: IterationResources) async {
+        await Task { await cleanUp(slot, runner: runner, cli: cli, resources: resources) }.value
+    }
+
+    /// Shows `state` unless Stop was requested, which keeps showing "stopping" until the end.
+    private func setPhase(_ state: RunnerProcessState, slot: Slot) {
+        guard !slot.isStopRequested else { return }
+        host?.setProcessState(state, id: slot.runnerID)
     }
 
     private func perform(
@@ -216,7 +230,7 @@ final class TartBackend: RunnerBackend {
             leases.record(TartLease(runnerID: runner.id, jitRunnerID: nil, scope: runner.scope), forClone: vm)
             resources.vm = vm
             slot.vm = vm
-            host?.setProcessState(.booting, id: runner.id)
+            setPhase(.booting, slot: slot)
             log("Cloning…", runner: runner)
             try await cli.clone(image, vm)
             try checkStop(slot)
@@ -258,7 +272,7 @@ final class TartBackend: RunnerBackend {
         let present = try await cli.list().contains { $0.name == image }
         guard !present else { return }
         guard TartImageCatalog.isOCIRef(image) else { throw TartBackendError.localImageMissing(image) }
-        host?.setProcessState(.pulling, id: runner.id)
+        setPhase(.pulling, slot: slot)
         log("Pulling image…", runner: runner)
         try await cli.pull(image, log: logFile(for: runner))
         try checkStop(slot)
@@ -292,13 +306,13 @@ final class TartBackend: RunnerBackend {
     private func registerRunner(_ runner: LocalRunner, iterationID: String) async throws -> GitHubJITConfig {
         let suffix = "-\(iterationID)"
         let name = String(runner.name.prefix(Self.maxRunnerNameLength - suffix.count)) + suffix
-        return try await api.generateJITConfig(
-            for: runner.scope,
-            name: name,
-            runnerGroupID: try await runnerGroupID(for: runner),
-            labels: Self.jitLabels(custom: runner.labels),
-            workFolder: runner.workFolder
-        )
+        let groupID = try await runnerGroupID(for: runner)
+        let (scope, labels, workFolder, api) = (runner.scope, Self.jitLabels(custom: runner.labels), runner.workFolder, api)
+        // In its own task: a Stop that cancels this one must not abandon a request that may
+        // already have created the registration. The caller records the id before it looks at Stop.
+        return try await Task {
+            try await api.generateJITConfig(for: scope, name: name, runnerGroupID: groupID, labels: labels, workFolder: workFolder)
+        }.value
     }
 
     /// Repositories have only the Default group (id 1); an organization resolves the runner's
@@ -361,19 +375,28 @@ final class TartBackend: RunnerBackend {
     /// forgets the lease only when both went through. Failures are logged, never thrown.
     private func cleanUp(_ slot: Slot, runner: LocalRunner, cli: any TartCLI, resources: IterationResources) async {
         guard let vm = resources.vm else { return }
-        if !slot.isStopRequested { host?.setProcessState(.cleaningUp, id: runner.id) }
+        setPhase(.cleaningUp, slot: slot)
         log("Cleaning up", runner: runner)
 
         var isClean = true
         // Stopping a VM that never started fails harmlessly; delete is what matters.
-        try? await cli.stop(vm, timeout: timing.vmStopTimeout)
+        var vmStopFailed = false
+        do {
+            try await cli.stop(vm, timeout: timing.vmStopTimeout)
+        } catch {
+            vmStopFailed = true
+        }
         do {
             try await cli.delete(vm)
         } catch {
             isClean = false
+            vmStopFailed = true
             Self.logger.error("Could not delete \(vm, privacy: .public): \(error.localizedDescription, privacy: .public)")
             log("Error: could not delete the VM: \(error.localizedDescription)", runner: runner)
         }
+        // A VM that would not stop or be deleted must not keep running unseen: ending the
+        // host's `tart run` ends the VM. Launch recovery deletes it if the lease stays.
+        if vmStopFailed { slot.vmProcess?.terminate() }
         if let jitRunnerID = resources.jitRunnerID, let scope = resources.scope {
             if let error = await deleteJITRunner(jitRunnerID, scope: scope) {
                 isClean = false
@@ -415,7 +438,14 @@ final class TartBackend: RunnerBackend {
         guard let slot = slots[id], !slot.isStopRequested else { return }
         slot.isStopRequested = true
         host?.updateRunner(id: id) { $0.status = .stopped }
-        if case let .running(since)? = host?.processState(id: id) { host?.setProcessState(.stopping(since: since), id: id) }
+        switch host?.processState(id: id) {
+        case let .running(since)?:
+            host?.setProcessState(.stopping(since: since), id: id)
+        case .starting?, .pulling?, .booting?, .cleaningUp?:
+            host?.setProcessState(.stopping(since: clock.now()), id: id)
+        default:
+            break
+        }
 
         if slot.guest != nil {
             // A job is running: end the runner gracefully, so GitHub hears about it, then the exec.
@@ -426,9 +456,12 @@ final class TartBackend: RunnerBackend {
     }
 
     /// SIGTERM to the guest's listener, which ends its job and signs out; the exec is
-    /// terminated only if the guest has not exited within the grace period.
+    /// terminated if the guest has not exited within the grace period. The grace period runs
+    /// from the start, alongside the `pkill`, so a guest agent that never answers cannot hold
+    /// the stop up.
     private func endGuestGracefully(_ slot: Slot) async {
-        if let cli = slot.cli, let vm = slot.vm {
+        let pkill = Task { [cli = slot.cli, vm = slot.vm] in
+            guard let cli, let vm else { return }
             _ = try? await cli.exec(vm, ["pkill", "-TERM", "-f", "Runner.Listener"])
         }
         var waited = Duration.zero
@@ -437,6 +470,7 @@ final class TartBackend: RunnerBackend {
             waited += timing.stopPollInterval
         }
         slot.guest?.process.terminate()
+        pkill.cancel()
     }
 
     private func waitForEnd(of slot: Slot) async {

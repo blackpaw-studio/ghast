@@ -203,6 +203,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     }
 
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {
+        if failsWhenCancelled, Task.isCancelled { throw CancellationError() }
         log.append("delete \(runnerId) \(scope.displayName)")
         if failingDeleteIDs.contains(runnerId) { throw GitHubAPIError.serverError(500) }
         if let deleteError { throw deleteError }
@@ -213,6 +214,12 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     var jitError: Error?
     /// Each `generateJITConfig` throws the next of these before it succeeds.
     var jitFailures: [Error] = []
+    /// While set, `generateJITConfig` waits here (ignoring cancellation, as a request already
+    /// on the wire does) after logging, before creating the registration.
+    var jitGate: HoldGate?
+    /// Like URLSession: a call made, or finishing, in a cancelled task throws `CancellationError`.
+    /// A registration the server already made stays made.
+    var failsWhenCancelled = false
     /// Each `fetchRunnerApplications` throws the next of these before it succeeds.
     var applicationsFailures: [Error] = []
     /// Every `generateJITConfig` request, in order.
@@ -237,7 +244,9 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
         jitRequests.append(JITRequest(scope: scope, name: name, runnerGroupID: runnerGroupID, labels: labels, workFolder: workFolder))
         if !jitFailures.isEmpty { throw jitFailures.removeFirst() }
         if let jitError { throw jitError }
+        try? await jitGate?.wait()
         jitCount += 1
+        if failsWhenCancelled, Task.isCancelled { throw CancellationError() }
         return GitHubJITConfig(runnerID: 1000 + jitCount, encodedConfig: "JIT\(jitCount)")
     }
 
