@@ -44,7 +44,7 @@ struct ProcessRunnerLauncher: RunnerProcessLauncher {
         process.executableURL = spec.executable
         process.arguments = spec.arguments
         process.currentDirectoryURL = spec.currentDirectory
-        let output = try spec.appendOutputTo.map(Self.openForAppending) ?? FileHandle.nullDevice
+        let output = try spec.appendOutputTo.map(FileAppending.openHandle) ?? FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = output
         process.terminationHandler = { finished in
@@ -57,15 +57,6 @@ struct ProcessRunnerLauncher: RunnerProcessLauncher {
         // The child holds its own copy of the descriptor now.
         if spec.appendOutputTo != nil { try? output.close() }
         return ProcessHandle(process: process)
-    }
-
-    private static func openForAppending(_ url: URL) throws -> FileHandle {
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: url)
-        try handle.seekToEnd()
-        return handle
     }
 }
 

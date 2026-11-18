@@ -12,6 +12,7 @@ class RunnerService {
     @ObservationIgnored private var store: RunnerStore
     @ObservationIgnored private let clock: any AppClock
     @ObservationIgnored private let bareMetal: BareMetalBackend
+    @ObservationIgnored private let tart: TartBackend
     
     var localRunners: [LocalRunner] = []
     /// Runtime process state per runner id. A runner with no entry is stopped.
@@ -30,6 +31,7 @@ class RunnerService {
     ///   - restartDelay: Seconds the wrapper waits before restarting a runner that updated itself.
     ///   - signaling: How runner processes are signalled and probed.
     ///   - scanner: How leftover `Runner.Listener` processes from an earlier Ghast are found.
+    ///   - tartBackend: Runs VM runners; the default cannot find Tart, so a VM runner reads as an error.
     init(
         defaults: UserDefaults = .standard,
         runnersDirectory: URL = RunnerService.defaultRunnersDirectory,
@@ -38,7 +40,8 @@ class RunnerService {
         restartDelay: Int = RunnerWrapperScript.defaultRestartDelay,
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
         signaling: any ProcessSignaling = SystemProcessSignaling(),
-        scanner: any RunnerProcessScanning = PSRunnerProcessScanner()
+        scanner: any RunnerProcessScanning = PSRunnerProcessScanner(),
+        tartBackend: TartBackend? = nil
     ) {
         self.store = RunnerStore(defaults: defaults)
         self.clock = clock
@@ -50,9 +53,11 @@ class RunnerService {
             signaling: signaling,
             scanner: scanner
         )
+        self.tart = tartBackend ?? TartBackend.unavailable(defaults: defaults, clock: clock, sleeper: sleeper)
         self.runnersBaseDirectory = runnersDirectory
         (processExits, processExitSink) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         bareMetal.host = self
+        tart.host = self
         createRunnersDirectoryIfNeeded()
         loadRunners()
         // Discover any existing runners not in our database
@@ -159,10 +164,13 @@ class RunnerService {
     
     /// The backend that runs this runner; the host backend for an id with no runner.
     private func backend(for id: String) -> any RunnerBackend {
-        bareMetal
+        switch localRunners.first(where: { $0.id == id })?.backend {
+        case .tart?: tart
+        case .host?, nil: bareMetal
+        }
     }
     
-    private var backends: [any RunnerBackend] { [bareMetal] }
+    private var backends: [any RunnerBackend] { [bareMetal, tart] }
     
     // Process-lifecycle timing lives with the backend that applies it.
     static var stopGracePeriod: Duration { BareMetalBackend.stopGracePeriod }
