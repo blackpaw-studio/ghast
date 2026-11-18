@@ -4,6 +4,7 @@ import os
 /// New Runner, step one: where the runner goes, its name and labels.
 struct NewRunnerConfigureView: View {
     let initialCustomLabels: [String]
+    let tartLocator: TartLocator
     let create: (NewRunnerRequest) -> Void
     let cancel: () -> Void
 
@@ -25,7 +26,33 @@ struct NewRunnerConfigureView: View {
     @State private var workFolder = LocalRunner.defaultWorkFolder
     @State private var isAdvancedExpanded = false
     @State private var avatars = ScopeAvatarImages()
+    @State private var runIn: NewRunnerRunIn
+    /// nil until the locator has answered.
+    @State private var tartInstallation: TartInstallation?
+    @State private var imageChoice = TartImageChoice.curated(TartImageCatalog.images[0].ref)
+    @State private var customImage = ""
     @FocusState private var isNameFocused: Bool
+
+    private enum TartImageChoice: Hashable {
+        case curated(String)
+        case custom
+    }
+
+    init(
+        initialCustomLabels: [String],
+        initialRunIn: NewRunnerRunIn = .thisMac,
+        initialTartInstallation: TartInstallation? = nil,
+        tartLocator: TartLocator,
+        create: @escaping (NewRunnerRequest) -> Void,
+        cancel: @escaping () -> Void
+    ) {
+        self.initialCustomLabels = initialCustomLabels
+        self.tartLocator = tartLocator
+        self.create = create
+        self.cancel = cancel
+        _runIn = State(initialValue: initialRunIn)
+        _tartInstallation = State(initialValue: initialTartInstallation)
+    }
 
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "new-runner")
 
@@ -64,26 +91,47 @@ struct NewRunnerConfigureView: View {
         scope.map { NewRunnerName.validate(name, scope: $0, localRunners: runnerService.localRunners, gitHubNames: gitHubNames(in: $0)) }
     }
 
+    private var isTartUsable: Bool { tartInstallation?.isUsable == true }
+
+    private var selectedImage: String {
+        switch imageChoice {
+        case let .curated(ref): ref
+        case .custom: customImage.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private var isRunInValid: Bool {
+        switch runIn {
+        case .thisMac: true
+        case .tartVM: isTartUsable && !selectedImage.isEmpty
+        }
+    }
+
     private var canCreate: Bool {
-        choices.choice(for: scope) != nil
+        isRunInValid
+            && choices.choice(for: scope) != nil
             && NewRunnerName.canCreate(name: name, scope: scope, localRunners: runnerService.localRunners, gitHubNames: scope.map(gitHubNames) ?? [])
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("New Runner").font(FocusType.title2)
-            Text("Ghast downloads the GitHub Actions runner, registers it, and starts it on this Mac.")
+            Text(runIn == .tartVM
+                 ? "Ghast starts a fresh Tart VM for each job and deletes it afterwards."
+                 : "Ghast downloads the GitHub Actions runner, registers it, and starts it on this Mac.")
                 .font(FocusType.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, FocusMetrics.sheetTitleGap)
             form.padding(.top, FocusMetrics.sheetBodyToBox)
             help.padding(.top, FocusMetrics.sheetHelpTop)
+            tartNotice.padding(.top, FocusMetrics.sheetHelpTop)
             advanced.padding(.top, FocusMetrics.sheetAdvancedTop)
             footer.padding(.top, FocusMetrics.sheetFooterTop)
         }
         .task { await repositoryCatalog.load(account: authService.currentUser?.login) }
         .task(id: scope) { await loadScopeDetails() }
+        .task { if tartInstallation == nil { await detectTart() } }
         .onAppear {
             isNameFocused = true
             if scope == nil { choose(choices.first?.scope) }
@@ -116,6 +164,20 @@ struct NewRunnerConfigureView: View {
                 }
             }
             FocusFormDivider()
+            row("Run in") {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Picker("Run in", selection: $runIn) {
+                        Text(NewRunnerRunIn.thisMac.title).tag(NewRunnerRunIn.thisMac)
+                        Text(NewRunnerRunIn.tartVM.title).tag(NewRunnerRunIn.tartVM).disabled(!isTartUsable)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            }
+            if runIn == .tartVM { imageRows }
+            FocusFormDivider()
             row("Name") {
                 TextField("Name", text: nameBinding, prompt: Text("Runner name"))
                     .textFieldStyle(.roundedBorder)
@@ -131,6 +193,76 @@ struct NewRunnerConfigureView: View {
             RoundedRectangle(cornerRadius: FocusMetrics.formBoxRadius, style: .continuous)
                 .fill(FocusColor.group)
         )
+    }
+
+    @ViewBuilder
+    private var imageRows: some View {
+        FocusFormDivider()
+        row("Image") {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Picker("Image", selection: $imageChoice) {
+                    ForEach(TartImageCatalog.images, id: \.ref) { Text($0.title).tag(TartImageChoice.curated($0.ref)) }
+                    Divider()
+                    Text("Custom…").tag(TartImageChoice.custom)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+        if imageChoice == .custom {
+            FocusFormDivider()
+            row("Custom image") {
+                VStack(alignment: .leading, spacing: 2) {
+                    TextField("Custom image", text: $customImage, prompt: Text("OCI reference or local VM name"))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                    Text(TartImageCatalog.customImageHint)
+                        .font(FocusType.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 6)
+            }
+        }
+    }
+
+    /// Why the Tart VM option is off, and the command that fixes it.
+    @ViewBuilder
+    private var tartNotice: some View {
+        if let installation = tartInstallation, !installation.isUsable {
+            let (message, command) = Self.remedy(for: installation)
+            HStack(alignment: .firstTextBaseline, spacing: FocusMetrics.formCaptionGap) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(message).font(FocusType.subheadline).foregroundStyle(.secondary)
+                    Text(command).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                }
+                Spacer(minLength: 0)
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                }
+                .buttonStyle(.link)
+                .font(FocusType.subheadline)
+            }
+            .padding(.horizontal, FocusMetrics.formRowInset)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private static func remedy(for installation: TartInstallation) -> (message: String, command: String) {
+        switch installation {
+        case let .tooOld(_, version):
+            ("Tart VM needs Tart \(TartLocator.minimumVersion) or later; \(version) is installed. Reinstall it with:", TartInstallation.reinstallCommand)
+        case .missing, .found:
+            ("Tart VM needs Tart, which isn't installed. Install it with:", TartInstallation.installCommand)
+        }
+    }
+
+    private func detectTart() async {
+        let installation = await tartLocator.locate()
+        tartInstallation = installation
+        if !installation.isUsable { runIn = .thisMac }
     }
 
     private func row<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
@@ -216,16 +348,18 @@ struct NewRunnerConfigureView: View {
     private var advanced: some View {
         DisclosureGroup(isExpanded: $isAdvancedExpanded) {
             VStack(spacing: 0) {
-                row("Architecture") {
-                    Picker("Architecture", selection: architectureBinding) {
-                        ForEach(HostArchitecture.allCases, id: \.self) { Text($0.runnerLabel).tag($0) }
+                if runIn == .thisMac {
+                    row("Architecture") {
+                        Picker("Architecture", selection: architectureBinding) {
+                            ForEach(HostArchitecture.allCases, id: \.self) { Text($0.runnerLabel).tag($0) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .fixedSize()
+                    FocusFormDivider()
                 }
                 if scope?.isOrganization == true {
-                    FocusFormDivider()
                     row("Runner group") {
                         Picker("Runner group", selection: $runnerGroup) {
                             ForEach(runnerGroups, id: \.name) { Text($0.name).tag(Optional($0.name)) }
@@ -235,8 +369,8 @@ struct NewRunnerConfigureView: View {
                         .fixedSize()
                         .disabled(runnerGroups.isEmpty)
                     }
+                    FocusFormDivider()
                 }
-                FocusFormDivider()
                 row("Work folder") {
                     TextField("Work folder", text: $workFolder)
                         .textFieldStyle(.roundedBorder)
@@ -248,7 +382,7 @@ struct NewRunnerConfigureView: View {
                     .fill(FocusColor.group)
             )
             .padding(.top, FocusMetrics.formHelpTop)
-            if tokens.architecture == .x64 && context.hostInfo.architecture == .arm64 {
+            if runIn == .thisMac && tokens.architecture == .x64 && context.hostInfo.architecture == .arm64 {
                 Text("X64 runners run under Rosetta.")
                     .font(FocusType.subheadline)
                     .foregroundStyle(.secondary)
@@ -258,7 +392,7 @@ struct NewRunnerConfigureView: View {
         } label: {
             HStack(spacing: FocusMetrics.formCaptionGap) {
                 Text("Advanced").font(FocusType.body)
-                Text("Architecture, runner group, work folder")
+                Text(runIn == .tartVM ? "Runner group, work folder" : "Architecture, runner group, work folder")
                     .font(FocusType.body)
                     .foregroundStyle(.secondary)
             }
@@ -287,10 +421,12 @@ struct NewRunnerConfigureView: View {
         create(NewRunnerRequest(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             scope: scope,
-            labels: tokens,
+            // VMs are Apple Silicon guests.
+            labels: runIn == .tartVM ? tokens.with(architecture: .arm64) : tokens,
             // The default group needs no `--runnergroup`.
             runnerGroup: group.flatMap { $0.isDefault ? nil : $0.name },
-            workFolder: workFolder.trimmingCharacters(in: .whitespaces)
+            workFolder: workFolder.trimmingCharacters(in: .whitespaces),
+            backend: runIn == .tartVM ? .tart(image: selectedImage) : .host
         ))
     }
 

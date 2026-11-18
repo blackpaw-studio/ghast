@@ -5,6 +5,16 @@ struct RunnerLaunchSpec: Sendable, Equatable {
     let executable: URL
     let arguments: [String]
     let currentDirectory: URL
+    /// When set, stdout and stderr are appended to this file (created if missing) instead of
+    /// being discarded.
+    let appendOutputTo: URL?
+
+    init(executable: URL, arguments: [String], currentDirectory: URL, appendOutputTo: URL? = nil) {
+        self.executable = executable
+        self.arguments = arguments
+        self.currentDirectory = currentDirectory
+        self.appendOutputTo = appendOutputTo
+    }
 }
 
 /// A launched runner process. The only way to observe or stop it.
@@ -34,8 +44,9 @@ struct ProcessRunnerLauncher: RunnerProcessLauncher {
         process.executableURL = spec.executable
         process.arguments = spec.arguments
         process.currentDirectoryURL = spec.currentDirectory
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let output = try spec.appendOutputTo.map(FileAppending.openHandle) ?? FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
         process.terminationHandler = { finished in
             let code = finished.terminationReason == .uncaughtSignal
                 ? 128 + finished.terminationStatus
@@ -43,6 +54,8 @@ struct ProcessRunnerLauncher: RunnerProcessLauncher {
             onTermination(code)
         }
         try process.run()
+        // The child holds its own copy of the descriptor now.
+        if spec.appendOutputTo != nil { try? output.close() }
         return ProcessHandle(process: process)
     }
 }

@@ -10,6 +10,11 @@ final class RunnerConfigurationDraft {
     var editor = EnvironmentVariableEditor(rows: [])
     var preScript = ScriptDraft()
     var postScript = ScriptDraft()
+    /// A VM runner's editable settings, as typed. Labels are comma separated; a blank group
+    /// means the default group.
+    var tartImage = ""
+    var tartGroup = ""
+    var tartLabels = ""
     /// Set by a saved edit: it applies the next time the runner starts.
     var needsRestart = false
     private(set) var runnerID: String?
@@ -31,7 +36,23 @@ final class RunnerConfigurationDraft {
         editor = EnvironmentVariableEditor(variables: runner.environmentVariables)
         preScript = ScriptDraft(runner.preJobScript)
         postScript = ScriptDraft(runner.postJobScript)
+        if case let .tart(image) = runner.backend {
+            tartImage = image
+            tartGroup = runner.runnerGroup ?? ""
+            tartLabels = runner.labels.joined(separator: ", ")
+        }
         needsRestart = false
+    }
+
+    /// Labels typed as a comma separated list: trimmed, blanks dropped, duplicates (ignoring
+    /// case) kept once. Nil when nothing usable was typed, so a half-edited field never wipes
+    /// the saved labels.
+    static func parseLabels(_ text: String) -> [String]? {
+        var seen = Set<String>()
+        let labels = text.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        return labels.isEmpty ? nil : labels
     }
 
     /// Saves the current edits once typing has been quiet for the debounce delay.
@@ -40,8 +61,20 @@ final class RunnerConfigurationDraft {
         let variables = editor.savedVariables
         let pre = preScript.savedScript
         let post = postScript.savedScript
+        let tart = (image: tartImage.trimmingCharacters(in: .whitespacesAndNewlines), group: tartGroup, labels: Self.parseLabels(tartLabels))
         debouncer.schedule { [weak self, runnerService] in
             guard let current = runnerService.localRunners.first(where: { $0.id == id }) else { return }
+            if case let .tart(savedImage) = current.backend {
+                // A VM runner has no scripts or variables; its settings apply to the next VM,
+                // so saving them never asks for a restart. A blank image keeps the saved one.
+                let image = tart.image.isEmpty ? savedImage : tart.image
+                let labels = tart.labels ?? current.labels
+                let group = tart.group.trimmingCharacters(in: .whitespacesAndNewlines)
+                if image != savedImage || labels != current.labels || (group.isEmpty ? nil : group) != current.runnerGroup {
+                    runnerService.updateTartSettings(id: id, labels: labels, runnerGroup: group, image: image)
+                }
+                return
+            }
             var changed = false
             if current.environmentVariables != variables {
                 runnerService.updateRunnerEnvironmentVariables(id: id, environmentVariables: variables)

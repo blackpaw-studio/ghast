@@ -57,6 +57,14 @@ struct URLSessionRunnerDownloader: RunnerDownloader {
     }
 }
 
+/// Downloads a file with URLSession and moves it into place; no unpacking.
+struct URLSessionRunnerArchiveFetcher: RunnerArchiveFetching {
+    func fetch(_ url: URL, to destination: URL) async throws {
+        let downloaded = try await DownloadTask.run(url, progress: { _ in })
+        try FileManager.default.moveItem(at: downloaded, to: destination)
+    }
+}
+
 /// One URLSession download with byte progress and cancellation.
 private final class DownloadTask: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let progress: @Sendable (DownloadProgress) -> Void

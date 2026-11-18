@@ -13,6 +13,10 @@ import SnapshotTesting
 struct FocusMainSnapshotTests {
     enum State: String, CaseIterable {
         case running, idle, stopped, starting, error, remote, empty, configuration
+        /// A VM runner in the phases around a job, and its Configuration tab.
+        case vmBooting, vmPulling, vmConfiguration
+
+        var isVM: Bool { [.vmBooting, .vmPulling, .vmConfiguration].contains(self) }
     }
 
     /// The detail column of the 1440 × 900 kit window, beside the 264 pt sidebar.
@@ -37,7 +41,7 @@ struct FocusMainSnapshotTests {
         host.view.layoutSubtreeIfNeeded()
         // The Configuration tab loads its saved settings in a task; the other states draw
         // synchronously.
-        if state == .configuration {
+        if state == .configuration || state == .vmConfiguration {
             for await _ in draftLoaded.stream { break }
             host.view.layoutSubtreeIfNeeded()
         }
@@ -65,10 +69,11 @@ struct FocusMainSnapshotTests {
             let (runnerName, tab): (String, DetailTab) = switch state {
             case .running: ("dionysus-xcode", .output)
             case .configuration: ("dionysus-xcode", .configuration)
+            case .vmConfiguration: ("dionysus-arm64", .configuration)
             case .error: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
             }
-            let runner = try #require(service.localRunners.first { $0.name == runnerName })
+            let runner = try runningInVM(state.isVM, #require(service.localRunners.first { $0.name == runnerName }))
             let (processState, activity) = try inputs(for: state, runner: runner, fixture: fixture)
             let item = try #require(catalog(fixture, overriding: runner.id, processState, activity).thisMac.first { $0.id == runner.id })
             LocalRunnerDetail(
@@ -94,6 +99,10 @@ struct FocusMainSnapshotTests {
         switch state {
         case .stopped:
             return (.stopped, OutputParser.consume(log, into: .initial).activity)
+        case .vmBooting:
+            return (.booting, OutputParser.consume(vmLog(booting: true), into: .initial).activity)
+        case .vmPulling:
+            return (.pulling, OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .starting:
             let listening = try #require(log.range(of: Data("Listening for Jobs".utf8)))
             let lineStart = log[..<listening.lowerBound].lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? log.startIndex
@@ -101,6 +110,22 @@ struct FocusMainSnapshotTests {
         default:
             return (processState, OutputParser.consume(log, into: .initial).activity)
         }
+    }
+
+    /// The fixture world has only host runners; a VM state shows one of them as a VM runner.
+    private func runningInVM(_ isVM: Bool, _ runner: LocalRunner) -> LocalRunner {
+        guard isVM else { return runner }
+        var copy = runner
+        copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
+        return copy
+    }
+
+    /// The lifecycle lines Ghast writes before a VM runner has a listener.
+    private func vmLog(booting: Bool) -> Data {
+        let lines = booting
+            ? ["Cloning ghcr.io/cirruslabs/macos-tahoe-xcode:latest…", "Booting VM ghast-1f2e3d-a1b2c3…"]
+            : ["Pulling ghcr.io/cirruslabs/macos-tahoe-xcode:latest…"]
+        return Data((lines.joined(separator: "\n") + "\n").utf8)
     }
 
     private func catalog(

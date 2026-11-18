@@ -20,8 +20,13 @@ enum SetupStepState: Equatable, Sendable {
 struct SetupProgress: Equatable, Sendable {
     let runnerName: String
     let scopeName: String
+    /// A VM runner shows one row; its slot registers a runner for each VM.
+    var isVirtualMachine = false
     var version: String?
     var states: [SetupStep: SetupStepState] = [:]
+
+    /// The rows shown, in order.
+    var steps: [SetupStep] { isVirtualMachine ? [.start] : SetupStep.allCases }
 
     func state(_ step: SetupStep) -> SetupStepState { states[step] ?? .pending }
 
@@ -29,7 +34,7 @@ struct SetupProgress: Equatable, Sendable {
         switch step {
         case .download: version.map { "Download runner \($0)" } ?? "Download runner"
         case .register: "Register with \(scopeName)"
-        case .start: "Start runner"
+        case .start: isVirtualMachine ? "Create VM runner" : "Start runner"
         case .listen: "Listen for jobs"
         }
     }

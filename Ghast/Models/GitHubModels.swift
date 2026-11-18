@@ -210,3 +210,26 @@ struct GitHubRunnerGroup: Sendable, Codable, Identifiable, Equatable {
         case isDefault = "default"
     }
 }
+
+/// A just-in-time runner registration: the runner's id on GitHub (to delete it if it is
+/// never used) and the encoded config `run.sh --jitconfig` takes. The config is a
+/// credential; it is never logged.
+struct GitHubJITConfig: Equatable, Sendable {
+    let runnerID: Int
+    let encodedConfig: String
+}
+
+extension GitHubJITConfig: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case runner
+        case encodedConfig = "encoded_jit_config"
+    }
+
+    private struct RunnerRef: Decodable { let id: Int }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        runnerID = try container.decode(RunnerRef.self, forKey: .runner).id
+        encodedConfig = try container.decode(String.self, forKey: .encodedConfig)
+    }
+}

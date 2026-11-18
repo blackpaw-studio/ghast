@@ -159,6 +159,8 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     var registrationTokenError: Error?
     var removeTokenError: Error?
     var deleteError: Error?
+    /// GitHub runner ids whose deletion fails (all others succeed), for one-bad-apple cases.
+    var failingDeleteIDs: Set<Int> = []
     var runnersError: Error?
     var runners: [RunnerScope: [GitHubRunner]] = [:]
     var runnerGroups: [String: [GitHubRunnerGroup]] = [:]
@@ -201,12 +203,56 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     }
 
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {
+        if failsWhenCancelled, Task.isCancelled { throw CancellationError() }
         log.append("delete \(runnerId) \(scope.displayName)")
+        if failingDeleteIDs.contains(runnerId) { throw GitHubAPIError.serverError(500) }
         if let deleteError { throw deleteError }
+    }
+
+    /// The GitHub id each generated JIT config gets, counting up from 1000.
+    private var jitCount = 0
+    var jitError: Error?
+    /// Each `generateJITConfig` throws the next of these before it succeeds.
+    var jitFailures: [Error] = []
+    /// While set, `generateJITConfig` waits here (ignoring cancellation, as a request already
+    /// on the wire does) after logging, before creating the registration.
+    var jitGate: HoldGate?
+    /// Like URLSession: a call made, or finishing, in a cancelled task throws `CancellationError`.
+    /// A registration the server already made stays made.
+    var failsWhenCancelled = false
+    /// Each `fetchRunnerApplications` throws the next of these before it succeeds.
+    var applicationsFailures: [Error] = []
+    /// Every `generateJITConfig` request, in order.
+    private(set) var jitRequests: [JITRequest] = []
+
+    struct JITRequest: Equatable {
+        let scope: RunnerScope
+        let name: String
+        let runnerGroupID: Int
+        let labels: [String]
+        let workFolder: String
+    }
+
+    func generateJITConfig(
+        for scope: RunnerScope,
+        name: String,
+        runnerGroupID: Int,
+        labels: [String],
+        workFolder: String
+    ) async throws -> GitHubJITConfig {
+        log.append("jit \(name)")
+        jitRequests.append(JITRequest(scope: scope, name: name, runnerGroupID: runnerGroupID, labels: labels, workFolder: workFolder))
+        if !jitFailures.isEmpty { throw jitFailures.removeFirst() }
+        if let jitError { throw jitError }
+        try? await jitGate?.wait()
+        jitCount += 1
+        if failsWhenCancelled, Task.isCancelled { throw CancellationError() }
+        return GitHubJITConfig(runnerID: 1000 + jitCount, encodedConfig: "JIT\(jitCount)")
     }
 
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         log.append("applications")
+        if !applicationsFailures.isEmpty { throw applicationsFailures.removeFirst() }
         return applications
     }
 

@@ -2,6 +2,30 @@ import SwiftUI
 import Foundation
 import Sparkle
 
+/// What Ghast does once at launch. Host runners restart at once: they need nothing else.
+/// VM runners wait for services (the GitHub token) and for recovery of the VMs a crash left
+/// behind, or those VMs count against the 2-VM limit and the restarted slots give up.
+/// Recovery runs only when there is something to recover, and never holds up host runners.
+@MainActor
+enum LaunchSequence {
+    static func run(
+        restartsRunners: Bool,
+        needsRecovery: Bool,
+        startServices: @escaping @MainActor () async -> Void,
+        recoverLeftovers: @escaping @MainActor () async -> Void,
+        restartHostRunners: @MainActor () async -> Void,
+        restartVMRunners: @MainActor () async -> Void
+    ) async {
+        let preparation = Task { @MainActor in
+            await startServices()
+            if needsRecovery { await recoverLeftovers() }
+        }
+        if restartsRunners { await restartHostRunners() }
+        await preparation.value
+        if restartsRunners { await restartVMRunners() }
+    }
+}
+
 /// The app's services, built once at the composition root and injected from there.
 @MainActor
 struct AppDependencies {
@@ -52,6 +76,7 @@ struct AppDependencies {
         remoteStore: RemoteRunnerStore? = nil,
         runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
         scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
+        tartLocator: TartLocator = TartLocator(),
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
         router: AppWindowRouter = AppWindowRouter(),
         loginItemService: any LoginItemService = InertLoginItemService(),
@@ -81,7 +106,8 @@ struct AppDependencies {
             registrar: RunnerRegistrar(scripts: scriptRunner),
             trasher: fileTrasher,
             sleeper: sleeper,
-            readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) }
+            readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) },
+            tartLocator: tartLocator
         )
         self.flowServices = flowServices
         flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }
@@ -107,6 +133,12 @@ struct AppDependencies {
             performsDeviceFlowSideEffects: performsDeviceFlowSideEffects,
             displayPath: displayPath
         )
+    }
+
+    /// Deletes VM clones and runner registrations an earlier Ghast left behind (needs the stored
+    /// token, so it runs after `startServices`). Never in the design fixture or under test.
+    func recoverTartLeftovers() async {
+        await runnerService.recoverTartLeftovers()
     }
 
     /// Starts the always-on services: output tailing for every local runner and notifications.
@@ -160,17 +192,26 @@ struct AppDependencies {
 
     /// Starts the runners that were running when Ghast last quit. Not in the design fixture,
     /// which seeds its own process states.
-    func restartRunnersAtLaunch() async {
+    func restartRunnersAtLaunch(_ group: RestartAtLaunch.Group = .all) async {
         let flows = flowCoordinator
-        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, starter: runnerService, sleeper: sleeper, isBusy: flows.isBusy)
+        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, runners: group, starter: runnerService, sleeper: sleeper, isBusy: flows.isBusy)
     }
 
     static func live(updater: SPUUpdater, updateEvents: SparkleUpdateEvents) -> AppDependencies {
         let apiService = GitHubAPIService()
         let clock = SystemClock()
         let launcher = ProcessRunnerLauncher()
+        let sleeper: Sleeper = { try await Task.sleep(for: $0) }
+        let tartBackend = TartBackend(
+            cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
+            api: apiService,
+            leases: TartLeaseStore(defaults: .standard),
+            logAppender: FileRunnerLogAppender(clock: clock),
+            clock: clock,
+            sleeper: sleeper
+        )
         let dependencies = AppDependencies(
-            runnerService: RunnerService(clock: clock, launcher: launcher),
+            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
@@ -403,9 +444,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // defaults and runner folders.
         guard plan.startsServices else { return }
         let dependencies = dependencies
-        Task { await dependencies.startServices() }
-        if plan.restartsRunners {
-            Task { await dependencies.restartRunnersAtLaunch() }
+        let restartsRunners = plan.restartsRunners
+        Task { @MainActor in
+            await LaunchSequence.run(
+                restartsRunners: restartsRunners,
+                needsRecovery: dependencies.runnerService.needsTartRecovery,
+                startServices: { await dependencies.startServices() },
+                recoverLeftovers: { await dependencies.recoverTartLeftovers() },
+                restartHostRunners: { await dependencies.restartRunnersAtLaunch(.host) },
+                restartVMRunners: { await dependencies.restartRunnersAtLaunch(.virtualMachines) }
+            )
         }
         if plan.showsMenuBarExtra {
             let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())

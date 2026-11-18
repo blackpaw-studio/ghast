@@ -120,4 +120,44 @@ import Foundation
             try await remover.removeFromGitHub(gitHubRunnerID: 1003, scope: FlowHarness.org)
         }
     }
+
+    // MARK: Tart VM runners
+
+    /// A VM runner whose slot is mid-job, with its folder (holding only the log) on disk.
+    func runningVMRunner(_ name: String = "dionysus-3") async throws -> LocalRunner {
+        let folder = h.folder(name)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var runner = LocalRunner(name: name, scope: FlowHarness.org, path: folder.path, labels: ["self-hosted", "macOS", "ARM64"])
+        runner.backend = .tart(image: FlowHarness.tartImage)
+        h.service.addLocalRunner(runner)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await eventually { h.tart.jobsStarted == 1 })
+        return runner
+    }
+
+    @Test func removingAVMRunnerStopsTheSlotAndNeverUnregisters() async throws {
+        let runner = try await runningVMRunner()
+        let vm = try #require(h.tart.currentJobVM)
+
+        #expect(try await remover.remove(runner, gitHubRunnerID: nil) == .removed)
+
+        let log = h.log.all
+        #expect(log.contains("stop \(vm)"))
+        #expect(log.contains("delete \(vm)"))
+        // The slot deleted its own JIT registration; no registration token, config.sh or lookup.
+        #expect(!log.contains { $0.hasPrefix("remove-token") || $0.hasPrefix("config") || $0.hasPrefix("runners ") })
+        #expect(await h.scripts.calls.isEmpty)
+        #expect(h.trasher.trashed.map(\.lastPathComponent) == ["dionysus-3"])
+        #expect(h.service.localRunners.isEmpty)
+        #expect(!h.service.hasRunningProcesses)
+    }
+
+    @Test func aFailedGitHubDeleteNeverBlocksRemovingAVMRunner() async throws {
+        let runner = try await runningVMRunner()
+        h.api.deleteError = GitHubAPIError.httpStatus(403)
+
+        #expect(try await remover.remove(runner, gitHubRunnerID: nil) == .removed)
+        #expect(h.service.localRunners.isEmpty)
+    }
 }
+

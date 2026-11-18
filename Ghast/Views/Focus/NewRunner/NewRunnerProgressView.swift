@@ -24,8 +24,8 @@ struct NewRunnerProgressView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Setting Up \(progress.runnerName)").font(FocusType.title2)
             VStack(spacing: 0) {
-                ForEach(SetupStep.allCases, id: \.self) { step in
-                    if step != .download { FocusFormDivider() }
+                ForEach(progress.steps, id: \.self) { step in
+                    if step != progress.steps.first { FocusFormDivider() }
                     SetupStepRow(title: progress.title(step), state: progress.state(step))
                 }
             }

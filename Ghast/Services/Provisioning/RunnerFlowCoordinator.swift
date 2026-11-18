@@ -46,6 +46,8 @@ final class RunnerFlowCoordinator {
 
     func requestReconfigure(localID: String) {
         guard let runner = runner(localID) else { return }
+        // A VM runner has no registration to redo; its settings are edited in place.
+        if case .tart = runner.backend { return }
         prompt = .confirmReconfigure(runner)
     }
 

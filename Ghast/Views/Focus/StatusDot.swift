@@ -22,7 +22,7 @@ struct StatusDot: View {
                     )
             case .error:
                 Circle().fill(Color.red)
-            case .stopped, .starting, .stopping, .offline:
+            case .stopped, .starting, .pulling, .booting, .cleaningUp, .stopping, .offline:
                 Circle().strokeBorder(Color(nsColor: .tertiaryLabelColor), lineWidth: Self.ringWidth)
             }
         }

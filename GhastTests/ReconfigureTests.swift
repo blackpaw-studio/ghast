@@ -226,4 +226,90 @@ import Foundation
         #expect(await h.scripts.calls.isEmpty)
         #expect(h.service.processStates[runner.id] == .stopped)
     }
+
+    // MARK: Tart VM runners
+
+    func vmRunner() -> LocalRunner {
+        var runner = LocalRunner(name: "vm-1", scope: FlowHarness.org, path: h.folder("vm-1").path, labels: ["self-hosted", "macOS", "ARM64"])
+        runner.backend = .tart(image: FlowHarness.tartImage)
+        h.service.addLocalRunner(runner)
+        return runner
+    }
+
+    @Test func vmSettingsPersistWithoutRegistering() throws {
+        let runner = vmRunner()
+
+        h.service.updateTartSettings(
+            id: runner.id,
+            labels: ["self-hosted", "macOS", "ARM64", "xcode"],
+            runnerGroup: "macOS builders",
+            image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest"
+        )
+
+        let saved = try #require(h.service.localRunners.first)
+        #expect(saved.labels == ["self-hosted", "macOS", "ARM64", "xcode"])
+        #expect(saved.runnerGroup == "macOS builders")
+        #expect(saved.backend == .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest"))
+        #expect(h.log.all.isEmpty)
+        #expect(h.service.processStates[runner.id] == .stopped)
+    }
+
+    @Test func aBlankGroupMeansTheDefaultGroup() throws {
+        let runner = vmRunner()
+        h.service.updateTartSettings(id: runner.id, labels: runner.labels, runnerGroup: "macOS builders", image: FlowHarness.tartImage)
+
+        h.service.updateTartSettings(id: runner.id, labels: runner.labels, runnerGroup: "  ", image: FlowHarness.tartImage)
+
+        #expect(h.service.localRunners.first?.runnerGroup == nil)
+    }
+
+    @Test func settingsOfAHostRunnerAreLeftAlone() throws {
+        let runner = LocalRunner(name: "mac", scope: FlowHarness.org, path: h.folder("mac").path, labels: ["self-hosted"])
+        h.service.addLocalRunner(runner)
+
+        h.service.updateTartSettings(id: runner.id, labels: ["x"], runnerGroup: "g", image: "img")
+
+        let saved = try #require(h.service.localRunners.first)
+        #expect(saved.labels == ["self-hosted"])
+        #expect(saved.backend == .host)
+    }
+
+    @Test func aRunningVMSlotPicksUpTheNewImageOnItsNextIteration() async throws {
+        let runner = vmRunner()
+        try FileManager.default.createDirectory(at: h.folder("vm-1"), withIntermediateDirectories: true)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await eventually { h.tart.jobsStarted == 1 })
+
+        h.service.updateTartSettings(id: runner.id, labels: runner.labels, runnerGroup: nil, image: "my-vm")
+        h.tart.endJob(try #require(h.tart.currentJobVM), code: 0)
+        let other = "my-vm"
+
+        // "my-vm" is a local name that does not exist: the next iteration fails on it, which
+        // shows it reads the saved image, not the one the slot started with.
+        #expect(await eventually { if case .exited? = h.service.processStates[runner.id] { true } else { false } })
+        #expect(!h.log.all.contains { $0.hasPrefix("clone \(other)") })
+        #expect(h.log.all.filter { $0.hasPrefix("clone ") }.count == 1)
+    }
+
+    @Test func reconfigureOfAVMRunnerAsksNothing() throws {
+        let runner = vmRunner()
+        let coordinator = RunnerFlowCoordinator(services: h.services, refreshRemote: {})
+
+        coordinator.requestReconfigure(localID: runner.id)
+
+        #expect(coordinator.prompt == nil)
+    }
+
+    @Test(arguments: [
+        ("self-hosted, macOS , xcode", ["self-hosted", "macOS", "xcode"]),
+        ("a,A, a ,,b", ["a", "b"]),
+    ])
+    func labelsParseAsTrimmedDistinctList(text: String, expected: [String]) {
+        #expect(RunnerConfigurationDraft.parseLabels(text) == expected)
+    }
+
+    @Test func blankLabelsParseToNothingSoTheSavedOnesStay() {
+        #expect(RunnerConfigurationDraft.parseLabels(" , ,") == nil)
+    }
 }
+

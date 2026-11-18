@@ -66,6 +66,20 @@ struct RestartAtLaunchTests {
         #expect(starter.log == [.start(a.id), .failure(a.id), .sleep(.seconds(1)), .start(b.id)])
     }
 
+    @Test("a restart pass can be limited to host runners or to VM runners")
+    func limitedToOneKind() async {
+        let host = runner("host", shouldBeRunning: true)
+        var vm = runner("vm", shouldBeRunning: true)
+        vm.backend = .tart(image: "img")
+        let starter = FakeRunnerStarter([host, vm])
+
+        await RestartAtLaunch.run(isEnabled: true, runners: .host, starter: starter, sleeper: starter.sleeper)
+        #expect(starter.log == [.start(host.id)])
+
+        await RestartAtLaunch.run(isEnabled: true, runners: .virtualMachines, starter: starter, sleeper: starter.sleeper)
+        #expect(starter.log == [.start(host.id), .start(vm.id)])
+    }
+
     @Test("nothing starts when the setting is off")
     func disabled() async {
         let starter = FakeRunnerStarter([runner("a", shouldBeRunning: true)])

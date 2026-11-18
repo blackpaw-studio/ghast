@@ -42,6 +42,12 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     case idle
     case runningJob(name: String, since: Date?)
     case starting
+    /// VM runner: downloading its image.
+    case pulling
+    /// VM runner: cloning and booting a fresh VM.
+    case booting
+    /// VM runner: deleting the VM of the job that just ended.
+    case cleaningUp
     /// Asked to stop; waiting for the runner to sign out of GitHub.
     case stopping
     case stopped(at: Date?)
@@ -64,6 +70,12 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return .error(code: exit.code, at: exit.at)
         case .starting:
             return .starting
+        case .pulling:
+            return .pulling
+        case .booting:
+            return .booting
+        case .cleaningUp:
+            return .cleaningUp
         case .stopping:
             return .stopping
         case .running:
@@ -78,6 +90,14 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         return runner.busy ? .remoteBusy : .idle
     }
 
+    /// Whether the header shows a spinner: the runner is between states and will change by itself.
+    var showsProgress: Bool {
+        switch self {
+        case .starting, .stopping, .pulling, .booting, .cleaningUp: true
+        case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy: false
+        }
+    }
+
     // MARK: - Words
 
     /// The header's status title (Title 2).
@@ -86,6 +106,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running a job"
         case .starting: return "Connecting…"
+        case .pulling: return "Pulling image…"
+        case .booting: return "Booting VM…"
+        case .cleaningUp: return "Cleaning up…"
         case .stopping: return "Stopping…"
         case .stopped: return "Stopped"
         case let .error(code, _): return "Exited with code \(code)"
@@ -103,6 +126,12 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "\(name) · \(DurationFormat.started(elapsed: time.now.timeIntervalSince(since)))"
         case .starting:
             return "Connecting to GitHub…"
+        case .pulling:
+            return "Downloading the VM image…"
+        case .booting:
+            return "Starting a fresh virtual machine…"
+        case .cleaningUp:
+            return "Deleting the virtual machine…"
         case .stopping:
             return "Waiting for the runner to sign out of GitHub…"
         case let .stopped(at):
@@ -122,6 +151,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .idle: return "Idle · \(scope)"
         case let .runningJob(name, _): return "Running \(name)"
         case .starting: return "Connecting…"
+        case .pulling: return "Pulling image…"
+        case .booting: return "Booting VM…"
+        case .cleaningUp: return "Cleaning up…"
         case .stopping: return "Stopping…"
         case .stopped: return "Stopped · \(scope)"
         case let .error(code, _): return "Exited with code \(code)"
@@ -135,7 +167,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     func toolbarButtons(location: RunnerLocation) -> [RunnerToolbarButton] {
         guard location == .thisMac else { return [] }
         switch self {
-        case .idle, .runningJob, .starting:
+        case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp:
             return [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]
         case .stopping:
             return [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]
@@ -168,6 +200,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .runningJob(name, _): return "running \(name)"
         case .remoteBusy: return "running a job"
         case .starting: return "connecting"
+        case .pulling: return "pulling image"
+        case .booting: return "booting virtual machine"
+        case .cleaningUp: return "cleaning up"
         case .stopping: return "stopping"
         case .stopped: return "stopped"
         case let .error(code, at): return "error, exited with code \(code) at \(time.timeOfDay.format(at))"
@@ -186,7 +221,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .running(since), let .stopping(since):
             label = "Uptime"
             duration = time.now.timeIntervalSince(since)
-        case .starting, .stopped, .exited:
+        case .starting, .pulling, .booting, .cleaningUp, .stopped, .exited:
             label = "Last Run"
             duration = lastExit?.startedAt.map { lastExit!.at.timeIntervalSince($0) }
         }

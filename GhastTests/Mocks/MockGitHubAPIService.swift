@@ -121,6 +121,17 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRunnerGroups
     }
 
+    func generateJITConfig(
+        for scope: RunnerScope,
+        name: String,
+        runnerGroupID: Int,
+        labels: [String],
+        workFolder: String
+    ) async throws -> GitHubJITConfig {
+        if shouldThrowError { throw GitHubAPIError.unauthorized }
+        return GitHubJITConfig(runnerID: 1, encodedConfig: "mock-jit-config")
+    }
+
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         if shouldThrowError {
             throw GitHubAPIError.networkError(URLError(.notConnectedToInternet))

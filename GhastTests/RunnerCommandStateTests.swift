@@ -25,6 +25,13 @@ import Foundation
         #expect(commands.isEnabled(.restart))
     }
 
+    @Test func aVMRunnerCannotBeReconfiguredButCanBeRemoved() {
+        var commands = state(local(.idle))
+        commands.isVMRunner = true
+        #expect(!commands.isEnabled(.reconfigure))
+        #expect(commands.isEnabled(.remove))
+    }
+
     @Test func stoppedRunnerCanOnlyStart() {
         let commands = state(local(.stopped(at: nil)))
         #expect(commands.isEnabled(.start))

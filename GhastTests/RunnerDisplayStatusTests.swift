@@ -59,6 +59,14 @@ struct RunnerDisplayStatusTests {
         #expect(RunnerDisplayStatus.make(processState: .stopping(since: since), lastExit: nil, activity: RunnerActivity()) == .stopping)
     }
 
+    @Test("the VM phases read as their own statuses")
+    func vmPhaseDerivation() {
+        let activity = RunnerActivity()
+        #expect(RunnerDisplayStatus.make(processState: .pulling, lastExit: nil, activity: activity) == .pulling)
+        #expect(RunnerDisplayStatus.make(processState: .booting, lastExit: nil, activity: activity) == .booting)
+        #expect(RunnerDisplayStatus.make(processState: .cleaningUp, lastExit: nil, activity: activity) == .cleaningUp)
+    }
+
     @Test("a stopped process is stopped, with the time of the last exit if there is one")
     func stoppedDerivation() {
         #expect(RunnerDisplayStatus.make(processState: .stopped, lastExit: nil, activity: idleActivity) == .stopped(at: nil))
@@ -93,6 +101,17 @@ struct RunnerDisplayStatusTests {
         (.stopped(at: nil), "Stopped", "Not started yet", "Stopped · blackpaw-studio"),
     ])
     func localWords(status: RunnerDisplayStatus, title: String, secondary: String, sidebar: String) {
+        #expect(status.title == title)
+        #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == secondary)
+        #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
+    }
+
+    @Test("VM phases: title, secondary line and sidebar subtitle", arguments: [
+        (RunnerDisplayStatus.pulling, "Pulling image…", "Downloading the VM image…", "Pulling image…"),
+        (.booting, "Booting VM…", "Starting a fresh virtual machine…", "Booting VM…"),
+        (.cleaningUp, "Cleaning up…", "Deleting the virtual machine…", "Cleaning up…"),
+    ])
+    func vmWords(status: RunnerDisplayStatus, title: String, secondary: String, sidebar: String) {
         #expect(status.title == title)
         #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == secondary)
         #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
@@ -145,6 +164,9 @@ struct RunnerDisplayStatusTests {
         (.runningJob(name: "x", since: nil), [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
         (.starting, [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
         (.stopping, [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]),
+        (.pulling, [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
+        (.booting, [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
+        (.cleaningUp, [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]),
         (.stopped(at: nil), [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]),
         (.error(code: 1, at: Date(timeIntervalSince1970: 0)), [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]),
     ])
@@ -243,6 +265,9 @@ struct RunnerDisplayStatusTests {
             == "dionysus-arm64, idle, blackpaw-studio")
         #expect(RunnerDisplayStatus.starting.accessibilityLabel(name: "r", scope: Self.scope, location: .thisMac, time: time) == "r, connecting, blackpaw-studio")
         #expect(RunnerDisplayStatus.stopped(at: nil).accessibilityLabel(name: "r", scope: Self.scope, location: .thisMac, time: time) == "r, stopped, blackpaw-studio")
+        #expect(RunnerDisplayStatus.pulling.accessibilityLabel(name: "r", scope: Self.scope, location: .thisMac, time: time) == "r, pulling image, blackpaw-studio")
+        #expect(RunnerDisplayStatus.booting.accessibilityLabel(name: "r", scope: Self.scope, location: .thisMac, time: time) == "r, booting virtual machine, blackpaw-studio")
+        #expect(RunnerDisplayStatus.cleaningUp.accessibilityLabel(name: "r", scope: Self.scope, location: .thisMac, time: time) == "r, cleaning up, blackpaw-studio")
         #expect(RunnerDisplayStatus.offline.accessibilityLabel(name: "iris-gpu", scope: Self.scope, location: .otherMachine, time: time)
             == "iris-gpu, offline, blackpaw-studio, other machine")
         #expect(RunnerDisplayStatus.remoteBusy.accessibilityLabel(name: "r", scope: Self.scope, location: .otherMachine, time: time)
