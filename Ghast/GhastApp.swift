@@ -2,6 +2,23 @@ import SwiftUI
 import Foundation
 import Sparkle
 
+/// What Ghast does once at launch, in the one order that works: recovery needs the GitHub
+/// token that `startServices` restores, and restarted VM runners must find the VMs a crash
+/// left behind already gone, or they count against the 2-VM limit and give up.
+@MainActor
+enum LaunchSequence {
+    static func run(
+        restartsRunners: Bool,
+        startServices: @MainActor () async -> Void,
+        recoverLeftovers: @MainActor () async -> Void,
+        restartRunners: @MainActor () async -> Void
+    ) async {
+        await startServices()
+        await recoverLeftovers()
+        if restartsRunners { await restartRunners() }
+    }
+}
+
 /// The app's services, built once at the composition root and injected from there.
 @MainActor
 struct AppDependencies {
@@ -420,13 +437,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // defaults and runner folders.
         guard plan.startsServices else { return }
         let dependencies = dependencies
-        // Recovery needs the GitHub token that `startServices` restores, so it follows it.
-        Task {
-            await dependencies.startServices()
-            await dependencies.recoverTartLeftovers()
-        }
-        if plan.restartsRunners {
-            Task { await dependencies.restartRunnersAtLaunch() }
+        let restartsRunners = plan.restartsRunners
+        Task { @MainActor in
+            await LaunchSequence.run(
+                restartsRunners: restartsRunners,
+                startServices: { await dependencies.startServices() },
+                recoverLeftovers: { await dependencies.recoverTartLeftovers() },
+                restartRunners: { await dependencies.restartRunnersAtLaunch() }
+            )
         }
         if plan.showsMenuBarExtra {
             let controller = dependencies.makeMenuBarController(host: SystemStatusItemHost())
