@@ -19,7 +19,17 @@ final class TartHarness {
         }
     }
 
+    /// Every pause the backend asked for, in order; each only yields.
+    final class SleepLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var recorded: [Duration] = []
+        var all: [Duration] { lock.withLock { recorded } }
+        func record(_ duration: Duration) { lock.withLock { recorded.append(duration) } }
+    }
+
     let log = CallLog()
+    let sleeps = SleepLog()
+    let clock: FrozenClock
     let cli: FakeTartCLI
     let api: FlowGitHubAPI
     let lines = RecordingLogAppender()
@@ -29,21 +39,25 @@ final class TartHarness {
     let service: RunnerService
     let backend: TartBackend
 
-    init(entries: [TartVMEntry]? = nil) {
+    init(entries: [TartVMEntry]? = nil, timing: TartBackend.Timing = .standard) {
         let cli = FakeTartCLI(log: log, entries: entries ?? [TartVMEntry(name: Self.image, source: "OCI", isRunning: false)])
         let api = FlowGitHubAPI(log: log)
         let leases = TartLeaseStore(defaults: isolated.defaults)
         let ids = SequentialIDs()
+        let clock = FrozenClock()
+        let sleeps = sleeps
         let backend = TartBackend(
             cliProvider: { cli },
             api: api,
             tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: fetcher),
             leases: leases,
             logAppender: lines,
-            clock: SystemClock(),
-            sleeper: { _ in await Task.yield() },
-            makeID: { ids.next() }
+            clock: clock,
+            sleeper: { sleeps.record($0); await Task.yield() },
+            makeID: { ids.next() },
+            timing: timing
         )
+        self.clock = clock
         self.cli = cli
         self.api = api
         self.leases = leases

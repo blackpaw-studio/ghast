@@ -16,6 +16,9 @@ final class TartBackend: RunnerBackend {
         var stopPollInterval: Duration = .milliseconds(100)
         /// Pause after a job whose runner exited with an error, before the next VM.
         var restartDelay: Duration = .seconds(5)
+        /// An iteration shorter than this waits `restartDelay` before the next, so a guest that
+        /// exits at once cannot spin clone, boot and registration.
+        var minIterationDuration: Duration = .seconds(30)
         /// `tart stop --timeout`, in seconds.
         var vmStopTimeout = 8
         var maxConsecutiveRunnerFailures = 3
@@ -125,11 +128,15 @@ final class TartBackend: RunnerBackend {
     private func runSlot(_ slot: Slot) async {
         var consecutiveFailures = 0
         while !slot.isStopRequested, let runner = host?.runner(id: slot.runnerID), case let .tart(image) = runner.backend {
+            let began = clock.now()
             do {
                 let exitCode = try await runIteration(slot, runner: runner, image: image)
                 if slot.isStopRequested { break }
                 guard exitCode != 0 else {
                     consecutiveFailures = 0
+                    if clock.now().timeIntervalSince(began) < timing.minIterationDuration.seconds {
+                        try? await sleeper(timing.restartDelay)
+                    }
                     continue
                 }
                 consecutiveFailures += 1
@@ -140,7 +147,13 @@ final class TartBackend: RunnerBackend {
                 try? await sleeper(timing.restartDelay)
             } catch {
                 if slot.isStopRequested || error.isCancellation { break }
-                return finish(slot, failure: error)
+                guard Self.isTransient(error) else { return finish(slot, failure: error) }
+                consecutiveFailures += 1
+                guard consecutiveFailures < timing.maxConsecutiveRunnerFailures else { return finish(slot, failure: error) }
+                // 5 s, then 10 s: each consecutive failure doubles the wait.
+                let delay = timing.restartDelay * (1 << (consecutiveFailures - 1))
+                log("Error: \(error.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
+                try? await sleeper(delay)
             }
         }
         finish(slot, failure: nil)
@@ -550,4 +563,9 @@ extension TartBackend {
             return ProcessTartCLI(executable: executable, launcher: launcher)
         }
     }
+}
+
+private extension Duration {
+    /// Whole and fractional seconds, for comparing with a `Date` interval and for messages.
+    var seconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
 }

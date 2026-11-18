@@ -211,6 +211,10 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     /// The GitHub id each generated JIT config gets, counting up from 1000.
     private var jitCount = 0
     var jitError: Error?
+    /// Each `generateJITConfig` throws the next of these before it succeeds.
+    var jitFailures: [Error] = []
+    /// Each `fetchRunnerApplications` throws the next of these before it succeeds.
+    var applicationsFailures: [Error] = []
     /// Every `generateJITConfig` request, in order.
     private(set) var jitRequests: [JITRequest] = []
 
@@ -231,6 +235,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     ) async throws -> GitHubJITConfig {
         log.append("jit \(name)")
         jitRequests.append(JITRequest(scope: scope, name: name, runnerGroupID: runnerGroupID, labels: labels, workFolder: workFolder))
+        if !jitFailures.isEmpty { throw jitFailures.removeFirst() }
         if let jitError { throw jitError }
         jitCount += 1
         return GitHubJITConfig(runnerID: 1000 + jitCount, encodedConfig: "JIT\(jitCount)")
@@ -238,6 +243,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
 
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         log.append("applications")
+        if !applicationsFailures.isEmpty { throw applicationsFailures.removeFirst() }
         return applications
     }
 

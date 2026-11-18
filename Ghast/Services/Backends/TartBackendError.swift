@@ -34,3 +34,25 @@ enum TartBackendError: LocalizedError, Equatable {
         }
     }
 }
+
+extension TartBackend {
+    /// Whether another try, with a fresh VM, could succeed: a network or GitHub outage, a
+    /// Tart command that failed, a VM that did not come up. Everything else (a missing group
+    /// or image, a refused token, no Tart, the 2-VM limit) needs the user, so it ends the slot.
+    nonisolated static func isTransient(_ error: any Error) -> Bool {
+        if let error = error as? TartBackendError {
+            switch error {
+            case .bootTimedOut, .vmExitedDuringBoot: return true
+            case .unavailable, .localImageMissing, .macOSVMLimit, .runnerGroupNotFound, .tooManyRunnerFailures: return false
+            }
+        }
+        if error is TartError { return true }
+        if let error = error as? URLError { return error.code != .cancelled }
+        guard let error = error as? GitHubAPIError else { return false }
+        switch error {
+        case .serverError, .networkError, .invalidResponse, .rateLimited: return true
+        case let .httpStatus(status): return status >= 500
+        case .invalidURL, .noAccessToken, .unauthorized, .notFound, .decodingError, .notConfigured: return false
+        }
+    }
+}

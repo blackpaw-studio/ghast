@@ -17,6 +17,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     /// `exec /usr/bin/true` fails this many times before it succeeds.
     var failedProbesBeforeReady = 0
     var cloneError: Error?
+    /// Each `list` throws the next of these before it succeeds.
+    var listFailures: [Error] = []
     var deleteError: Error?
     /// While set, `pull` waits here (cancellable) after recording the call.
     var pullGate: HoldGate?
@@ -41,6 +43,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
 
     func list() async throws -> [TartVMEntry] {
         log.append("list")
+        if let failure = lock.withLock({ listFailures.isEmpty ? nil : listFailures.removeFirst() }) { throw failure }
         return entries
     }
 
