@@ -205,6 +205,34 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
         if let deleteError { throw deleteError }
     }
 
+    /// The GitHub id each generated JIT config gets, counting up from 1000.
+    private var jitCount = 0
+    var jitError: Error?
+    /// Every `generateJITConfig` request, in order.
+    private(set) var jitRequests: [JITRequest] = []
+
+    struct JITRequest: Equatable {
+        let scope: RunnerScope
+        let name: String
+        let runnerGroupID: Int
+        let labels: [String]
+        let workFolder: String
+    }
+
+    func generateJITConfig(
+        for scope: RunnerScope,
+        name: String,
+        runnerGroupID: Int,
+        labels: [String],
+        workFolder: String
+    ) async throws -> GitHubJITConfig {
+        log.append("jit \(name)")
+        jitRequests.append(JITRequest(scope: scope, name: name, runnerGroupID: runnerGroupID, labels: labels, workFolder: workFolder))
+        if let jitError { throw jitError }
+        jitCount += 1
+        return GitHubJITConfig(runnerID: 1000 + jitCount, encodedConfig: "JIT\(jitCount)")
+    }
+
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         log.append("applications")
         return applications

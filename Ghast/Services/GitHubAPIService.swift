@@ -84,6 +84,21 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
         try await fetchAllPages(path: "/orgs/\(org)/actions/runner-groups", query: []) { (page: RunnerGroupsResponse) in page.runnerGroups }
     }
 
+    func generateJITConfig(
+        for scope: RunnerScope,
+        name: String,
+        runnerGroupID: Int,
+        labels: [String],
+        workFolder: String
+    ) async throws -> GitHubJITConfig {
+        var request = makeRequest(method: "POST", path: Self.runnersPath(scope, "generate-jitconfig"))
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(JITConfigRequest(
+            name: name, runnerGroupID: runnerGroupID, labels: labels, workFolder: workFolder
+        ))
+        return try await send(request)
+    }
+
     /// `{scope prefix}/actions/runners[/{suffix}]`.
     private static func runnersPath(_ scope: RunnerScope, _ suffix: String? = nil) -> String {
         let base = "\(scope.apiPathPrefix)/actions/runners"
@@ -311,5 +326,18 @@ private struct RunnerGroupsResponse: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case runnerGroups = "runner_groups"
+    }
+}
+
+private struct JITConfigRequest: Encodable, Sendable {
+    let name: String
+    let runnerGroupID: Int
+    let labels: [String]
+    let workFolder: String
+
+    enum CodingKeys: String, CodingKey {
+        case name, labels
+        case runnerGroupID = "runner_group_id"
+        case workFolder = "work_folder"
     }
 }

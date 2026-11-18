@@ -172,6 +172,16 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
         [GitHubRunnerGroup(id: 1, name: "Default", isDefault: true)]
     }
 
+    func generateJITConfig(
+        for scope: RunnerScope,
+        name: String,
+        runnerGroupID: Int,
+        labels: [String],
+        workFolder: String
+    ) async throws -> GitHubJITConfig {
+        GitHubJITConfig(runnerID: 9_001, encodedConfig: "fixture-jit-config")
+    }
+
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         [GitHubRunnerApplication(
             os: "osx",
