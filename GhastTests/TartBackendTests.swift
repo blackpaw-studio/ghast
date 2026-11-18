@@ -390,6 +390,127 @@ struct TartBackendTests {
     }
 }
 
+@Suite("TartBackend recovery and quit")
+@MainActor
+struct TartBackendRecoveryTests {
+    private static let uuidA = "11111111-2222-3333-4444-555555555555"
+    private static let uuidB = "66666666-7777-8888-9999-000000000000"
+    private let acme = RunnerScope.repository(fullName: "acme/ghast")
+
+    private func leftover(_ name: String, running: Bool = false) -> TartVMEntry {
+        TartVMEntry(name: name, source: "local", isRunning: running)
+    }
+
+    @Test("launch recovery deletes Ghast's leftover clones and their registrations, and nothing else")
+    func recoversLeftovers() async {
+        let a = "ghast-\(Self.uuidA)-aaaaaa", b = "ghast-\(Self.uuidB)-bbbbbb"
+        let h = TartHarness(entries: [
+            TartVMEntry(name: TartHarness.image, source: "OCI", isRunning: false),
+            leftover(a, running: true), leftover(b), leftover("ghast-dev"), leftover("my-own-vm", running: true),
+        ])
+        defer { h.cleanup() }
+        h.leases.record(TartLease(runnerID: Self.uuidA, jitRunnerID: 41, scope: acme), forClone: a)
+        h.leases.record(TartLease(runnerID: Self.uuidB, jitRunnerID: nil, scope: acme), forClone: b)
+
+        await h.backend.recoverLeftovers()
+
+        #expect(h.log.all.filter { $0.hasPrefix("delete ") }.sorted() == ["delete 41 acme/ghast", "delete \(a)", "delete \(b)"].sorted())
+        #expect(h.log.all.contains("stop \(a)"))
+        #expect(h.cli.entries.map(\.name).sorted() == [TartHarness.image, "ghast-dev", "my-own-vm"].sorted())
+        #expect(h.leases.all().isEmpty)
+    }
+
+    @Test("one failed registration delete does not stop the rest, and its lease stays for the next launch")
+    func recoveryContinuesPastFailures() async {
+        let a = "ghast-\(Self.uuidA)-aaaaaa", b = "ghast-\(Self.uuidB)-bbbbbb"
+        let h = TartHarness(entries: [leftover(a), leftover(b)])
+        defer { h.cleanup() }
+        h.api.failingDeleteIDs = [41]
+        h.leases.record(TartLease(runnerID: Self.uuidA, jitRunnerID: 41, scope: acme), forClone: a)
+        h.leases.record(TartLease(runnerID: Self.uuidB, jitRunnerID: 42, scope: acme), forClone: b)
+
+        await h.backend.recoverLeftovers()
+
+        #expect(h.log.all.contains("delete 42 acme/ghast"))
+        #expect(h.cli.entries.isEmpty)
+        #expect(Set(h.leases.all().keys) == [a])
+    }
+
+    @Test("a lease whose VM is already gone still has its registration deleted")
+    func recoversRegistrationOfMissingVM() async {
+        let a = "ghast-\(Self.uuidA)-aaaaaa"
+        let h = TartHarness()
+        defer { h.cleanup() }
+        h.leases.record(TartLease(runnerID: Self.uuidA, jitRunnerID: 41, scope: acme), forClone: a)
+
+        await h.backend.recoverLeftovers()
+
+        #expect(h.log.all.contains("delete 41 acme/ghast"))
+        #expect(h.leases.all().isEmpty)
+    }
+
+    @Test("recovery leaves the clone of a slot that is already running alone")
+    func recoverySparesActiveSlots() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        let vm = h.vmName(runner, iteration: 1)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+
+        await h.backend.recoverLeftovers()
+
+        #expect(!h.log.all.contains("delete \(vm)"))
+        #expect(h.leases.all()[vm]?.jitRunnerID == 1001)
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("an active VM slot counts as a running process, so a quit waits for it")
+    func activeSlotHoldsTheQuit() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(h.service.hasRunningProcesses)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+
+        await h.service.stopAllRunners()
+
+        #expect(!h.service.hasRunningProcesses)
+        #expect(h.log.all.contains("delete \(h.vmName(runner, iteration: 1))"))
+        #expect(h.leases.all().isEmpty)
+    }
+
+    @Test("a quit keeps the runner marked to run, so the next launch starts it again")
+    func quitKeepsRunIntent() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+
+        await h.service.stopAllRunners()
+
+        #expect(h.service.localRunners.first?.shouldBeRunning == true)
+    }
+
+    @Test("killRemaining ends the host-side processes without waiting")
+    func killRemaining() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        let vm = h.vmName(runner, iteration: 1)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+
+        h.service.killRemainingRunners()
+
+        #expect(h.cli.terminatedProcesses.contains("job \(vm)"))
+        #expect(h.cli.terminatedProcesses.contains("vm \(vm)"))
+        await h.service.stopRunner(id: runner.id)
+    }
+}
+
 private enum TartHarness_JITRequest {
     static let expected = FlowGitHubAPI.JITRequest(
         scope: .organization(login: "acme"),

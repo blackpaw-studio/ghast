@@ -216,7 +216,16 @@ class RunnerService {
     /// bounded grace period a single stop gets. Keeps `shouldBeRunning`, so the next launch can
     /// start them again.
     func stopAllRunners() async {
-        for backend in backends { await backend.stopAll() }
+        // Together, so a quit waits as long as the slower kind, not the sum.
+        async let hostRunners: Void = bareMetal.stopAll()
+        async let vmRunners: Void = tart.stopAll()
+        _ = await (hostRunners, vmRunners)
+    }
+    
+    /// Deletes VM clones and runner registrations an earlier Ghast left behind. Once per
+    /// launch, after sign-in has restored the GitHub token.
+    func recoverTartLeftovers() async {
+        await tart.recoverLeftovers()
     }
     
     /// SIGKILLs whatever runner processes are still tracked, without waiting. The last step of a

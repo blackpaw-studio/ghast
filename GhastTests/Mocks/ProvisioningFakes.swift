@@ -159,6 +159,8 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
     var registrationTokenError: Error?
     var removeTokenError: Error?
     var deleteError: Error?
+    /// GitHub runner ids whose deletion fails (all others succeed), for one-bad-apple cases.
+    var failingDeleteIDs: Set<Int> = []
     var runnersError: Error?
     var runners: [RunnerScope: [GitHubRunner]] = [:]
     var runnerGroups: [String: [GitHubRunnerGroup]] = [:]
@@ -202,6 +204,7 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
 
     func deleteRunner(runnerId: Int, from scope: RunnerScope) async throws {
         log.append("delete \(runnerId) \(scope.displayName)")
+        if failingDeleteIDs.contains(runnerId) { throw GitHubAPIError.serverError(500) }
         if let deleteError { throw deleteError }
     }
 

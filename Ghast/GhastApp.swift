@@ -109,6 +109,12 @@ struct AppDependencies {
         )
     }
 
+    /// Deletes VM clones and runner registrations an earlier Ghast left behind (needs the stored
+    /// token, so it runs after `startServices`). Never in the design fixture or under test.
+    func recoverTartLeftovers() async {
+        await runnerService.recoverTartLeftovers()
+    }
+
     /// Starts the always-on services: output tailing for every local runner and notifications.
     /// GitHub's runner lists load once the account is signed in (the main window), since the
     /// stored token isn't applied yet at launch. Never called under test.
@@ -169,8 +175,17 @@ struct AppDependencies {
         let apiService = GitHubAPIService()
         let clock = SystemClock()
         let launcher = ProcessRunnerLauncher()
+        let sleeper: Sleeper = { try await Task.sleep(for: $0) }
+        let tartBackend = TartBackend(
+            cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
+            api: apiService,
+            leases: TartLeaseStore(defaults: .standard),
+            logAppender: FileRunnerLogAppender(clock: clock),
+            clock: clock,
+            sleeper: sleeper
+        )
         let dependencies = AppDependencies(
-            runnerService: RunnerService(clock: clock, launcher: launcher),
+            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
@@ -403,7 +418,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // defaults and runner folders.
         guard plan.startsServices else { return }
         let dependencies = dependencies
-        Task { await dependencies.startServices() }
+        // Recovery needs the GitHub token that `startServices` restores, so it follows it.
+        Task {
+            await dependencies.startServices()
+            await dependencies.recoverTartLeftovers()
+        }
         if plan.restartsRunners {
             Task { await dependencies.restartRunnersAtLaunch() }
         }

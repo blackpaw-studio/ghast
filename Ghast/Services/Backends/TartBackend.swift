@@ -202,12 +202,12 @@ final class TartBackend: RunnerBackend {
             // Recorded before the clone exists, so a crash at any later point finds it.
             leases.record(TartLease(runnerID: runner.id, jitRunnerID: nil, scope: runner.scope), forClone: vm)
             resources.vm = vm
+            slot.vm = vm
             host?.setProcessState(.booting, id: runner.id)
             log("Cloning…", runner: runner)
             try await cli.clone(image, vm)
             try checkStop(slot)
             log("Booting VM…", runner: runner)
-            slot.vm = vm
             slot.vmProcessExited = false
             slot.vmProcess = try cli.run(
                 vm,
@@ -362,7 +362,10 @@ final class TartBackend: RunnerBackend {
             log("Error: could not delete the VM: \(error.localizedDescription)", runner: runner)
         }
         if let jitRunnerID = resources.jitRunnerID, let scope = resources.scope {
-            isClean = await deleteJITRunner(jitRunnerID, scope: scope, runner: runner) && isClean
+            if let error = await deleteJITRunner(jitRunnerID, scope: scope) {
+                isClean = false
+                log("Error: could not delete the runner registration: \(error.localizedDescription)", runner: runner)
+            }
         }
         if isClean { leases.remove(clone: vm) }
         slot.vm = nil
@@ -370,18 +373,18 @@ final class TartBackend: RunnerBackend {
         slot.guest = nil
     }
 
-    /// A JIT runner deregisters itself after its job, so GitHub usually reports it gone (404).
-    private func deleteJITRunner(_ id: Int, scope: RunnerScope, runner: LocalRunner) async -> Bool {
+    /// A JIT runner deregisters itself after its job, so GitHub usually reports it gone (404),
+    /// which counts as deleted. Returns the error of any other failure.
+    private func deleteJITRunner(_ id: Int, scope: RunnerScope) async -> (any Error)? {
         do {
             try await api.deleteRunner(runnerId: id, from: scope)
+            return nil
         } catch GitHubAPIError.notFound {
-            return true
+            return nil
         } catch {
             Self.logger.error("Could not delete JIT runner \(id): \(error.localizedDescription, privacy: .public)")
-            log("Error: could not delete the runner registration: \(error.localizedDescription)", runner: runner)
-            return false
+            return error
         }
-        return true
     }
 
     // MARK: - Stopping
@@ -441,6 +444,67 @@ final class TartBackend: RunnerBackend {
             slot.guest?.process.terminate()
             slot.vmProcess?.terminate()
         }
+    }
+
+    // MARK: - Launch recovery
+
+    /// `ghast-<runner uuid>-<6 hex>`: what `start` names a clone. Matched exactly, so a VM the
+    /// user happened to call `ghast-dev` is never touched.
+    private static let cloneNamePattern = /ghast-[0-9A-Fa-f-]{36}-[0-9a-f]{6}/
+
+    /// Deletes what an earlier Ghast left behind after a crash or force-quit: its clones and
+    /// the JIT runner registrations they held. Best effort: a failure is logged and the rest
+    /// goes on; a lease whose cleanup failed stays for the next launch. Leaves anything an
+    /// active slot owns alone, since restarted runners may already be booting.
+    func recoverLeftovers() async {
+        let cli: (any TartCLI)?
+        do {
+            cli = try await cliProvider()
+        } catch {
+            Self.logger.notice("Launch recovery skipped the VMs: \(error.localizedDescription, privacy: .public)")
+            cli = nil
+        }
+        let known = Set(leases.all().keys)
+        var remaining = Set<String>()
+        if let cli {
+            remaining = await deleteLeftoverClones(cli, known: known)
+        }
+        for (clone, lease) in leases.all() where !isOwnedByActiveSlot(clone) {
+            var isClean = true
+            if let jitRunnerID = lease.jitRunnerID, let error = await deleteJITRunner(jitRunnerID, scope: lease.scope) {
+                isClean = false
+                Self.logger.error("Recovery could not delete runner \(jitRunnerID): \(error.localizedDescription, privacy: .public)")
+            }
+            // Without a CLI the VM's fate is unknown, so the lease stays.
+            if isClean, cli != nil, !remaining.contains(clone) { leases.remove(clone: clone) }
+        }
+    }
+
+    /// Stops and deletes every leftover clone; returns the ones that are still there.
+    private func deleteLeftoverClones(_ cli: any TartCLI, known: Set<String>) async -> Set<String> {
+        let entries: [TartVMEntry]
+        do {
+            entries = try await cli.list()
+        } catch {
+            Self.logger.error("Launch recovery could not list VMs: \(error.localizedDescription, privacy: .public)")
+            return known
+        }
+        var remaining = Set<String>()
+        for entry in entries where entry.source == "local" && !isOwnedByActiveSlot(entry.name) {
+            guard known.contains(entry.name) || entry.name.wholeMatch(of: Self.cloneNamePattern) != nil else { continue }
+            try? await cli.stop(entry.name, timeout: timing.vmStopTimeout)
+            do {
+                try await cli.delete(entry.name)
+            } catch {
+                remaining.insert(entry.name)
+                Self.logger.error("Launch recovery could not delete \(entry.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return remaining
+    }
+
+    private func isOwnedByActiveSlot(_ clone: String) -> Bool {
+        slots.values.contains { $0.vm == clone }
     }
 
     // MARK: - Liveness
