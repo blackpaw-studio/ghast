@@ -78,6 +78,11 @@ struct RunnerActions {
 
     func isFlowBusy(_ localID: String) -> Bool { flows?.isBusy(localID) ?? false }
 
+    /// False for a VM runner; unknown IDs count as host runners.
+    func isHostRunner(_ localID: String) -> Bool {
+        runnerService.localRunners.first { $0.id == localID }?.backend ?? .host == .host
+    }
+
     func reconfigure(_ localID: String) {
         flows?.requestReconfigure(localID: localID)
     }

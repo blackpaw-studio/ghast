@@ -199,7 +199,8 @@ struct FocusMainView: View {
             hasOutput: !lines.isEmpty,
             hasFindQuery: localID.map { !outputPane(for: $0).query.isEmpty } ?? false,
             isSheetOpen: isShowingNewRunner,
-            isFlowBusy: localID.map(actions.isFlowBusy) ?? false
+            isFlowBusy: localID.map(actions.isFlowBusy) ?? false,
+            isVMRunner: localID.map { !actions.isHostRunner($0) } ?? false
         )
     }
 

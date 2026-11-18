@@ -431,6 +431,19 @@ class RunnerService {
         }
     }
     
+    /// Saves a VM runner's labels, runner group and image. Nothing is re-registered: the slot
+    /// reads them again for its next VM. A blank group means the default group. Ignored for a
+    /// host runner, whose registration these would not change.
+    func updateTartSettings(id: String, labels: [String], runnerGroup: String?, image: String) {
+        guard case .tart? = runner(id: id)?.backend else { return }
+        let group = runnerGroup?.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateRunner(id: id) {
+            $0.labels = labels
+            $0.runnerGroup = group?.isEmpty == false ? group : nil
+            $0.backend = .tart(image: image)
+        }
+    }
+    
     // MARK: - Environment and Scripts Management
     
     func updateRunnerEnvironmentVariables(id: String, environmentVariables: [String: String]) {

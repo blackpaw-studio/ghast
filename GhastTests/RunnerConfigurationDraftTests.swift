@@ -41,4 +41,42 @@ import Foundation
         #expect(service.localRunners.first { $0.id == runnerA.id }?.environmentVariables == ["FOO": "1"])
         #expect(draft.needsRestart)
     }
+
+    @Test func vmSettingsSaveOnFlushWithoutAskingForARestart() {
+        var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm", labels: ["self-hosted", "macOS", "ARM64"])
+        vm.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-base:latest")
+        let service = makeTestRunnerService(runners: [vm])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper)
+        draft.load(vm)
+        #expect(draft.tartLabels == "self-hosted, macOS, ARM64")
+
+        draft.tartImage = "my-vm"
+        draft.tartLabels = "self-hosted, xcode"
+        draft.tartGroup = "builders"
+        draft.saveSoon()
+        draft.flush()
+
+        let saved = service.localRunners.first
+        #expect(saved?.backend == .tart(image: "my-vm"))
+        #expect(saved?.labels == ["self-hosted", "xcode"])
+        #expect(saved?.runnerGroup == "builders")
+        #expect(!draft.needsRestart)
+    }
+
+    @Test func blankVMFieldsKeepTheSavedImageAndLabels() {
+        var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm", labels: ["self-hosted"])
+        vm.backend = .tart(image: "my-vm")
+        let service = makeTestRunnerService(runners: [vm])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper)
+        draft.load(vm)
+
+        draft.tartImage = "  "
+        draft.tartLabels = ""
+        draft.saveSoon()
+        draft.flush()
+
+        #expect(service.localRunners.first?.backend == .tart(image: "my-vm"))
+        #expect(service.localRunners.first?.labels == ["self-hosted"])
+    }
 }
+

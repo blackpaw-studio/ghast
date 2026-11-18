@@ -79,8 +79,10 @@ struct RunnerSidebar: View {
             Button("Show in Finder") { actions.showInFinder(localID) }
             Button("Copy Name") { actions.copy(item.name) }
             Divider()
-            Button("Reconfigure…") { actions.reconfigure(localID) }
-                .disabled(!actions.canRunFlows || actions.isFlowBusy(localID))
+            if actions.isHostRunner(localID) {
+                Button("Reconfigure…") { actions.reconfigure(localID) }
+                    .disabled(!actions.canRunFlows || actions.isFlowBusy(localID))
+            }
             Button("Remove Runner…") { actions.remove(localID, gitHubRunnerID: item.gitHubRunnerID) }
                 .disabled(!actions.canRunFlows || actions.isFlowBusy(localID))
         }

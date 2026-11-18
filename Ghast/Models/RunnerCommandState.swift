@@ -20,6 +20,8 @@ struct RunnerCommandState: Equatable, Sendable {
     var isSheetOpen: Bool
     /// A Remove or Reconfigure is under way for the selection.
     var isFlowBusy = false
+    /// The selection runs in a Tart VM: it has no registration to redo, so no Reconfigure.
+    var isVMRunner = false
 
     /// A sheet disables everything, so ⌘. reaches its Cancel button.
     func isEnabled(_ command: RunnerCommand) -> Bool {
@@ -35,7 +37,8 @@ struct RunnerCommandState: Equatable, Sendable {
         case .start: return lifecycleEnabled(.start)
         case .stop: return lifecycleEnabled(.stop)
         case .restart: return lifecycleEnabled(.restart)
-        case .reconfigure, .remove: return isLocal && !isFlowBusy
+        case .reconfigure: return isLocal && !isFlowBusy && !isVMRunner
+        case .remove: return isLocal && !isFlowBusy
         }
     }
 

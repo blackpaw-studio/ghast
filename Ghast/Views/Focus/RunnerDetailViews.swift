@@ -67,7 +67,9 @@ struct LocalRunnerDetail: View {
                 HeaderActionRow(
                     hint: RunnerDisplayStatus.errorHint(for: activity),
                     start: { actions.start(runner.id) },
-                    reconfigure: { actions.reconfigure(runner.id) },
+                    // A VM runner has no registration to redo: its settings are on the
+                    // Configuration tab.
+                    reconfigure: runner.backend == .host ? { actions.reconfigure(runner.id) } : nil,
                     isReconfigureEnabled: actions.canRunFlows && !actions.isFlowBusy(runner.id),
                     isStartEnabled: !actions.isFlowBusy(runner.id)
                 )

@@ -28,8 +28,12 @@ struct RunnerConfigurationForm: View {
         ScrollView {
             VStack(alignment: .leading, spacing: FocusMetrics.formSectionGap) {
                 runnerSection
-                environmentSection
-                scriptsSection
+                if isVM {
+                    virtualMachineSection
+                } else {
+                    environmentSection
+                    scriptsSection
+                }
                 Button("Remove Runner…", role: .destructive) {
                     actions.remove(runner.id, gitHubRunnerID: item.gitHubRunnerID)
                 }
@@ -64,10 +68,12 @@ struct RunnerConfigurationForm: View {
             FocusFormRow(label: "Name") { secondaryText(runner.name) }
             FocusFormDivider()
             FocusFormRow(label: "Scope") { secondaryText(scopeDescription) }
-            FocusFormDivider()
-            FocusFormRow(label: "Labels") {
-                HStack(spacing: FocusMetrics.tokenSpacing) {
-                    ForEach(item.labels, id: \.self) { LabelToken(text: $0) }
+            if !isVM {
+                FocusFormDivider()
+                FocusFormRow(label: "Labels") {
+                    HStack(spacing: FocusMetrics.tokenSpacing) {
+                        ForEach(item.labels, id: \.self) { LabelToken(text: $0) }
+                    }
                 }
             }
             FocusFormDivider()
@@ -83,6 +89,45 @@ struct RunnerConfigurationForm: View {
                     .controlSize(.large)
                     .buttonBorderShape(.capsule)
             }
+        }
+    }
+
+    private var isVM: Bool {
+        if case .tart = runner.backend { return true }
+        return false
+    }
+
+    // MARK: Virtual machine
+
+    /// A VM runner's image, runner group and labels: the only settings it has. Each new VM
+    /// reads them, so a change never needs a restart.
+    private var virtualMachineSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FocusFormSection(caption: "Virtual Machine") {
+                vmField("Image", prompt: "ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $draft.tartImage)
+                FocusFormDivider()
+                vmField("Runner group", prompt: "Default", text: $draft.tartGroup)
+                FocusFormDivider()
+                vmField("Labels", prompt: "self-hosted, macOS, ARM64", text: $draft.tartLabels)
+            }
+            Text("Applied to the next VM. A VM in a job keeps the settings it started with.")
+                .font(FocusType.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+                .padding(.top, FocusMetrics.formHelpTop)
+        }
+    }
+
+    private func vmField(_ label: String, prompt: String, text: Binding<String>) -> some View {
+        FocusFormRow(label: label) {
+            TextField(label, text: text, prompt: Text(prompt))
+                .textFieldStyle(.plain)
+                .font(FocusType.output)
+                .tracking(FocusType.outputTracking)
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .onSubmit { draft.flush() }
+                .onChange(of: text.wrappedValue) { draft.saveSoon() }
         }
     }
 

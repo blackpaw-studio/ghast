@@ -18,8 +18,15 @@ struct RunnerRemover {
     /// Stop → removal token → `config.sh remove`, falling back to `DELETE` by id → trash →
     /// drop. Throws only when the folder can't be trashed, after GitHub was told; the runner
     /// then stays listed.
+    ///
+    /// A VM runner registers nothing of its own: stopping its slot deletes the VM and the
+    /// one-job registration, so it goes straight to the trash and the list.
     func remove(_ runner: LocalRunner, gitHubRunnerID: Int?) async throws -> Outcome {
         await runnerService.stopRunner(id: runner.id)
+        if case .tart = runner.backend {
+            try await removeFromThisMacOnly(runner)
+            return .removed
+        }
         do {
             try await unregister(runner, gitHubRunnerID: gitHubRunnerID)
         } catch {
