@@ -80,7 +80,7 @@ final class ConnectionWatch {
         switch state {
         case let .exited(exit)?: return .failure(Failure.exited(exit.code))
         case .stopped?, .stopping?, nil: return .failure(Failure.stopped)
-        case .running?, .starting?: break
+        case .running?, .starting?, .pulling?, .booting?, .cleaningUp?: break
         }
         let newLines = activity.lines.filter { line in baseline.map { line.id > $0 } ?? true }
         let isListening = activity.isListening && !newLines.isEmpty

@@ -5,12 +5,19 @@ import Foundation
 ///
 /// "Connecting" is not a process state: the process runs from launch, and the output parser
 /// decides when it has started listening. `starting` is before launch: a start waiting for an
-/// old process to end. `stopping` is after a stop request, until the process group is gone.
+/// old process to end. `pulling`, `booting` and `cleaningUp` are the phases of a VM runner's
+/// slot loop around the job. `stopping` is after a stop request, until the process group is gone.
 enum RunnerProcessState: Sendable, Equatable {
     case stopped
     case running(since: Date)
     /// A start is pending: the runner waits for a stop or a leftover listener to end first.
     case starting
+    /// A VM runner is downloading its image.
+    case pulling
+    /// A VM runner is cloning and booting a fresh VM.
+    case booting
+    /// A VM runner is stopping and deleting the VM of the job that just ended.
+    case cleaningUp
     /// Asked to stop; the runner's listener may still be deleting its GitHub session.
     case stopping(since: Date)
     /// The wrapper ended without Ghast asking it to.

@@ -83,7 +83,7 @@ enum MenuBarMenuModel {
     /// The process is up: listening, running a job, or still connecting.
     static func isRunning(_ status: RunnerDisplayStatus) -> Bool {
         switch status {
-        case .idle, .runningJob, .starting, .remoteBusy: return true
+        case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp, .remoteBusy: return true
         case .stopping, .stopped, .error, .offline: return false
         }
     }
@@ -93,7 +93,7 @@ enum MenuBarMenuModel {
         case .idle: return .idle
         case .runningJob, .remoteBusy: return .running
         case .error: return .error
-        case .starting, .stopping, .stopped, .offline: return .hollow
+        case .starting, .pulling, .booting, .cleaningUp, .stopping, .stopped, .offline: return .hollow
         }
     }
 
@@ -103,6 +103,9 @@ enum MenuBarMenuModel {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running"
         case .starting: return "Connecting"
+        case .pulling: return "Pulling"
+        case .booting: return "Booting"
+        case .cleaningUp: return "Cleaning up"
         case .stopping: return "Stopping"
         case .stopped: return "Stopped"
         case .error: return "Exited"
