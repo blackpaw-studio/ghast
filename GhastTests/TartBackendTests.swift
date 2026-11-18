@@ -164,6 +164,36 @@ struct TartBackendTests {
         #expect(pull < clone)
     }
 
+    @Test("an image cached only by digest still counts as missing by tag, and is pulled")
+    func digestEntryDoesNotSatisfyTheTag() async throws {
+        let digest = TartVMEntry(name: "ghcr.io/cirruslabs/macos-tahoe-base@sha256:" + String(repeating: "ab", count: 32), source: "OCI", isRunning: false)
+        let h = TartHarness(entries: [digest])
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(h.log.all.contains("pull \(TartHarness.image)"))
+    }
+
+    @Test("an image cached by tag and digest is cloned without a pull, and the entries never count toward the VM limit")
+    func tagAndDigestEntriesAreHarmless() async throws {
+        let tag = TartVMEntry(name: TartHarness.image, source: "OCI", isRunning: false)
+        let digest = TartVMEntry(name: "ghcr.io/cirruslabs/macos-tahoe-base@sha256:" + String(repeating: "ab", count: 32), source: "OCI", isRunning: false)
+        let h = TartHarness(entries: [tag, digest])
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(!h.log.all.contains { $0.hasPrefix("pull ") })
+        #expect(h.log.all.contains { $0.hasPrefix("clone \(TartHarness.image) ") })
+    }
+
     @Test("a local image that does not exist is an error, not a pull")
     func missingLocalImage() async throws {
         let h = TartHarness(entries: [])
