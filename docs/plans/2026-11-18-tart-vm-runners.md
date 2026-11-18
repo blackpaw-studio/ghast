@@ -22,7 +22,20 @@ Test cmd: `xcodebuild test -project Ghast.xcodeproj -scheme Ghast -destination p
 
 **Guest channel: `tart exec`.** No creds, no IP polling, no known-hosts; streams stdout/stderr + exit code into the log; `tart exec <vm> /usr/bin/true` is the readiness probe. Costs: Tart ≥ 2.27.0; custom images must ship the guest agent (boot-timeout error says so). Agent bug `openai/tart-guest-agent#83` (vsock early-close kills RPC) is contained by ephemerality.
 
-**Step 0b — live-only checks** (by hand after upgrading Tart, before Step 6 merges); record results here:
+**Step 0b results (2026-11-18, Tart 2.42.0, macos-tahoe-base guest 26.6.2):**
+- Pull of `macos-tahoe-base:latest`: ~12 min, 33 GB on disk (50 GB logical). Clone near-instant.
+- `tart list` shows the pulled image **twice**: by tag `ghcr.io/cirruslabs/macos-tahoe-base:latest` and by digest `…@sha256:…`, both `Source: OCI`. Presence check: exact-name match on the ref works.
+- JSON type quirk: `list` `Size` is an Int (GB) but `get` `Size` is a **String** (`"32.673"`). Decode both leniently / ignore Size.
+- `get` returns `OS: "darwin"`, CPU 4, Memory 8192 for the cloned VM.
+- `tart exec <vm> /usr/bin/true` succeeded ~20 s after `tart run` (first probes fail fast while booting).
+- Share `/Volumes/My Shared Files/ghast` was mounted at first successful exec.
+- Guest user `admin`, `$HOME=/Users/admin`.
+- Killing the host `tart exec` process (SIGTERM) **also ends the guest command** (`sleep` gone). pkill-first stop stays as defense in depth.
+- Curated tags `macos-tahoe-xcode`, `macos-sequoia-base`, `macos-sequoia-xcode` `:latest` all resolve (HTTP 200).
+- `tart stop` + `tart delete` cleaned the clone fully.
+- Still open (needs a GitHub live run at the gate): default labels on JIT runners; JIT name length limit.
+
+**Step 0b — live-only checks** (original list):
 1. Does killing host `tart exec` stop the guest command? (Stop uses `tart exec <vm> pkill -TERM -f Runner.Listener` first regardless.)
 2. Is `/Volumes/My Shared Files/ghast` mounted by the time the agent answers?
 3. Does GitHub add default labels (`self-hosted`, `macOS`, `ARM64`) to JIT runners? (Plan sends them explicitly, de-duped.)
