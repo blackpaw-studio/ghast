@@ -15,6 +15,13 @@ struct RunnerExit: Codable, Equatable, Sendable {
     static let launchFailureCode: Int32 = 127
 }
 
+/// Where a runner's jobs execute: directly on this Mac, or in an ephemeral Tart VM cloned
+/// from `image` (an OCI reference or a local Tart VM name).
+enum RunnerBackendKind: Codable, Hashable, Sendable {
+    case host
+    case tart(image: String)
+}
+
 struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     static let defaultWorkFolder = "_work"
 
@@ -37,6 +44,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     var outputClearOffset: UInt64
     var runnerGroup: String?
     var workFolder: String
+    var backend: RunnerBackendKind
 
     /// Repository full name or organization login (see `RunnerScope.displayName`).
     var repository: String { scope.displayName }
@@ -57,6 +65,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         self.outputClearOffset = 0
         self.runnerGroup = nil
         self.workFolder = Self.defaultWorkFolder
+        self.backend = .host
     }
 
     /// A repository-level runner for `repository` (`owner/repo`).
@@ -67,7 +76,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, name, scope, repository, path, labels, status, createdAt
         case environmentVariables, preJobScript, postJobScript
-        case shouldBeRunning, lastExit, outputClearOffset, runnerGroup, workFolder
+        case shouldBeRunning, lastExit, outputClearOffset, runnerGroup, workFolder, backend
     }
 
     /// Runners saved before scopes existed (or rewritten by an older build) carry only
@@ -97,6 +106,8 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         outputClearOffset = try container.decodeIfPresent(UInt64.self, forKey: .outputClearOffset) ?? 0
         runnerGroup = try container.decodeIfPresent(String.self, forKey: .runnerGroup)
         workFolder = try container.decodeIfPresent(String.self, forKey: .workFolder) ?? Self.defaultWorkFolder
+        // Runners saved before VM backends existed ran on the host.
+        backend = try container.decodeIfPresent(RunnerBackendKind.self, forKey: .backend) ?? .host
     }
 
     private static func legacyScope(_ repository: String) -> RunnerScope {
@@ -123,6 +134,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         try container.encode(outputClearOffset, forKey: .outputClearOffset)
         try container.encodeIfPresent(runnerGroup, forKey: .runnerGroup)
         try container.encode(workFolder, forKey: .workFolder)
+        try container.encode(backend, forKey: .backend)
     }
 
     // Custom equality based on ID only
