@@ -25,10 +25,14 @@ of a macOS base image, which is destroyed after the job.
 1. A "Run in" choice: **This Mac** (default, current behaviour) or **Tart VM**.
 2. With Tart VM selected, an image picker shows curated cirruslabs macOS images
    (base and Xcode variants) and a "Custom…" entry taking an OCI ref or local VM
-   name. The curated list is a static list in code.
+   name. The curated list is a static list in code and excludes `-vanilla`
+   images. The Custom field shows the hint "Image must include the Tart Guest
+   Agent."; custom refs are not otherwise validated up front.
 3. Tart detection: look for `tart` at `/opt/homebrew/bin/tart`,
-   `/usr/local/bin/tart`, then the user's login-shell `PATH`. If not found, the
-   Tart VM option is disabled and the sheet shows the Homebrew install command.
+   `/usr/local/bin/tart`, then the user's login-shell `PATH`. Tart must be
+   ≥ 2.27.0 (needed for `tart exec`). If not found or too old, the Tart VM
+   option is disabled and the sheet shows the Homebrew install command
+   (`brew install openai/tools/tart`; reinstall wording when too old).
 4. Creating a VM runner does not run `config.sh` and does not register anything
    on GitHub. It saves the config (scope, name, labels, runner group, image) and
    starts the slot.
@@ -101,8 +105,7 @@ images.
 
 ## Open technical items (planner resolves via a spike)
 
-- Guest command channel: `tart exec` (guest agent) vs SSH with the image's
-  default `admin`/`admin` credentials.
+- Guest command channel: decided 2026-11-18 — `tart exec` via the guest agent.
 - Current Tart CLI flags (`run --no-graphics`, `--dir`, `list --format json`,
   `stop`, `delete`), current version and Homebrew tap.
 - Official GitHub docs for `run.sh --jitconfig` and the fine-grained token
