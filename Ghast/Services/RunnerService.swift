@@ -222,6 +222,12 @@ class RunnerService {
         _ = await (hostRunners, vmRunners)
     }
     
+    /// Whether launch recovery has anything to look at: a VM runner exists, or a crash left a
+    /// lease. Without either, recovery would only search for Tart to find nothing.
+    var needsTartRecovery: Bool {
+        localRunners.contains { if case .tart = $0.backend { true } else { false } } || tart.hasLeases
+    }
+
     /// Deletes VM clones and runner registrations an earlier Ghast left behind. Once per
     /// launch, after sign-in has restored the GitHub token.
     func recoverTartLeftovers() async {

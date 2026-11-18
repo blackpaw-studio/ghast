@@ -36,7 +36,7 @@ final class RunnerTarballCache: @unchecked Sendable {
 
         let destination = directory.appendingPathComponent(application.filename)
         if FileManager.default.fileExists(atPath: destination.path) { return application.filename }
-        try await download(url, to: destination, named: application.filename).value
+        try await Self.wait(for: download(url, to: destination, named: application.filename))
         return application.filename
     }
 
@@ -61,6 +61,28 @@ final class RunnerTarballCache: @unchecked Sendable {
         }
     }
 
+    /// Waits for a shared download, but returns (throwing `CancellationError`) as soon as the
+    /// caller is cancelled, leaving the download running for whoever else needs it. Awaiting
+    /// the task's value directly would ignore the caller's cancellation until it finished.
+    private static func wait(for download: Task<Void, any Error>) async throws {
+        let waiter = OneShotWaiter()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                waiter.install(continuation)
+                Task {
+                    do {
+                        try await download.value
+                        waiter.finish(.success(()))
+                    } catch {
+                        waiter.finish(.failure(error))
+                    }
+                }
+            }
+        } onCancel: {
+            waiter.finish(.failure(CancellationError()))
+        }
+    }
+
     private func finishDownload(_ name: String) {
         lock.withLock { _ = downloads.removeValue(forKey: name) }
     }
@@ -68,5 +90,34 @@ final class RunnerTarballCache: @unchecked Sendable {
     /// The name goes into a path and a guest shell command: a single `.tar.gz` file name only.
     private static func isPlainArchiveName(_ name: String) -> Bool {
         !name.isEmpty && name == (name as NSString).lastPathComponent && !name.hasPrefix(".") && name.hasSuffix(".tar.gz")
+    }
+}
+
+/// Resumes one continuation exactly once, with whichever of the download's result and the
+/// caller's cancellation comes first, in either order relative to installing it.
+private final class OneShotWaiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, any Error>?
+    private var outcome: Result<Void, any Error>?
+    private var isDone = false
+
+    func install(_ continuation: CheckedContinuation<Void, any Error>) {
+        let early = lock.withLock { () -> Result<Void, any Error>? in
+            if let outcome { return outcome }
+            self.continuation = continuation
+            return nil
+        }
+        if let early { continuation.resume(with: early) }
+    }
+
+    func finish(_ result: Result<Void, any Error>) {
+        let waiting = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
+            guard !isDone else { return nil }
+            isDone = true
+            outcome = result
+            defer { continuation = nil }
+            return continuation
+        }
+        waiting?.resume(with: result)
     }
 }

@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import Ghast
 
-@Suite("RunnerTarballCache")
+@Suite("RunnerTarballCache", .timeLimit(.minutes(1)))
 struct RunnerTarballCacheTests {
     private let applications = [
         GitHubRunnerApplication(os: "osx", architecture: "arm64", downloadURL: "https://example.test/actions-runner-osx-arm64-2.330.0.tar.gz", filename: "actions-runner-osx-arm64-2.330.0.tar.gz"),
@@ -71,5 +71,23 @@ struct RunnerTarballCacheTests {
 
         await #expect(throws: Boom.self) { try await cache.ensureTarball(from: applications) }
         #expect(try await cache.ensureTarball(from: applications) == "actions-runner-osx-arm64-2.330.0.tar.gz")
+    }
+
+    @Test("a caller that is cancelled returns at once, and the download carries on for the others")
+    func cancelledWaiterLeavesTheDownloadRunning() async throws {
+        let fetcher = GatedFetcher()
+        let cache = RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: fetcher)
+        let apps = applications
+
+        let stopped = Task { try await cache.ensureTarball(from: apps) }
+        let other = Task { try await cache.ensureTarball(from: apps) }
+        while fetcher.count == 0 { await Task.yield() }
+        for _ in 0..<50 { await Task.yield() }
+        stopped.cancel()
+
+        await #expect(throws: CancellationError.self) { try await stopped.value }
+        await fetcher.gate.open()
+        #expect(try await other.value == "actions-runner-osx-arm64-2.330.0.tar.gz")
+        #expect(fetcher.count == 1)
     }
 }

@@ -2,20 +2,27 @@ import SwiftUI
 import Foundation
 import Sparkle
 
-/// What Ghast does once at launch, in the one order that works: recovery needs the GitHub
-/// token that `startServices` restores, and restarted VM runners must find the VMs a crash
-/// left behind already gone, or they count against the 2-VM limit and give up.
+/// What Ghast does once at launch. Host runners restart at once: they need nothing else.
+/// VM runners wait for services (the GitHub token) and for recovery of the VMs a crash left
+/// behind, or those VMs count against the 2-VM limit and the restarted slots give up.
+/// Recovery runs only when there is something to recover, and never holds up host runners.
 @MainActor
 enum LaunchSequence {
     static func run(
         restartsRunners: Bool,
-        startServices: @MainActor () async -> Void,
-        recoverLeftovers: @MainActor () async -> Void,
-        restartRunners: @MainActor () async -> Void
+        needsRecovery: Bool,
+        startServices: @escaping @MainActor () async -> Void,
+        recoverLeftovers: @escaping @MainActor () async -> Void,
+        restartHostRunners: @MainActor () async -> Void,
+        restartVMRunners: @MainActor () async -> Void
     ) async {
-        await startServices()
-        await recoverLeftovers()
-        if restartsRunners { await restartRunners() }
+        let preparation = Task { @MainActor in
+            await startServices()
+            if needsRecovery { await recoverLeftovers() }
+        }
+        if restartsRunners { await restartHostRunners() }
+        await preparation.value
+        if restartsRunners { await restartVMRunners() }
     }
 }
 
@@ -185,9 +192,9 @@ struct AppDependencies {
 
     /// Starts the runners that were running when Ghast last quit. Not in the design fixture,
     /// which seeds its own process states.
-    func restartRunnersAtLaunch() async {
+    func restartRunnersAtLaunch(_ group: RestartAtLaunch.Group = .all) async {
         let flows = flowCoordinator
-        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, starter: runnerService, sleeper: sleeper, isBusy: flows.isBusy)
+        await RestartAtLaunch.run(isEnabled: settings.restartRunnersAtLaunch, runners: group, starter: runnerService, sleeper: sleeper, isBusy: flows.isBusy)
     }
 
     static func live(updater: SPUUpdater, updateEvents: SparkleUpdateEvents) -> AppDependencies {
@@ -441,9 +448,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             await LaunchSequence.run(
                 restartsRunners: restartsRunners,
+                needsRecovery: dependencies.runnerService.needsTartRecovery,
                 startServices: { await dependencies.startServices() },
                 recoverLeftovers: { await dependencies.recoverTartLeftovers() },
-                restartRunners: { await dependencies.restartRunnersAtLaunch() }
+                restartHostRunners: { await dependencies.restartRunnersAtLaunch(.host) },
+                restartVMRunners: { await dependencies.restartRunnersAtLaunch(.virtualMachines) }
             )
         }
         if plan.showsMenuBarExtra {

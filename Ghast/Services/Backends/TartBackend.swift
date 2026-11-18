@@ -495,6 +495,9 @@ final class TartBackend: RunnerBackend {
 
     // MARK: - Launch recovery
 
+    /// Clones or registrations an earlier run recorded and never finished cleaning up.
+    var hasLeases: Bool { !leases.all().isEmpty }
+
     /// `ghast-<runner uuid>-<6 hex>`: what `start` names a clone. Matched exactly, so a VM the
     /// user happened to call `ghast-dev` is never touched.
     private static let cloneNamePattern = /ghast-[0-9A-Fa-f-]{36}-[0-9a-f]{6}/
