@@ -55,6 +55,7 @@ final class TartBackend: RunnerBackend {
     ///   - cliProvider: Finds Tart and returns a CLI for it; throws when Tart is unusable.
     ///   - demandSources: Builds each started runner's demand source.
     ///   - makeID: A short unique id (6 hex digits) for a clone and its JIT runner name.
+    ///   - power: Sleep and wake: a sleeping Mac gives up its job queue so another Mac can use it.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
@@ -65,7 +66,8 @@ final class TartBackend: RunnerBackend {
         clock: any AppClock,
         sleeper: @escaping Sleeper,
         makeID: @escaping @Sendable () -> String = TartBackend.randomID,
-        timing: Timing = .standard
+        timing: Timing = .standard,
+        power: any PowerEventSource = NoPowerEvents()
     ) {
         self.cliProvider = cliProvider
         self.api = api
@@ -77,6 +79,10 @@ final class TartBackend: RunnerBackend {
         self.sleeper = sleeper
         self.makeID = makeID
         self.timing = timing
+        power.observe(
+            willSleep: { [weak self] in self?.systemWillSleep() },
+            didWake: { [weak self] in self?.systemDidWake() }
+        )
     }
 
     nonisolated static func randomID() -> String {
@@ -144,15 +150,51 @@ final class TartBackend: RunnerBackend {
         }
     }
 
+    // MARK: - Sleep and wake
+
+    /// Gives up the job queue: stops polling and deletes the message session, so another Mac
+    /// can take the queue instead of waiting on this sleeping one. The deletion is not awaited
+    /// (sleep must not be held up). VMs are left alone: they freeze with the host anyway.
+    private func systemWillSleep() {
+        for entry in entries.values where !entry.isShuttingDown && !entry.isAsleep {
+            entry.isAsleep = true
+            entry.demandTask?.cancel()
+            let source = entry.source
+            entry.sleepRelease = Task { @MainActor in await source.close() }
+            entry.queue = .released(.sleep)
+            if let line = Self.queueLogLine(entry.queue), let runner = host?.runner(id: entry.runnerID) {
+                log(line, runner: runner)
+            }
+            publish(entry)
+        }
+    }
+
+    /// Reopens the queue for every runner that slept, unless Stop ended it meanwhile.
+    private func systemDidWake() {
+        for entry in entries.values where entry.isAsleep && !entry.isShuttingDown {
+            Task { @MainActor [weak self] in await self?.resume(entry) }
+        }
+    }
+
+    private func resume(_ entry: OnDemandEntry) async {
+        await entry.demandTask?.value
+        await entry.sleepRelease?.value
+        guard isCurrent(entry), entry.isAsleep, !entry.isStopRequested else { return }
+        entry.isAsleep = false
+        entry.queue = .connecting
+        publish(entry)
+        entry.demandTask = Task { @MainActor [weak self] in await self?.runDemand(entry) }
+    }
+
     private func demandChanged(_ entry: OnDemandEntry, to demand: Int) {
-        guard isCurrent(entry), !entry.isStopRequested else { return }
+        guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep else { return }
         entry.demand = max(0, demand)
         reconcile(entry)
     }
 
     /// Shows who holds the job queue, and logs each change once.
     private func queueChanged(_ entry: OnDemandEntry, to status: JobQueueStatus) {
-        guard isCurrent(entry), !entry.isStopRequested, entry.queue != status else { return }
+        guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep, entry.queue != status else { return }
         entry.queue = status
         if let line = Self.queueLogLine(status), let runner = host?.runner(id: entry.runnerID) {
             log(line, runner: runner)

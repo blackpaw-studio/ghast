@@ -27,6 +27,12 @@ final class OnDemandEntry {
     var isStopRequested = false
     /// Set once teardown has begun (Stop, or a failure), so it runs once.
     var isShuttingDown = false
+    /// The Mac is asleep: the demand source is closed and its loop stopped until wake. VMs
+    /// are not touched.
+    var isAsleep = false
+    /// The source's session deletion started at sleep; wake waits for it so it cannot delete
+    /// the session the wake opens.
+    var sleepRelease: Task<Void, Never>?
     /// Consecutive VM runs that failed with a transient error; sets the backoff.
     var vmFailures = 0
     var waiters: [CheckedContinuation<Void, Never>] = []

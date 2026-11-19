@@ -31,6 +31,7 @@ final class TartHarness {
 
     let log = CallLog()
     let sleeps = SleepLog()
+    let power = FakePowerEvents()
     let clock: FrozenClock
     let cli: FakeTartCLI
     let api: FlowGitHubAPI
@@ -53,6 +54,7 @@ final class TartHarness {
             try await api.generateJITConfig(for: runner.scope, name: name, runnerGroupID: 1, labels: [runner.name], workFolder: folder)
         }
         let recheck = timing.slotRecheckInterval
+        let power = power
         let backend = TartBackend(
             cliProvider: { cli },
             api: api,
@@ -67,7 +69,8 @@ final class TartHarness {
                 await Task.yield()
             },
             makeID: { ids.next() },
-            timing: timing
+            timing: timing,
+            power: power
         )
         self.clock = clock
         self.cli = cli
