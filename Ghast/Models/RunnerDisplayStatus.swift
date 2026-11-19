@@ -43,7 +43,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     case runningJob(name: String, since: Date?)
     case starting
     /// VM runner: downloading its image.
-    case pulling
+    case pulling(TartPullProgress)
     /// VM runner: cloning and booting a fresh VM.
     case booting
     /// VM runner: deleting the VM of the job that just ended.
@@ -70,8 +70,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return .error(code: exit.code, at: exit.at)
         case .starting:
             return .starting
-        case .pulling:
-            return .pulling
+        case let .pulling(progress):
+            return .pulling(progress)
         case .booting:
             return .booting
         case .cleaningUp:
@@ -93,9 +93,15 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     /// Whether the header shows a spinner: the runner is between states and will change by itself.
     var showsProgress: Bool {
         switch self {
-        case .starting, .stopping, .pulling, .booting, .cleaningUp: true
+        case let .pulling(progress): progress.fraction == nil
+        case .starting, .stopping, .booting, .cleaningUp: true
         case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy: false
         }
+    }
+
+    /// The download fraction, when the header should show a determinate bar.
+    var downloadFraction: Double? {
+        if case let .pulling(progress) = self { progress.fraction } else { nil }
     }
 
     // MARK: - Words
@@ -117,7 +123,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     }
 
     /// The line under the title.
-    func secondaryLine(location: RunnerLocation, time: DisplayTime) -> String {
+    func secondaryLine(location: RunnerLocation, time: DisplayTime, imageLabel: String? = nil) -> String {
         switch self {
         case .idle:
             return location == .thisMac ? "Waiting for jobs" : "Online and waiting for jobs"
@@ -126,8 +132,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "\(name) · \(DurationFormat.started(elapsed: time.now.timeIntervalSince(since)))"
         case .starting:
             return "Connecting to GitHub…"
-        case .pulling:
-            return "Downloading the VM image…"
+        case let .pulling(progress):
+            let subject = "Pulling \(imageLabel ?? "the VM image")"
+            return progress.summary.map { "\(subject) — \($0)" } ?? "\(subject)…"
         case .booting:
             return "Starting a fresh virtual machine…"
         case .cleaningUp:
@@ -146,19 +153,20 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     }
 
     /// The sidebar row's second line. `scope` is the organization login or repository full name.
-    func sidebarSubtitle(scope: String) -> String {
+    func sidebarSubtitle(scope: String, imageLabel: String? = nil) -> String {
+        let detail = imageLabel ?? scope
         switch self {
-        case .idle: return "Idle · \(scope)"
+        case .idle: return "Idle · \(detail)"
         case let .runningJob(name, _): return "Running \(name)"
         case .starting: return "Connecting…"
-        case .pulling: return "Pulling image…"
+        case let .pulling(progress): return progress.percent.map { "Pulling image · \($0)%" } ?? "Pulling image…"
         case .booting: return "Booting VM…"
         case .cleaningUp: return "Cleaning up…"
         case .stopping: return "Stopping…"
-        case .stopped: return "Stopped · \(scope)"
+        case .stopped: return "Stopped · \(detail)"
         case let .error(code, _): return "Exited with code \(code)"
-        case .offline: return "Offline · \(scope)"
-        case .remoteBusy: return "Running a job · \(scope)"
+        case .offline: return "Offline · \(detail)"
+        case .remoteBusy: return "Running a job · \(detail)"
         }
     }
 

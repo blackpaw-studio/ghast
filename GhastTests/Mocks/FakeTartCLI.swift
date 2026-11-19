@@ -28,6 +28,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var deleteError: Error?
     /// While set, `pull` waits here (cancellable) after recording the call.
     var pullGate: HoldGate?
+    /// Reported to `pull`'s progress callback before it waits on the gate.
+    var pullProgress: [TartPullProgress] = []
     /// `exec pkill` ends the running job, as SIGTERM does to a real listener.
     var pkillEndsJob = true
 
@@ -59,8 +61,9 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return osByVM[vm] ?? "darwin"
     }
 
-    func pull(_ image: String, log file: URL) async throws {
+    func pull(_ image: String, log file: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws {
         log.append("pull \(image)")
+        pullProgress.forEach(onProgress)
         try await pullGate?.wait()
         lock.withLock { table.append(TartVMEntry(name: image, source: "OCI", isRunning: false)) }
     }

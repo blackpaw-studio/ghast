@@ -20,7 +20,9 @@ struct FocusFlowSnapshotTests {
         case newRunnerLoadFailed = "new-runner-load-failed"
         /// Run in Tart VM with its image picker, and with Tart missing (the option is off and the
         /// install command shows).
-        case newRunnerTart = "new-runner-tart", newRunnerTartMissing = "new-runner-tart-missing"
+        /// `new-runner-tart` has the Xcode versions loaded; `-fallback` couldn't reach the registry.
+        case newRunnerTart = "new-runner-tart", newRunnerTartFallback = "new-runner-tart-fallback"
+        case newRunnerTartMissing = "new-runner-tart-missing"
 
         var account: FixtureAccount {
             switch self {
@@ -47,7 +49,9 @@ struct FocusFlowSnapshotTests {
             await dependencies.repositoryCatalog.load(account: nil)
         }
 
+        let versionsLoaded = AsyncStream.makeStream(of: TartMacOS.self)
         let view = content(for: screen, dependencies: dependencies)
+            .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
             .environment(dependencies.runnerService)
             .environment(dependencies.remoteStore)
             .environment(dependencies.repositoryCatalog)
@@ -61,11 +65,25 @@ struct FocusFlowSnapshotTests {
         for _ in 0..<20 { await Task.yield() }
         host.view.frame = CGRect(origin: .zero, size: host.view.fittingSize)
         host.view.layoutSubtreeIfNeeded()
+        // The Xcode picker loads its versions in a task that starts with the first layout; wait
+        // for it rather than guess, then lay out again.
+        if [.newRunnerTart, .newRunnerTartFallback].contains(screen) {
+            for await _ in versionsLoaded.stream { break }
+            for _ in 0..<20 { await Task.yield() }
+            host.view.frame = CGRect(origin: .zero, size: host.view.fittingSize)
+            host.view.layoutSubtreeIfNeeded()
+        }
 
         let record: SnapshotTestingConfiguration.Record = SnapshotTestHelpers.isRecordingSnapshots ? .all : .missing
         withSnapshotTesting(record: record) {
             assertSnapshot(of: host, as: .image, named: "\(screen.rawValue)-\(isDark ? "dark" : "light")")
         }
+    }
+
+    private func offlineServices(_ services: RunnerFlowServices) -> RunnerFlowServices {
+        var offline = services
+        offline.xcodeVersions = FallbackXcodeVersionProvider()
+        return offline
     }
 
     @ViewBuilder
@@ -87,6 +105,12 @@ struct FocusFlowSnapshotTests {
         case .newRunnerTart:
             NewRunnerSheet(
                 services: dependencies.flowServices,
+                preset: .configure(customLabels: ["xcode"], runIn: .tartVM, tart: .found(URL(fileURLWithPath: "/opt/homebrew/bin/tart"), version: TartVersion(2, 42, 0))),
+                finish: { _ in }
+            )
+        case .newRunnerTartFallback:
+            NewRunnerSheet(
+                services: offlineServices(dependencies.flowServices),
                 preset: .configure(customLabels: ["xcode"], runIn: .tartVM, tart: .found(URL(fileURLWithPath: "/opt/homebrew/bin/tart"), version: TartVersion(2, 42, 0))),
                 finish: { _ in }
             )

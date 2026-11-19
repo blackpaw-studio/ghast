@@ -66,6 +66,8 @@ enum FocusMetrics {
     static let headerDotSpacing: CGFloat = 10
     /// Title, secondary line, tokens and actions all start here, after the dot.
     static let headerTextIndent: CGFloat = statusDotHeader + headerDotSpacing
+    static let headerDownloadBarWidth: CGFloat = 280
+    static let headerDownloadBarTop: CGFloat = 8
     static let headerTitleSpacing: CGFloat = 5
     static let headerTokensTop: CGFloat = 14
     static let headerActionsTop: CGFloat = 16

@@ -9,6 +9,7 @@ struct RunnerConfigurationForm: View {
     let runnerService: RunnerService
     let actions: RunnerActions
     @Environment(\.focusContext) private var context
+    @Environment(\.runnerFlowServices) private var flowServices
     @Environment(\.onConfigurationDraftLoaded) private var onDraftLoaded
 
     @State private var draft: RunnerConfigurationDraft
@@ -104,6 +105,14 @@ struct RunnerConfigurationForm: View {
     private var virtualMachineSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             FocusFormSection(caption: "Virtual Machine") {
+                TartImagePicker(
+                    image: $draft.tartImage,
+                    versions: flowServices?.xcodeVersions ?? FallbackXcodeVersionProvider(),
+                    showsCustomField: false
+                ) { label, value in
+                    FocusFormRow(label: label) { value }
+                }
+                FocusFormDivider()
                 vmField("Image", prompt: "ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $draft.tartImage)
                 FocusFormDivider()
                 vmField("Runner group", prompt: "Default", text: $draft.tartGroup)

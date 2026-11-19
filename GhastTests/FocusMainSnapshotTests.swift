@@ -29,9 +29,11 @@ struct FocusMainSnapshotTests {
         await fixture.seedProcessStates()
 
         let draftLoaded = AsyncStream.makeStream(of: String.self)
+        let versionsLoaded = AsyncStream.makeStream(of: TartMacOS.self)
         let view = try content(for: state, fixture: fixture)
             .environment(\.focusContext, fixture.appDependencies.focusContext)
             .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
+            .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
             .environment(\.colorScheme, isDark ? .dark : .light)
             .frame(width: Self.size.width, height: Self.size.height)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -43,6 +45,9 @@ struct FocusMainSnapshotTests {
         // synchronously.
         if state == .configuration || state == .vmConfiguration {
             for await _ in draftLoaded.stream { break }
+            // A VM runner's image picker loads its Xcode versions in its own task.
+            if state == .vmConfiguration { for await _ in versionsLoaded.stream { break } }
+            for _ in 0..<20 { await Task.yield() }
             host.view.layoutSubtreeIfNeeded()
         }
 
@@ -102,7 +107,7 @@ struct FocusMainSnapshotTests {
         case .vmBooting:
             return (.booting, OutputParser.consume(vmLog(booting: true), into: .initial).activity)
         case .vmPulling:
-            return (.pulling, OutputParser.consume(vmLog(booting: false), into: .initial).activity)
+            return (.pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB")), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .starting:
             let listening = try #require(log.range(of: Data("Listening for Jobs".utf8)))
             let lineStart = log[..<listening.lowerBound].lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? log.startIndex

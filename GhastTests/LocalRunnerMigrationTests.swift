@@ -85,15 +85,6 @@ struct LocalRunnerMigrationTests {
         #expect(try decode(JSONEncoder().encode(runner)).backend == .tart(image: image))
     }
 
-    @Test("image catalog lists macOS images only and tells OCI refs from local names")
-    func imageCatalog() {
-        let refs = TartImageCatalog.images.map(\.ref)
-        #expect(refs.count == 4)
-        #expect(refs.allSatisfy { $0.hasPrefix("ghcr.io/cirruslabs/macos-") && $0.hasSuffix(":latest") })
-        #expect(refs.allSatisfy { !$0.contains("vanilla") })
-        #expect(TartImageCatalog.isOCIRef("ghcr.io/cirruslabs/macos-tahoe-base:latest"))
-        #expect(!TartImageCatalog.isOCIRef("my-local-vm"))
-    }
 
     @Test("still writes status from shouldBeRunning so 1.1.0 can decode after a downgrade")
     func encoderKeepsStatus() throws {

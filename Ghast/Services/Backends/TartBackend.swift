@@ -205,6 +205,15 @@ final class TartBackend: RunnerBackend {
     }
 
     /// Shows `state` unless Stop was requested, which keeps showing "stopping" until the end.
+    /// Progress only updates a runner that is still pulling: a late report never overwrites
+    /// booting, stopping or a stopped state.
+    private func setPullProgress(_ progress: TartPullProgress, runnerID: String) {
+        guard case let .pulling(current)? = host?.processState(id: runnerID) else { return }
+        // Updates hop to the main actor one task each and can land out of order.
+        if let next = progress.fraction, let now = current.fraction, next < now { return }
+        host?.setProcessState(.pulling(progress), id: runnerID)
+    }
+
     private func setPhase(_ state: RunnerProcessState, slot: Slot) {
         guard !slot.isStopRequested else { return }
         host?.setProcessState(state, id: slot.runnerID)
@@ -272,9 +281,13 @@ final class TartBackend: RunnerBackend {
         let present = try await cli.list().contains { $0.name == image }
         guard !present else { return }
         guard TartImageCatalog.isOCIRef(image) else { throw TartBackendError.localImageMissing(image) }
-        setPhase(.pulling, slot: slot)
+        setPhase(.pulling(.indeterminate), slot: slot)
         log("Pulling image…", runner: runner)
-        try await cli.pull(image, log: logFile(for: runner))
+        let runnerID = slot.runnerID
+        try await cli.pull(image, log: logFile(for: runner)) { [weak self] progress in
+            Task { @MainActor in self?.setPullProgress(progress, runnerID: runnerID) }
+        }
+        log("Image pulled", runner: runner)
         try checkStop(slot)
     }
 

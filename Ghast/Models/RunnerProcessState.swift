@@ -13,7 +13,7 @@ enum RunnerProcessState: Sendable, Equatable {
     /// A start is pending: the runner waits for a stop or a leftover listener to end first.
     case starting
     /// A VM runner is downloading its image.
-    case pulling
+    case pulling(TartPullProgress)
     /// A VM runner is cloning and booting a fresh VM.
     case booting
     /// A VM runner is stopping and deleting the VM of the job that just ended.

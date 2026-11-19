@@ -103,7 +103,7 @@ enum MenuBarMenuModel {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running"
         case .starting: return "Connecting"
-        case .pulling: return "Pulling"
+        case let .pulling(progress): return progress.percent.map { "Pulling \($0)%" } ?? "Pulling"
         case .booting: return "Booting"
         case .cleaningUp: return "Cleaning up"
         case .stopping: return "Stopping"

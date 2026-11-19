@@ -61,6 +61,7 @@ struct NewRunnerSheet: View {
                 initialRunIn: initialRunIn,
                 initialTartInstallation: presetTartInstallation,
                 tartLocator: services.tartLocator,
+                xcodeVersions: services.xcodeVersions,
                 create: start,
                 cancel: { finish(nil) }
             )

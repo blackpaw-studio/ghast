@@ -77,6 +77,7 @@ struct AppDependencies {
         runnerDownloader: any RunnerDownloader = URLSessionRunnerDownloader(),
         scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
         tartLocator: TartLocator = TartLocator(),
+        xcodeVersions: any TartXcodeVersionProviding = GHCRXcodeVersionProvider(),
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
         router: AppWindowRouter = AppWindowRouter(),
         loginItemService: any LoginItemService = InertLoginItemService(),
@@ -107,7 +108,8 @@ struct AppDependencies {
             trasher: fileTrasher,
             sleeper: sleeper,
             readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) },
-            tartLocator: tartLocator
+            tartLocator: tartLocator,
+            xcodeVersions: xcodeVersions
         )
         self.flowServices = flowServices
         flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }

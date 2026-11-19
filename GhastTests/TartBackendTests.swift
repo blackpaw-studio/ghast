@@ -164,10 +164,11 @@ struct TartBackendTests {
         defer { h.cleanup() }
         let gate = HoldGate()
         h.cli.pullGate = gate
+        h.cli.pullProgress = [TartPullProgress(fraction: 0.42, size: "27.0 GB")]
         let runner = h.addRunner()
 
         try await h.service.startRunner(id: runner.id)
-        #expect(await h.settled { h.state(runner) == .pulling })
+        #expect(await h.settled { h.state(runner) == .pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB")) })
         #expect(h.lines.lines.contains("Pulling image…"))
         await gate.open()
         #expect(await h.settled { h.cli.jobsStarted == 1 })
@@ -176,6 +177,36 @@ struct TartBackendTests {
         let pull = try #require(h.log.all.firstIndex(of: "pull \(TartHarness.image)"))
         let clone = try #require(h.log.all.firstIndex { $0.hasPrefix("clone ") })
         #expect(pull < clone)
+    }
+
+    @Test("a pull logs its completion")
+    func logsImagePulled() async throws {
+        let h = TartHarness(entries: [])
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(h.lines.lines.contains("Image pulled"))
+    }
+
+    @Test("a late, lower progress update never moves the pull backwards")
+    func progressNeverRegresses() async throws {
+        let h = TartHarness(entries: [])
+        defer { h.cleanup() }
+        let gate = HoldGate()
+        h.cli.pullGate = gate
+        h.cli.pullProgress = [TartPullProgress(fraction: 0.5, size: nil), TartPullProgress(fraction: 0.3, size: nil)]
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.state(runner) == .pulling(TartPullProgress(fraction: 0.5, size: nil)) })
+        for _ in 0..<20 { await Task.yield() }
+        #expect(h.state(runner) == .pulling(TartPullProgress(fraction: 0.5, size: nil)))
+        await gate.open()
+        await h.service.stopRunner(id: runner.id)
     }
 
     @Test("an image cached only by digest still counts as missing by tag, and is pulled")

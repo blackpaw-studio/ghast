@@ -119,7 +119,7 @@ struct RunnerRow: View {
                     .font(FocusType.body.weight(.medium))
                     .lineLimit(1)
             }
-            Text(item.status.sidebarSubtitle(scope: item.scope.displayName))
+            Text(item.status.sidebarSubtitle(scope: item.scope.displayName, imageLabel: item.imageLabel))
                 .font(FocusType.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

@@ -142,6 +142,7 @@ struct FixtureDependencies {
             runnerDownloader: FixtureRunnerDownloader(),
             scriptRunner: FixtureScriptRunner(),
             tartLocator: TartLocator(environment: FixtureTartEnvironment(.installed)),
+            xcodeVersions: FixtureXcodeVersions(),
             loginItemService: InertLoginItemService(status: .enabled)
         )
         // Settings.png: open at login is on and the last check found nothing new.
