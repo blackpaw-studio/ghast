@@ -145,6 +145,8 @@ final class TartBackend: RunnerBackend {
                 if let runner = host?.runner(id: entry.runnerID) {
                     log("Error: \(error.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
                 }
+                // The failed run's session is gone: don't keep showing a queue this Mac may not hold.
+                queueChanged(entry, to: .connecting)
                 try? await sleeper(delay)
             }
         }
@@ -162,6 +164,7 @@ final class TartBackend: RunnerBackend {
             let source = entry.source
             entry.sleepRelease = Task { @MainActor in await source.close() }
             entry.queue = .released(.sleep)
+            forgetDemand(entry)
             if let line = Self.queueLogLine(entry.queue), let runner = host?.runner(id: entry.runnerID) {
                 log(line, runner: runner)
             }
@@ -196,10 +199,26 @@ final class TartBackend: RunnerBackend {
     private func queueChanged(_ entry: OnDemandEntry, to status: JobQueueStatus) {
         guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep, entry.queue != status else { return }
         entry.queue = status
+        if Self.losesJobs(status) { forgetDemand(entry) }
         if let line = Self.queueLogLine(status), let runner = host?.runner(id: entry.runnerID) {
             log(line, runner: runner)
         }
         publish(entry)
+    }
+
+    /// Without the queue this Mac no longer hears about jobs: the demand it last saw may now
+    /// belong to another Mac, so it must not boot VMs for it. Running VMs are untouched; the
+    /// next `.holding` brings the real demand back through the session's statistics.
+    private static func losesJobs(_ status: JobQueueStatus) -> Bool {
+        switch status {
+        case .heldElsewhere, .released: true
+        case .connecting, .holding, .noQueue: false
+        }
+    }
+
+    private func forgetDemand(_ entry: OnDemandEntry) {
+        entry.demand = 0
+        refreshIdle(entry)
     }
 
     private static func queueLogLine(_ status: JobQueueStatus) -> String? {
@@ -224,7 +243,8 @@ final class TartBackend: RunnerBackend {
         guard isCurrent(entry), !entry.isStopRequested,
               let runner = host?.runner(id: entry.runnerID), case let .tart(image) = runner.backend
         else { return }
-        let wanted = min(entry.demand, Self.maxVMsPerRunner)
+        // A sleeping Mac boots nothing; a VM that ends meanwhile is not replaced.
+        let wanted = entry.isAsleep ? 0 : min(entry.demand, Self.maxVMsPerRunner)
         while entry.vms.count < wanted, !entry.isWaitingForSlot {
             launchVM(entry, runner: runner, image: image)
         }

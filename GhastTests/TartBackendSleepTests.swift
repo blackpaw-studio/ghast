@@ -69,10 +69,28 @@ struct TartBackendSleepTests {
         let (runner, source) = try await start(h)
 
         h.power.wake()
-        await Task.yield()
+        for _ in 0..<50 { await Task.yield() }
+        await h.service.stopRunner(id: runner.id)
 
         #expect(source.runCount == 1)
+        #expect(source.closeCount == 1, "only Stop closes the source")
+    }
+
+    @Test("a Stop that lands while a wake is reopening the queue wins")
+    func stopDuringWakeSticks() async throws {
+        let h = TartHarness(initialDemand: nil)
+        defer { h.cleanup() }
+        let (runner, source) = try await start(h)
+        h.power.sleep()
+        #expect(await h.settled { source.closeCount == 1 && !source.isRunning })
+
+        h.power.wake()
+        h.backend.requestStop(id: runner.id, keepingRunIntent: false)
         await h.service.stopRunner(id: runner.id)
+        for _ in 0..<50 { await Task.yield() }
+
+        #expect(source.runCount == 1)
+        #expect(h.state(runner) == .stopped)
     }
 
     @Test("a runner stopped during sleep stays stopped after wake")
@@ -85,9 +103,29 @@ struct TartBackendSleepTests {
 
         await h.service.stopRunner(id: runner.id)
         h.power.wake()
-        await Task.yield()
+        for _ in 0..<50 { await Task.yield() }
 
         #expect(source.runCount == 1)
         #expect(h.state(runner) == .stopped)
+    }
+
+    @Test("a VM that finishes during sleep is not replaced")
+    func noBootWhileAsleep() async throws {
+        let h = TartHarness(initialDemand: 1)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let vm = try #require(h.cli.currentJobVM)
+        let source = try #require(h.demand.source(runner))
+
+        h.power.sleep()
+        #expect(await h.settled { source.closeCount == 1 })
+        h.cli.endJob(vm, code: 0)
+        #expect(await h.settled { h.log.all.contains("delete \(vm)") && h.vms(runner)?.running == 0 && h.vms(runner)?.booting == 0 })
+        for _ in 0..<50 { await Task.yield() }
+
+        #expect(h.log.all.filter { $0.hasPrefix("clone") }.count == 1)
+        await h.service.stopRunner(id: runner.id)
     }
 }

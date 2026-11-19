@@ -81,4 +81,60 @@ struct TartBackendQueueTests {
         #expect(source.idleSince == later)
         await h.service.stopRunner(id: runner.id)
     }
+
+    private func cloneCount(_ h: TartHarness) -> Int { h.log.all.filter { $0.hasPrefix("clone") }.count }
+
+    @Test("losing the queue drops the demand, so a finished VM is not replaced by one for jobs now on another Mac")
+    func heldElsewhereClearsDemand() async throws {
+        let h = TartHarness(initialDemand: 1)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let vm = try #require(h.cli.currentJobVM)
+        let source = try #require(h.demand.source(runner))
+
+        source.emitQueue(.heldElsewhere)
+        h.cli.endJob(vm, code: 0)
+        #expect(await h.settled { h.log.all.contains("delete \(vm)") && h.vms(runner)?.running == 0 && h.vms(runner)?.booting == 0 })
+        for _ in 0..<50 { await Task.yield() }
+
+        #expect(cloneCount(h) == 1)
+        #expect(source.idleSince != nil)
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("a handoff drops the demand too")
+    func handoffClearsDemand() async throws {
+        let h = TartHarness(initialDemand: 1)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let vm = try #require(h.cli.currentJobVM)
+        let source = try #require(h.demand.source(runner))
+
+        source.emitQueue(.released(.handoff))
+        h.cli.endJob(vm, code: 0)
+        #expect(await h.settled { h.log.all.contains("delete \(vm)") && h.vms(runner)?.running == 0 && h.vms(runner)?.booting == 0 })
+        for _ in 0..<50 { await Task.yield() }
+
+        #expect(cloneCount(h) == 1)
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("a source that failed shows connecting while the backoff runs, not the queue it no longer holds")
+    func connectingDuringBackoff() async throws {
+        let h = TartHarness(initialDemand: nil)
+        defer { h.cleanup() }
+        let (runner, source) = try await start(h)
+        source.emitQueue(.holding)
+        #expect(h.vms(runner)?.queue == .holding)
+
+        source.failRun(DemandSourceError.interrupted(ScaleSetError.transient("HTTP 502")))
+
+        #expect(await h.settled { source.runCount == 2 })
+        #expect(h.vms(runner)?.queue == .connecting)
+        await h.service.stopRunner(id: runner.id)
+    }
 }
