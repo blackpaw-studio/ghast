@@ -85,7 +85,11 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRunners
     }
     
+    /// Every scope `createRegistrationToken` was asked for, in order.
+    private(set) var registrationTokenScopes: [RunnerScope] = []
+
     func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
+        registrationTokenScopes.append(scope)
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
