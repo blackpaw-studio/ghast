@@ -46,4 +46,12 @@ struct GHCRXcodeVersionProviderTests {
         #expect(result.source == .fallback)
         #expect(result.tags == TartImageCatalog.fallbackTags(for: .tahoe))
     }
+
+    @Test("both registry requests carry a short timeout so a bad network falls back quickly")
+    func shortTimeouts() async {
+        let transport = FakeTransport([.json(#"{"token":"t"}"#), .json(#"{"tags":["16.4"]}"#)])
+        _ = await GHCRXcodeVersionProvider(transport: transport).versions(for: .tahoe)
+        let timeouts = await transport.requests.map(\.timeoutInterval)
+        #expect(timeouts.count == 2 && timeouts.allSatisfy { $0 <= 10 })
+    }
 }

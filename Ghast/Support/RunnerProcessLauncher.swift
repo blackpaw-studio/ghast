@@ -106,7 +106,17 @@ struct ProcessRunnerLauncher: RunnerProcessLauncher {
             if pipe != nil { _ = drained.wait(timeout: .now() + 2) }
             onTermination(code)
         }
-        try process.run()
+        do {
+            try process.run()
+        } catch {
+            if let pipe {
+                pipe.fileHandleForReading.readabilityHandler = nil
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
+            }
+            if spec.appendOutputTo != nil, pipe == nil { try? output.close() }
+            throw error
+        }
         // The child holds its own copy of the descriptor now.
         if spec.appendOutputTo != nil, pipe == nil { try? output.close() }
         try? pipe?.fileHandleForWriting.close()

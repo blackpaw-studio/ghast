@@ -3,13 +3,16 @@ import SwiftUI
 /// The image choice for a Tart VM runner: a macOS version, an Xcode release (or none), or a
 /// custom reference. It edits `image` directly, so the saved value is always the exact ref.
 ///
-/// While the Xcode versions of a fresh choice load, `image` is empty; the newest release is
-/// picked when they arrive.
+/// With `autoPicksNewest` (the New Runner sheet), an empty `image` becomes the newest Xcode
+/// release once the versions arrive. Elsewhere the picker never changes the image unless the
+/// user chooses.
 struct TartImagePicker<RowView: View>: View {
     @Binding var image: String
     let versions: any TartXcodeVersionProviding
     /// False where another field already edits the custom ref (the Configuration tab).
     var showsCustomField = true
+    /// True only where the image starts empty and should default to the newest Xcode.
+    var autoPicksNewest = false
     /// Lays out one labelled row, so the New Runner sheet and the Configuration tab each keep
     /// their own row style.
     @ViewBuilder let row: (_ label: String, _ value: AnyView) -> RowView
@@ -27,11 +30,13 @@ struct TartImagePicker<RowView: View>: View {
         image: Binding<String>,
         versions: any TartXcodeVersionProviding,
         showsCustomField: Bool = true,
+        autoPicksNewest: Bool = false,
         @ViewBuilder row: @escaping (_ label: String, _ value: AnyView) -> RowView
     ) {
         _image = image
         self.versions = versions
         self.showsCustomField = showsCustomField
+        self.autoPicksNewest = autoPicksNewest
         self.row = row
         let parsed = TartImageCatalog.parse(image.wrappedValue)
         _isCustom = State(initialValue: parsed == nil && !image.wrappedValue.isEmpty)
@@ -40,7 +45,7 @@ struct TartImagePicker<RowView: View>: View {
     }
 
     private var parsed: TartImageCatalog.Parsed? { TartImageCatalog.parse(image) }
-    private var isResolving: Bool { image.isEmpty && !isCustom }
+    private var isResolving: Bool { autoPicksNewest && image.isEmpty && !isCustom }
     private var current: TartXcodeVersions? { loaded[macOS] }
 
     var body: some View {
@@ -174,13 +179,23 @@ struct TartImagePicker<RowView: View>: View {
         }
     }
 
+    /// The image to default to once versions load, or nil to leave the current one alone.
+    static func newestImage(
+        current: String, isCustom: Bool, wantsXcode: Bool, autoPicks: Bool,
+        macOS: TartMacOS, versions: TartXcodeVersions
+    ) -> String? {
+        guard autoPicks, current.isEmpty, !isCustom, wantsXcode, let newest = versions.tags.first else { return nil }
+        return TartImageCatalog.ref(macOS: macOS, xcode: newest)
+    }
+
     private func load(_ target: TartMacOS) async {
         let result: TartXcodeVersions
         if let cached = loaded[target] { result = cached } else { result = await versions.versions(for: target) }
         guard !Task.isCancelled else { return }
         loaded[target] = result
-        if image.isEmpty, !isCustom, wantsXcode, target == macOS, let newest = result.tags.first {
-            image = TartImageCatalog.ref(macOS: target, xcode: newest)
+        if target == macOS,
+           let pick = Self.newestImage(current: image, isCustom: isCustom, wantsXcode: wantsXcode, autoPicks: autoPicksNewest, macOS: target, versions: result) {
+            image = pick
         }
         onVersionsLoaded?(target)
     }

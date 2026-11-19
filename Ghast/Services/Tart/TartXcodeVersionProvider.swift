@@ -44,8 +44,11 @@ struct GHCRXcodeVersionProvider: TartXcodeVersionProviding {
         return url
     }
 
+    /// Short, so a bad network falls back to the built-in list instead of holding Create disabled.
+    private static let requestTimeout: TimeInterval = 10
+
     private func get(_ url: URL, bearer: String?) async throws -> Data {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
         if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         let (data, response) = try await transport.send(request)
         guard (200..<300).contains(response.statusCode) else { throw URLError(.badServerResponse) }

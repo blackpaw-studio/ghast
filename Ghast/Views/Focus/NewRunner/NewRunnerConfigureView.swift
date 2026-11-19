@@ -191,7 +191,7 @@ struct NewRunnerConfigureView: View {
     @ViewBuilder
     private var imageRows: some View {
         FocusFormDivider()
-        TartImagePicker(image: $tartImage, versions: xcodeVersions) { label, value in
+        TartImagePicker(image: $tartImage, versions: xcodeVersions, autoPicksNewest: true) { label, value in
             row(label) { value }
         }
     }

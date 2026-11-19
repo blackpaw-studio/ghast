@@ -208,7 +208,9 @@ final class TartBackend: RunnerBackend {
     /// Progress only updates a runner that is still pulling: a late report never overwrites
     /// booting, stopping or a stopped state.
     private func setPullProgress(_ progress: TartPullProgress, runnerID: String) {
-        guard case .pulling? = host?.processState(id: runnerID) else { return }
+        guard case let .pulling(current)? = host?.processState(id: runnerID) else { return }
+        // Updates hop to the main actor one task each and can land out of order.
+        if let next = progress.fraction, let now = current.fraction, next < now { return }
         host?.setProcessState(.pulling(progress), id: runnerID)
     }
 
@@ -285,6 +287,7 @@ final class TartBackend: RunnerBackend {
         try await cli.pull(image, log: logFile(for: runner)) { [weak self] progress in
             Task { @MainActor in self?.setPullProgress(progress, runnerID: runnerID) }
         }
+        log("Image pulled", runner: runner)
         try checkStop(slot)
     }
 
