@@ -96,6 +96,7 @@ final class TartBackend: RunnerBackend {
         guard case .tart = runner.backend else { throw RunnerError.failedToStart }
 
         let entry = OnDemandEntry(runnerID: id, since: clock.now(), source: demandSources.make(for: runner))
+        entry.idleSince = clock.now()
         entries[id] = entry
         host?.updateRunner(id: id) {
             $0.shouldBeRunning = true
@@ -118,11 +119,16 @@ final class TartBackend: RunnerBackend {
             // later one shows the source working, so only that resets the backoff.
             var reports = 0
             do {
-                let context = DemandRunContext(onDemand: { [weak self] demand in
-                    reports += 1
-                    if reports > 1 { failures = 0 }
-                    self?.demandChanged(entry, to: demand)
-                })
+                let context = DemandRunContext(
+                    onDemand: { [weak self] demand in
+                        reports += 1
+                        if reports > 1 { failures = 0 }
+                        self?.demandChanged(entry, to: demand)
+                    },
+                    onQueue: { [weak self] status in self?.queueChanged(entry, to: status) },
+                    role: { [weak self] in self?.host?.runner(id: entry.runnerID)?.queueRole ?? .primary },
+                    idleSince: { entry.idleSince }
+                )
                 try await entry.source.run(context)
                 return
             } catch {
@@ -144,6 +150,32 @@ final class TartBackend: RunnerBackend {
         reconcile(entry)
     }
 
+    /// Shows who holds the job queue, and logs each change once.
+    private func queueChanged(_ entry: OnDemandEntry, to status: JobQueueStatus) {
+        guard isCurrent(entry), !entry.isStopRequested, entry.queue != status else { return }
+        entry.queue = status
+        if let line = Self.queueLogLine(status), let runner = host?.runner(id: entry.runnerID) {
+            log(line, runner: runner)
+        }
+        publish(entry)
+    }
+
+    private static func queueLogLine(_ status: JobQueueStatus) -> String? {
+        switch status {
+        case .holding: "Took the job queue"
+        case .heldElsewhere: "Another Mac has the job queue; standing by"
+        case .released(.handoff): "Handing the job queue back to the primary"
+        case .released(.sleep): "Released the job queue (sleep)"
+        case .connecting, .noQueue: nil
+        }
+    }
+
+    /// Idle runs from the moment there is neither demand nor a VM until either appears.
+    private func refreshIdle(_ entry: OnDemandEntry) {
+        let isIdle = entry.demand == 0 && entry.vms.isEmpty
+        if isIdle { entry.idleSince = entry.idleSince ?? clock.now() } else { entry.idleSince = nil }
+    }
+
     /// Boots VMs while the demand exceeds the live VMs, up to two, unless the budget is known
     /// to be full; then shows the state.
     private func reconcile(_ entry: OnDemandEntry) {
@@ -154,6 +186,7 @@ final class TartBackend: RunnerBackend {
         while entry.vms.count < wanted, !entry.isWaitingForSlot {
             launchVM(entry, runner: runner, image: image)
         }
+        refreshIdle(entry)
         publish(entry)
     }
 
@@ -285,6 +318,7 @@ final class TartBackend: RunnerBackend {
 
     private func remove(_ vm: VMRun, from entry: OnDemandEntry) {
         entry.vms.removeAll { $0 === vm }
+        refreshIdle(entry)
     }
 
     // MARK: - The VM budget
