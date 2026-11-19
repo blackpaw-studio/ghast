@@ -188,10 +188,14 @@ final class TartBackend: RunnerBackend {
         log("Cloning…", runner: runner, vm: vm)
         try await cli.clone(image, vm.clone)
         try checkStop(entry)
+        let jobFolder = try writeJobFiles(for: runner, vm: vm)
         log("Booting VM…", runner: runner, vm: vm)
         vm.vmProcess = try cli.run(
             vm.clone,
-            shares: [TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true)],
+            shares: [
+                TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true),
+                TartShare(name: VMJobFiles.shareName, path: jobFolder, isReadOnly: true),
+            ],
             log: logFile(for: runner),
             linePrefix: vm.logPrefix,
             onExit: { [weak self, weak vm] _ in
@@ -350,6 +354,23 @@ final class TartBackend: RunnerBackend {
         try checkStop(entry)
     }
 
+    /// This boot's scripts and variables, in a folder of the runner's own that only this VM
+    /// sees; later edits reach the next VM. Names of variables `.env` cannot hold are logged,
+    /// never their values.
+    private func writeJobFiles(for runner: LocalRunner, vm: VMRun) throws -> URL {
+        let files = VMJobFiles.make(for: runner)
+        for name in files.skippedVariables {
+            log("Variable \(name.isEmpty ? "with no name" : name) left out: a VM runner's variables need a name without = and a value on one line", runner: runner, vm: vm)
+        }
+        let folder = Self.jobFolder(for: runner, vm: vm)
+        try files.write(to: folder)
+        return folder
+    }
+
+    private static func jobFolder(for runner: LocalRunner, vm: VMRun) -> URL {
+        URL(fileURLWithPath: runner.path).appendingPathComponent("vm-jobs").appendingPathComponent(vm.id)
+    }
+
     private func waitForGuest(_ cli: any TartCLI, vm: VMRun, entry: OnDemandEntry) async throws {
         var waited = Duration.zero
         while true {
@@ -429,6 +450,7 @@ final class TartBackend: RunnerBackend {
     /// forgets the lease only when both went through. Failures are logged, never thrown.
     private func cleanUp(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner) async {
         vm.guest = nil
+        try? FileManager.default.removeItem(at: Self.jobFolder(for: runner, vm: vm))
         defer { vm.holdsSlot = false }
         guard vm.holdsSlot, let cli = vm.cli else { return }
         vm.phase = .cleaningUp

@@ -155,7 +155,7 @@ struct TartBackendTests {
         #expect(Array(h.log.all.prefix(11)) == [
             "list", "applications", "list",
             "clone \(TartHarness.image) \(vm)",
-            "run \(vm) ghast:ro",
+            "run \(vm) ghast:ro,ghast-job:ro",
             "probe \(vm)",
             "jit vm-1-000001",
             "exec-stream \(vm)",
@@ -164,6 +164,37 @@ struct TartBackendTests {
         ])
         #expect(h.leases.all().isEmpty)
         #expect(h.state(runner) == .stopped)
+    }
+
+    @Test("each VM boots with the runner's scripts and variables in a second read-only share, removed with the VM, and their values never reach the log")
+    func jobShare() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        h.service.updateRunner(id: runner.id) {
+            $0.environmentVariables = ["TOKEN": "s3cr3t value", "BROKEN": "multi\nline-s3cr3t"]
+            $0.preJobScript = "echo pre-s3cr3t"
+        }
+        let vm = h.vmName(runner, iteration: 1)
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+
+        #expect(h.log.all.contains("run \(vm) ghast:ro,ghast-job:ro"))
+        let share = try #require(h.cli.shares(of: vm).first { $0.name == VMJobFiles.shareName })
+        #expect(share.isReadOnly)
+        #expect(share.path.path.hasPrefix(runner.path))
+        let names = try FileManager.default.contentsOfDirectory(atPath: share.path.path).sorted()
+        #expect(names == [VMJobFiles.environmentFile, VMJobFiles.preJobScript])
+        #expect(try String(contentsOf: share.path.appendingPathComponent(VMJobFiles.environmentFile), encoding: .utf8) == "TOKEN=s3cr3t value\n")
+        #expect(h.lines.lines.contains { $0.contains("BROKEN") && $0.contains("left out") })
+
+        h.cli.endJob(vm, code: 0)
+        #expect(await h.settled { h.log.all.contains("delete \(vm)") })
+        #expect(await h.settled { !FileManager.default.fileExists(atPath: share.path.path) })
+        let everything = h.lines.lines + h.log.all + h.cli.streamedCommands.flatMap { $0 }
+        #expect(!everything.contains { $0.contains("s3cr3t") })
+        await h.service.stopRunner(id: runner.id)
     }
 
     @Test("lifecycle lines go to the runner's log, and the JIT config never does")

@@ -78,5 +78,28 @@ import Foundation
         #expect(service.localRunners.first?.backend == .tart(image: "my-vm"))
         #expect(service.localRunners.first?.labels == ["self-hosted"])
     }
-}
 
+    @Test func vmScriptsAndVariablesSaveForTheNextVMWithoutARestartOrHostFiles() {
+        let folder = makeTemporaryDirectory()
+        var vm = LocalRunner(name: "vm", repository: "o/vm", path: folder.path)
+        vm.backend = .tart(image: "my-vm")
+        let service = makeTestRunnerService(runners: [vm])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper)
+        draft.load(vm)
+
+        draft.editor.rows.append(EnvironmentVariableDraft(name: "FOO", value: "1"))
+        draft.preScript = ScriptDraft("echo before")
+        draft.postScript = ScriptDraft("echo after")
+        draft.saveSoon()
+        draft.flush()
+
+        let saved = service.localRunners.first
+        #expect(saved?.environmentVariables == ["FOO": "1"])
+        #expect(saved?.preJobScript == "echo before")
+        #expect(saved?.postJobScript == "echo after")
+        #expect(!draft.needsRestart)
+        // The VM gets them from its own share at boot; nothing lands in the runner folder.
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        #expect(files.isEmpty)
+    }
+}

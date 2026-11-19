@@ -29,12 +29,9 @@ struct RunnerConfigurationForm: View {
         ScrollView {
             VStack(alignment: .leading, spacing: FocusMetrics.formSectionGap) {
                 runnerSection
-                if isVM {
-                    virtualMachineSection
-                } else {
-                    environmentSection
-                    scriptsSection
-                }
+                if isVM { virtualMachineSection }
+                environmentSection
+                scriptsSection
                 Button("Remove Runner…", role: .destructive) {
                     actions.remove(runner.id, gitHubRunnerID: item.gitHubRunnerID)
                 }
@@ -163,7 +160,7 @@ struct RunnerConfigurationForm: View {
             }
             addRemoveControl
                 .padding(.top, FocusMetrics.formAddRemoveTop)
-            Text("Applied the next time the runner starts.")
+            Text(isVM ? "Applied to the next VM." : "Applied the next time the runner starts.")
                 .font(FocusType.subheadline)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, FocusMetrics.formRowInset)

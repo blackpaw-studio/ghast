@@ -65,13 +65,21 @@ final class RunnerConfigurationDraft {
         debouncer.schedule { [weak self, runnerService] in
             guard let current = runnerService.localRunners.first(where: { $0.id == id }) else { return }
             if case let .tart(savedImage) = current.backend {
-                // A VM runner has no scripts or variables; its settings apply to the next VM,
-                // so saving them never asks for a restart. A blank image keeps the saved one.
+                // A VM runner's settings apply to the next VM, so saving them never asks for
+                // a restart. A blank image keeps the saved one. Scripts and variables reach
+                // the VM through its share at boot, never through the runner folder.
                 let image = tart.image.isEmpty ? savedImage : tart.image
                 let labels = tart.labels ?? current.labels
                 let group = tart.group.trimmingCharacters(in: .whitespacesAndNewlines)
                 if image != savedImage || labels != current.labels || (group.isEmpty ? nil : group) != current.runnerGroup {
                     runnerService.updateTartSettings(id: id, labels: labels, runnerGroup: group, image: image)
+                }
+                if current.environmentVariables != variables || current.preJobScript != pre || current.postJobScript != post {
+                    runnerService.updateRunner(id: id) {
+                        $0.environmentVariables = variables
+                        $0.preJobScript = pre
+                        $0.postJobScript = post
+                    }
                 }
                 return
             }

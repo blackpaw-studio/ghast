@@ -131,6 +131,11 @@ struct FocusMainSnapshotTests {
         var copy = runner
         copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
         copy.showsOnDemandNote = state == .vmWaitingForJobs
+        if state == .vmConfiguration {
+            // Scripts and variables ride into each VM, so its Configuration tab shows them.
+            copy.environmentVariables = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer", "FASTLANE_SKIP_UPDATE_CHECK": "1"]
+            copy.preJobScript = "xcodebuild -runFirstLaunch"
+        }
         return copy
     }
 
