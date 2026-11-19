@@ -28,6 +28,8 @@ final class ActionsServiceClient {
     /// Refresh the admin token once it has less than this left.
     private static let refreshMargin: TimeInterval = 60
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "scaleset")
+    /// The most of a failure's body an error carries (it can reach the runner log).
+    nonisolated static let maxErrorDetailLength = 200
 
     struct Connection: Sendable {
         let serviceURL: String
@@ -233,11 +235,13 @@ final class ActionsServiceClient {
 
     /// Maps a failure the way `errors.go` does: rate limits first (429, or a 403 with
     /// `Retry-After`, `X-RateLimit-Remaining: 0` or a "secondary rate" message), then 400,
-    /// 401/403, 404, 409; 5xx other than 501 is transient.
+    /// 401/403, 404, 409; 5xx other than 501 is transient. An unexpected success carries no
+    /// body (it may hold a queue token or JIT config); a failure's text is cut to one short line.
     nonisolated static func error(for response: HTTPURLResponse, body: Data, now: Date) -> ScaleSetError {
         let status = response.statusCode
+        if (200..<300).contains(status) { return .badResponse("HTTP \(status)") }
         let exception = ActionsException.parse(body)
-        let message = exception?.message ?? String(decoding: body, as: UTF8.self)
+        let message = sanitized(exception?.message ?? String(decoding: body, as: UTF8.self))
         if let rateLimit = rateLimit(response, message: message, now: now) { return rateLimit }
         switch status {
         case 400: return .badRequest(message.isEmpty ? "HTTP 400" : message)
@@ -247,6 +251,13 @@ final class ActionsServiceClient {
         case 500...599 where status != 501: return .transient("HTTP \(status)")
         default: return .badResponse(message.isEmpty ? "HTTP \(status)" : "HTTP \(status): \(message)")
         }
+    }
+
+    /// One line, whitespace runs collapsed, at most `maxErrorDetailLength` characters.
+    private nonisolated static func sanitized(_ text: String) -> String {
+        let oneLine = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard oneLine.count > maxErrorDetailLength else { return oneLine }
+        return String(oneLine.prefix(maxErrorDetailLength)) + "…"
     }
 
     private nonisolated static func rateLimit(_ response: HTTPURLResponse, message: String, now: Date) -> ScaleSetError? {

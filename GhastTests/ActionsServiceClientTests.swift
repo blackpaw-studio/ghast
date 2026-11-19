@@ -208,6 +208,25 @@ enum ScaleSetReplies {
         }
     }
 
+    @Test("a success status Ghast did not expect never carries its body, which may hold a token")
+    func unexpectedSuccessHidesBody() {
+        let response = HTTPURLResponse(url: URL(string: "https://x.example")!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        let error = ActionsServiceClient.error(for: response, body: Data(#"{"token":"SECRET-TOKEN","encoded_jit_config":"SECRET-JIT"}"#.utf8), now: Date())
+        #expect(error == .badResponse("HTTP 200"))
+    }
+
+    @Test("a failure's body is cut short and kept to one line")
+    func failureBodyIsSanitized() throws {
+        let response = HTTPURLResponse(url: URL(string: "https://x.example")!, statusCode: 418, httpVersion: nil, headerFields: nil)!
+        let body = "first line\nsecond\tline " + String(repeating: "x", count: 1_000)
+        guard case let .badResponse(message) = ActionsServiceClient.error(for: response, body: Data(body.utf8), now: Date()) else {
+            Issue.record("expected badResponse"); return
+        }
+        #expect(message.hasPrefix("HTTP 418: first line second line x"))
+        #expect(!message.contains("\n") && !message.contains("\t"))
+        #expect(message.count <= "HTTP 418: ".count + ActionsServiceClient.maxErrorDetailLength + 1)
+    }
+
     @Test("a network failure is transient")
     func networkFailure() async throws {
         let (client, _) = makeClient([ScaleSetReplies.connection(exp: hourFromNow), .failure(URLError(.timedOut))])
