@@ -30,6 +30,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var pullGate: HoldGate?
     /// Reported to `pull`'s progress callback before it waits on the gate.
     var pullProgress: [TartPullProgress] = []
+    /// While set, `clone` waits here (cancellable) after recording the call, before the clone exists.
+    var cloneGate: HoldGate?
     /// While set, the readiness probe waits here (cancellable) before it answers.
     var probeGate: HoldGate?
     /// While set, `stop` waits here (cancellable) after recording the call.
@@ -74,6 +76,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
 
     func clone(_ source: String, _ name: String) async throws {
         log.append("clone \(source) \(name)")
+        try await cloneGate?.wait()
         if let cloneError { throw cloneError }
         lock.withLock { table.append(TartVMEntry(name: name, source: "local", isRunning: false)) }
     }

@@ -161,6 +161,8 @@ final class TartBackend: RunnerBackend {
 
     private enum VMOutcome {
         case noSlot
+        /// Its job went away while it booted; nothing was registered.
+        case abandoned
         case exited(Int32)
         case failed(any Error)
     }
@@ -188,6 +190,7 @@ final class TartBackend: RunnerBackend {
         leases.record(TartLease(runnerID: runner.id, jitRunnerID: nil, scope: runner.scope), forClone: vm.clone)
         log("Cloning…", runner: runner, vm: vm)
         try await cli.clone(image, vm.clone)
+        vm.isCloned = true
         try checkStop(entry)
         let jobFolder = try writeJobFiles(for: runner, vm: vm)
         log("Booting VM…", runner: runner, vm: vm)
@@ -209,6 +212,14 @@ final class TartBackend: RunnerBackend {
         vm.isReachable = true
         publish(entry)
 
+        // A job cancelled while this VM booted lowers the demand; registering anyway would
+        // leave a runner idling in a VM that holds a slot of the shared budget.
+        let claimed = entry.vms.count { $0 !== vm && $0.hasClaimedJob && $0.phase != .cleaningUp }
+        guard entry.demand > claimed else {
+            log("No job is waiting for this VM any more", runner: runner, vm: vm)
+            return .abandoned
+        }
+        vm.hasClaimedJob = true
         let jit = try await registerRunner(runner, vm: vm, source: entry.source)
         vm.jitRunnerID = jit.runnerID
         leases.setJITRunnerID(jit.runnerID, forClone: vm.clone)
@@ -241,6 +252,8 @@ final class TartBackend: RunnerBackend {
             }
             publish(entry)
             return
+        case .abandoned:
+            break
         case .exited(0):
             entry.vmFailures = 0
         case let .exited(code):
@@ -456,6 +469,12 @@ final class TartBackend: RunnerBackend {
         try? FileManager.default.removeItem(at: Self.jobFolder(for: runner, vm: vm))
         defer { vm.holdsSlot = false }
         guard vm.holdsSlot, let cli = vm.cli else { return }
+        guard vm.isCloned else {
+            // Stopped before the clone existed, or the clone failed: nothing to stop or
+            // delete, and nothing registered yet.
+            leases.remove(clone: vm.clone)
+            return
+        }
         vm.phase = .cleaningUp
         vm.isReachable = false
         publish(entry)

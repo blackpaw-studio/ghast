@@ -61,6 +61,10 @@ final class VMRun {
     var vmProcessExited = false
     var guest: GuestRun?
     var jitRunnerID: Int?
+    /// `tart clone` finished: from here there is a VM to stop and delete.
+    var isCloned = false
+    /// Passed the demand check before registering: this VM is taking one of the wanted jobs.
+    var hasClaimedJob = false
     /// The guest answered its readiness probe; cleared when cleanup starts.
     var isReachable = false
 

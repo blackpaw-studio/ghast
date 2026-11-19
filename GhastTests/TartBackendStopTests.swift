@@ -146,4 +146,39 @@ struct TartBackendStopTests {
         await gate.open()
         await h.service.stopRunner(id: runner.id)
     }
+
+    @Test("a clone that failed is neither stopped nor deleted, and its lease goes")
+    func failedCloneIsNotCleanedUp() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        h.cli.cloneError = TartError.commandFailed(command: "clone", status: 1, detail: "disk full")
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.log.all.filter { $0.hasPrefix("clone ") }.count >= 2 })
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(!h.log.all.contains { $0.hasPrefix("stop ghast-") || $0.hasPrefix("delete ghast-") })
+        #expect(!h.lines.lines.contains { $0.contains("could not delete") })
+        #expect(h.leases.all().isEmpty)
+    }
+
+    @Test("Stop during the clone stops and deletes nothing, and leaves no lease")
+    func stopDuringClone() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let gate = HoldGate()
+        h.cli.cloneGate = gate
+        let runner = h.addRunner()
+        let vm = h.vmName(runner, iteration: 1)
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.log.all.contains { $0.hasPrefix("clone ") } })
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(!h.log.all.contains("stop \(vm)"))
+        #expect(!h.log.all.contains("delete \(vm)"))
+        #expect(h.leases.all().isEmpty)
+        #expect(h.state(runner) == .stopped)
+    }
 }

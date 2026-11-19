@@ -241,4 +241,36 @@ struct TartBackendOnDemandTests {
         #expect(!h.sleeps.all.contains(.seconds(5)))
         await h.service.stopRunner(id: runner.id)
     }
+
+    @Test("a VM whose job went away while it booted is deleted before registering, freeing its slot")
+    func abandonedBoot() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let probe = HoldGate()
+        h.cli.probeGate = probe
+        let runner = h.addRunner()
+        let vm = h.vmName(runner, iteration: 1)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.log.all.contains("probe \(vm)") })
+
+        h.demand.source(runner)?.emit(0)
+        await probe.open()
+
+        #expect(await h.settled { h.log.all.contains("delete \(vm)") })
+        #expect(!h.log.all.contains { $0.hasPrefix("jit ") })
+        #expect(await h.settled { onDemand(h.state(runner)) == OnDemandState(since: onDemand(h.state(runner))!.since) })
+        #expect(await h.settled { h.leases.all().isEmpty })
+        #expect(h.backend.isActive(id: runner.id))
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("a VM still boots and registers while its job is wanted beyond the VMs already registered")
+    func secondJobStillBoots() async throws {
+        let h = TartHarness(initialDemand: 2)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 2 })
+        await h.service.stopRunner(id: runner.id)
+    }
 }
