@@ -49,7 +49,8 @@ enum OutputParser {
         let decoded = String(decoding: bytes, as: UTF8.self)
 
         let stamped = splitStamp(decoded)
-        let text = stripRunnerPrefix(stamped.text).trimmingCharacters(in: .whitespaces)
+        let (vmPrefix, unprefixed) = splitVMPrefix(stamped.text)
+        let text = stripRunnerPrefix(unprefixed).trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
 
         if apply(marker: text, at: stamped.date, to: &state) { return }
@@ -61,7 +62,7 @@ enum OutputParser {
             byteOffset: byteOffset,
             timestamp: stamped.date,
             clockText: stamped.clock,
-            text: text,
+            text: vmPrefix + text,
             kind: kind
         ))
         state.nextLineID += 1
@@ -216,6 +217,13 @@ enum OutputParser {
     }
 
     /// Removes the runner's own `YYYY-MM-DD HH:MM:SSZ: ` prefix.
+    /// `[vm a1b2c3] ` that marks one VM's line in an on-demand runner's log, split off so the
+    /// rest classifies like any line; the line keeps it on show.
+    private static func splitVMPrefix(_ text: String) -> (prefix: String, rest: String) {
+        guard let match = text.prefixMatch(of: #/\[vm [0-9a-f]{6}\] /#) else { return ("", text) }
+        return (String(match.output), String(text[match.range.upperBound...]))
+    }
+
     private static func stripRunnerPrefix(_ text: String) -> String {
         let bytes = Array(text.utf8)
         let length = 22

@@ -74,7 +74,12 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         lock.withLock { table.append(TartVMEntry(name: name, source: "local", isRunning: false)) }
     }
 
-    func run(_ vm: String, shares: [TartShare], log file: URL, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    /// The line prefix of every `run` and `execStreaming`, in order.
+    var linePrefixes: [String] { lock.withLock { prefixes } }
+    private var prefixes: [String] = []
+
+    func run(_ vm: String, shares: [TartShare], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+        lock.withLock { prefixes.append(linePrefix) }
         log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))")
         lock.withLock {
             vmExits[vm] = onExit
@@ -97,7 +102,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return 0
     }
 
-    func execStreaming(_ vm: String, _ command: [String], log file: URL, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    func execStreaming(_ vm: String, _ command: [String], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+        lock.withLock { prefixes.append(linePrefix) }
         log.append("exec-stream \(vm)")
         lock.withLock { jobExits[vm] = onExit }
         return Handle(label: "job \(vm)", owner: self)

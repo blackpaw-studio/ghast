@@ -175,13 +175,14 @@ struct TartBackendTests {
         try await h.service.startRunner(id: runner.id)
         #expect(await h.settled { h.cli.jobsStarted == 1 })
         h.cli.endJob(h.vmName(runner, iteration: 1), code: 0)
-        #expect(await h.settled { h.lines.lines.contains("Cleaning up") })
+        #expect(await h.settled { h.lines.lines.contains("[vm 000001] Cleaning up") })
         await h.service.stopRunner(id: runner.id)
 
         let lines = h.lines.lines
         for expected in ["Cloning…", "Booting VM…", "Waiting for job", "ghast: start", "ghast: exit code=0", "Cleaning up"] {
-            #expect(lines.contains(expected), "missing \(expected)")
+            #expect(lines.contains("[vm 000001] \(expected)"), "missing \(expected)")
         }
+        #expect(h.cli.linePrefixes == ["[vm 000001] ", "[vm 000001] "])
         #expect(!lines.contains { $0.contains("JIT1") })
     }
 

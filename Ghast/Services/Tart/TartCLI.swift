@@ -23,19 +23,23 @@ protocol TartCLI: Sendable {
     func pull(_ image: String, log: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws
     func clone(_ source: String, _ name: String) async throws
     /// Boots a VM headless. The process lives as long as the VM; `onExit` fires when it ends.
+    /// Its output goes to `log`, each line marked with `linePrefix`.
     func run(
         _ vm: String,
         shares: [TartShare],
         log: URL,
+        linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle
     /// Runs a guest command to completion and returns its exit status.
     func exec(_ vm: String, _ command: [String]) async throws -> Int32
-    /// Starts a long-lived guest command, appending its output to `log`; `onExit` receives its status.
+    /// Starts a long-lived guest command, appending its output to `log` with each line marked
+    /// with `linePrefix`; `onExit` receives its status once the last line is written.
     func execStreaming(
         _ vm: String,
         _ command: [String],
         log: URL,
+        linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle
     func stop(_ vm: String, timeout: Int) async throws
@@ -97,9 +101,10 @@ struct ProcessTartCLI: TartCLI {
         _ vm: String,
         shares: [TartShare],
         log: URL,
+        linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        try launcher.launch(launchSpec(TartArguments.run(vm, shares: shares), log: log), onTermination: onExit)
+        try launchPrefixed(TartArguments.run(vm, shares: shares), log: log, linePrefix: linePrefix, onExit: onExit)
     }
 
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
@@ -110,9 +115,29 @@ struct ProcessTartCLI: TartCLI {
         _ vm: String,
         _ command: [String],
         log: URL,
+        linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        try launcher.launch(launchSpec(TartArguments.exec(vm, command), log: log), onTermination: onExit)
+        try launchPrefixed(TartArguments.exec(vm, command), log: log, linePrefix: linePrefix, onExit: onExit)
+    }
+
+    /// Streams the output through a `PrefixedLogSink` instead of handing the process the raw
+    /// log file, so lines from two VMs sharing one log stay whole and marked.
+    private func launchPrefixed(
+        _ arguments: [String],
+        log: URL,
+        linePrefix: String,
+        onExit: @escaping @Sendable (Int32) -> Void
+    ) throws -> any RunnerProcessHandle {
+        let sink = PrefixedLogSink(file: log, prefix: linePrefix)
+        return try launcher.launchStreaming(
+            launchSpec(arguments, log: log),
+            onOutput: { sink.receive($0) },
+            onTermination: { code in
+                sink.finish()
+                onExit(code)
+            }
+        )
     }
 
     func stop(_ vm: String, timeout: Int) async throws {

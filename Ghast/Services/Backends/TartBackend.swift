@@ -185,14 +185,15 @@ final class TartBackend: RunnerBackend {
 
         // Recorded before the clone exists, so a crash at any later point finds it.
         leases.record(TartLease(runnerID: runner.id, jitRunnerID: nil, scope: runner.scope), forClone: vm.clone)
-        log("Cloning…", runner: runner)
+        log("Cloning…", runner: runner, vm: vm)
         try await cli.clone(image, vm.clone)
         try checkStop(entry)
-        log("Booting VM…", runner: runner)
+        log("Booting VM…", runner: runner, vm: vm)
         vm.vmProcess = try cli.run(
             vm.clone,
             shares: [TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true)],
             log: logFile(for: runner),
+            linePrefix: vm.logPrefix,
             onExit: { [weak self, weak vm] _ in
                 Task { @MainActor in
                     if let self, let vm { self.vmProcessEnded(vm) }
@@ -206,11 +207,11 @@ final class TartBackend: RunnerBackend {
         leases.setJITRunnerID(jit.runnerID, forClone: vm.clone)
         try checkStop(entry)
 
-        log("Waiting for job", runner: runner)
-        log("ghast: start", runner: runner)
+        log("Waiting for job", runner: runner, vm: vm)
+        log("ghast: start", runner: runner, vm: vm)
         let command = TartGuestScript.command(tarball: tarball, jitConfig: jit.encodedConfig)
         let exitCode = await runGuest(cli, vm: vm, command: command, entry: entry, runner: runner)
-        log("ghast: exit code=\(exitCode)", runner: runner)
+        log("ghast: exit code=\(exitCode)", runner: runner, vm: vm)
         if exitCode == 0 {
             // The job is done: count it out now, before cleanup, so a fresh report that
             // arrives while the VM is deleted is not lowered again afterwards.
@@ -247,7 +248,7 @@ final class TartBackend: RunnerBackend {
             }
             entry.vmFailures += 1
             let delay = retryDelay(after: entry.vmFailures)
-            log("Error: \(failure.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
+            log("Error: \(failure.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner, vm: vm)
             vm.phase = .booting
             publish(entry)
             try? await sleeper(delay)
@@ -387,7 +388,7 @@ final class TartBackend: RunnerBackend {
         await withCheckedContinuation { continuation in
             let token = UUID()
             do {
-                let process = try cli.execStreaming(vm.clone, command, log: logFile(for: runner)) { [weak self, weak vm] code in
+                let process = try cli.execStreaming(vm.clone, command, log: logFile(for: runner), linePrefix: vm.logPrefix) { [weak self, weak vm] code in
                     Task { @MainActor in
                         if let self, let vm { self.guestEnded(vm, token: token, code: code) }
                     }
@@ -396,7 +397,7 @@ final class TartBackend: RunnerBackend {
                 vm.phase = .running
                 publish(entry)
             } catch {
-                log("Error: \(error.localizedDescription)", runner: runner)
+                log("Error: \(error.localizedDescription)", runner: runner, vm: vm)
                 continuation.resume(returning: RunnerExit.launchFailureCode)
             }
         }
@@ -430,7 +431,7 @@ final class TartBackend: RunnerBackend {
         guard vm.holdsSlot, let cli = vm.cli else { return }
         vm.phase = .cleaningUp
         publish(entry)
-        log("Cleaning up", runner: runner)
+        log("Cleaning up", runner: runner, vm: vm)
 
         var isClean = true
         // Stopping a VM that never started fails harmlessly; delete is what matters.
@@ -446,7 +447,7 @@ final class TartBackend: RunnerBackend {
             isClean = false
             vmStopFailed = true
             Self.logger.error("Could not delete \(vm.clone, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            log("Error: could not delete the VM: \(error.localizedDescription)", runner: runner)
+            log("Error: could not delete the VM: \(error.localizedDescription)", runner: runner, vm: vm)
         }
         // A VM that would not stop or be deleted must not keep running unseen: ending the
         // host's `tart run` ends the VM. Launch recovery deletes it if the lease stays.
@@ -454,7 +455,7 @@ final class TartBackend: RunnerBackend {
         if let jitRunnerID = vm.jitRunnerID {
             if let error = await deleteJITRunner(jitRunnerID, scope: runner.scope) {
                 isClean = false
-                log("Error: could not delete the runner registration: \(error.localizedDescription)", runner: runner)
+                log("Error: could not delete the runner registration: \(error.localizedDescription)", runner: runner, vm: vm)
             }
         }
         if isClean { leases.remove(clone: vm.clone) }
@@ -682,8 +683,9 @@ final class TartBackend: RunnerBackend {
         URL(fileURLWithPath: runner.path).appendingPathComponent(RunnerWrapperScript.logFileName)
     }
 
-    private func log(_ text: String, runner: LocalRunner) {
-        logAppender.append(text, to: logFile(for: runner))
+    /// Appends a lifecycle line; one about a single VM carries that VM's prefix.
+    private func log(_ text: String, runner: LocalRunner, vm: VMRun? = nil) {
+        logAppender.append((vm?.logPrefix ?? "") + text, to: logFile(for: runner))
     }
 }
 

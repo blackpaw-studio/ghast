@@ -65,6 +65,9 @@ final class VMRun {
         self.id = id
         self.clone = clone
     }
+
+    /// Marks this VM's lines in the runner's shared log: `[vm a1b2c3] `.
+    var logPrefix: String { "[vm \(id)] " }
 }
 
 /// The guest command in flight: its process and whoever awaits its exit status.
