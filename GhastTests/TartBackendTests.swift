@@ -164,10 +164,11 @@ struct TartBackendTests {
         defer { h.cleanup() }
         let gate = HoldGate()
         h.cli.pullGate = gate
+        h.cli.pullProgress = [TartPullProgress(fraction: 0.42, size: "27.0 GB")]
         let runner = h.addRunner()
 
         try await h.service.startRunner(id: runner.id)
-        #expect(await h.settled { h.state(runner) == .pulling })
+        #expect(await h.settled { h.state(runner) == .pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB")) })
         #expect(h.lines.lines.contains("Pulling image…"))
         await gate.open()
         #expect(await h.settled { h.cli.jobsStarted == 1 })

@@ -101,7 +101,7 @@ struct TartBackendStopTests {
         let runner = h.addRunner()
 
         try await h.service.startRunner(id: runner.id)
-        #expect(await h.settled { h.state(runner) == .pulling })
+        #expect(await h.settled { h.state(runner) == .pulling(.indeterminate) })
         h.backend.requestStop(id: runner.id, keepingRunIntent: false)
 
         #expect(isStopping(h.state(runner)))

@@ -24,6 +24,13 @@ struct RunnerStatusHeader<Actions: View>: View {
                         .font(FocusType.body)
                         .foregroundStyle(.secondary)
                         .padding(.leading, FocusMetrics.headerTextIndent)
+                    if let fraction = status.downloadFraction {
+                        ProgressView(value: fraction)
+                            .frame(maxWidth: FocusMetrics.headerDownloadBarWidth)
+                            .padding(.leading, FocusMetrics.headerTextIndent)
+                            .padding(.top, FocusMetrics.headerDownloadBarTop)
+                            .accessibilityLabel("Download progress")
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 0)

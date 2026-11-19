@@ -18,8 +18,9 @@ protocol TartCLI: Sendable {
     func list() async throws -> [TartVMEntry]
     /// The guest OS of a local VM (`darwin` or `linux`).
     func os(of vm: String) async throws -> String
-    /// Pulls an OCI image, appending Tart's progress output to `log`.
-    func pull(_ image: String, log: URL) async throws
+    /// Pulls an OCI image. `onProgress` receives the cumulative progress as Tart reports it;
+    /// every other output line is appended to `log` (the percentage lines are not).
+    func pull(_ image: String, log: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws
     func clone(_ source: String, _ name: String) async throws
     /// Boots a VM headless. The process lives as long as the VM; `onExit` fires when it ends.
     func run(
@@ -47,12 +48,15 @@ struct ProcessTartCLI: TartCLI {
     let executable: URL
     let launcher: any RunnerProcessLauncher
     private let workingDirectory: URL
+    private let logAppender: any RunnerLogAppending
 
     init(
         executable: URL,
         launcher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
-        workingDirectory: URL = FileManager.default.temporaryDirectory
+        workingDirectory: URL = FileManager.default.temporaryDirectory,
+        logAppender: any RunnerLogAppending = FileRunnerLogAppender()
     ) {
+        self.logAppender = logAppender
         self.executable = executable
         self.launcher = launcher
         self.workingDirectory = workingDirectory
@@ -66,13 +70,17 @@ struct ProcessTartCLI: TartCLI {
         try TartJSON.decodeOS(Data(try await checked(TartArguments.get(vm)).output.utf8))
     }
 
-    func pull(_ image: String, log: URL) async throws {
+    func pull(_ image: String, log: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws {
         let box = HandleBox()
         let spec = launchSpec(TartArguments.pull(image), log: log)
+        let sink = PullSink(log: log, appender: logAppender, onProgress: onProgress)
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 do {
-                    box.set(try launcher.launch(spec) { continuation.resume(returning: $0) })
+                    box.set(try launcher.launchStreaming(spec, onOutput: sink.receive) {
+                        sink.finish()
+                        continuation.resume(returning: $0)
+                    })
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -150,5 +158,44 @@ private final class HandleBox: @unchecked Sendable {
             return handle
         }
         current?.terminate()
+    }
+}
+
+/// Turns `tart pull` output chunks into progress callbacks and log lines.
+private final class PullSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var parser = TartPullOutputParser()
+    private var progress = TartPullProgress.indeterminate
+    private let log: URL
+    private let appender: any RunnerLogAppending
+    private let onProgress: @Sendable (TartPullProgress) -> Void
+
+    init(log: URL, appender: any RunnerLogAppending, onProgress: @escaping @Sendable (TartPullProgress) -> Void) {
+        self.log = log
+        self.appender = appender
+        self.onProgress = onProgress
+    }
+
+    func receive(_ chunk: String) {
+        handle(lock.withLock { parser.feed(chunk) })
+    }
+
+    func finish() {
+        handle(lock.withLock { parser.finish() })
+    }
+
+    private func handle(_ events: [TartPullEvent]) {
+        for event in events {
+            if case let .line(text) = event {
+                appender.append(text, to: log)
+                continue
+            }
+            let updated = lock.withLock { () -> TartPullProgress? in
+                let next = progress.applying(event)
+                defer { progress = next }
+                return next == progress ? nil : next
+            }
+            if let updated { onProgress(updated) }
+        }
     }
 }

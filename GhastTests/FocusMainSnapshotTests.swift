@@ -102,7 +102,7 @@ struct FocusMainSnapshotTests {
         case .vmBooting:
             return (.booting, OutputParser.consume(vmLog(booting: true), into: .initial).activity)
         case .vmPulling:
-            return (.pulling, OutputParser.consume(vmLog(booting: false), into: .initial).activity)
+            return (.pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB")), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .starting:
             let listening = try #require(log.range(of: Data("Listening for Jobs".utf8)))
             let lineStart = log[..<listening.lowerBound].lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? log.startIndex
