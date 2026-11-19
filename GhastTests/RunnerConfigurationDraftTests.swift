@@ -63,6 +63,25 @@ import Foundation
         #expect(!draft.needsRestart)
     }
 
+    @Test func vmQueueRoleLoadsAndSavesWithoutAskingForARestart() {
+        var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm")
+        vm.backend = .tart(image: "my-vm")
+        let service = makeTestRunnerService(runners: [vm])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper)
+        draft.load(vm)
+        #expect(draft.queueRole == .primary)
+
+        draft.queueRole = .standby
+        draft.saveSoon()
+        draft.flush()
+
+        let saved = service.localRunners.first
+        #expect(saved?.queueRole == .standby)
+        #expect(!draft.needsRestart)
+        draft.load(saved!)
+        #expect(draft.queueRole == .standby)
+    }
+
     @Test func blankVMFieldsKeepTheSavedImageAndLabels() {
         var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm", labels: ["self-hosted"])
         vm.backend = .tart(image: "my-vm")
