@@ -153,19 +153,20 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     }
 
     /// The sidebar row's second line. `scope` is the organization login or repository full name.
-    func sidebarSubtitle(scope: String) -> String {
+    func sidebarSubtitle(scope: String, imageLabel: String? = nil) -> String {
+        let detail = imageLabel ?? scope
         switch self {
-        case .idle: return "Idle · \(scope)"
+        case .idle: return "Idle · \(detail)"
         case let .runningJob(name, _): return "Running \(name)"
         case .starting: return "Connecting…"
         case let .pulling(progress): return progress.percent.map { "Pulling image · \($0)%" } ?? "Pulling image…"
         case .booting: return "Booting VM…"
         case .cleaningUp: return "Cleaning up…"
         case .stopping: return "Stopping…"
-        case .stopped: return "Stopped · \(scope)"
+        case .stopped: return "Stopped · \(detail)"
         case let .error(code, _): return "Exited with code \(code)"
-        case .offline: return "Offline · \(scope)"
-        case .remoteBusy: return "Running a job · \(scope)"
+        case .offline: return "Offline · \(detail)"
+        case .remoteBusy: return "Running a job · \(detail)"
         }
     }
 

@@ -115,6 +115,17 @@ struct RunnerDisplayStatusTests {
         #expect(known.downloadFraction == 0.42)
     }
 
+    @Test("a VM runner's sidebar subtitle shows its image where the scope would be, except while pulling", arguments: [
+        (RunnerDisplayStatus.idle, "Idle · macOS Tahoe · Xcode 27.2"),
+        (.stopped(at: nil), "Stopped · macOS Tahoe · Xcode 27.2"),
+        (.booting, "Booting VM…"),
+        (.pulling(TartPullProgress(fraction: 0.42, size: nil)), "Pulling image · 42%"),
+        (.runningJob(name: "build", since: nil), "Running build"),
+    ])
+    func vmSidebarSubtitle(status: RunnerDisplayStatus, expected: String) {
+        #expect(status.sidebarSubtitle(scope: Self.scope, imageLabel: "macOS Tahoe · Xcode 27.2") == expected)
+    }
+
     @Test("the pulling line names the image by its label")
     func pullingLineNamesImage() {
         let status = RunnerDisplayStatus.pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB"))

@@ -22,6 +22,14 @@ enum RunnerBackendKind: Codable, Hashable, Sendable {
     case tart(image: String)
 }
 
+extension LocalRunner {
+    /// A VM runner's image as people read it ("macOS Tahoe · Xcode 27.2"); nil on the host.
+    var imageLabel: String? {
+        guard case let .tart(image) = backend else { return nil }
+        return TartImageCatalog.label(for: image)
+    }
+}
+
 struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     static let defaultWorkFolder = "_work"
 

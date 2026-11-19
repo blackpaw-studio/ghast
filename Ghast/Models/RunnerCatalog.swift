@@ -32,6 +32,9 @@ struct RunnerItem: Identifiable, Equatable, Sendable {
     /// Needed to remove a runner on GitHub; nil for a local runner GitHub doesn't list.
     let gitHubRunnerID: Int?
     let status: RunnerDisplayStatus
+    /// A VM runner's image as people read it ("macOS Tahoe · Xcode 27.2"); nil on the host and
+    /// for runners on other machines.
+    var imageLabel: String?
 
     var runnerLocation: RunnerLocation {
         if case .thisMac = location { return .thisMac }
@@ -85,7 +88,8 @@ struct RunnerCatalog: Equatable, Sendable {
                     processState: processStates[runner.id] ?? .stopped,
                     lastExit: runner.lastExit,
                     activity: activities[runner.id] ?? RunnerActivity()
-                )
+                ),
+                imageLabel: runner.imageLabel
             )
         }
 

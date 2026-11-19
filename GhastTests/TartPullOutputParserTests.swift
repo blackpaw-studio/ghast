@@ -43,4 +43,41 @@ struct TartPullOutputParserTests {
         var parser = TartPullOutputParser()
         #expect(parser.feed("250%\n") == [.progress(1)])
     }
+
+    /// Excerpt of real `tart pull` 2.42.0 output (non-TTY, `\n`-terminated, percent lines in
+    /// between trimmed to a few).
+    private static let realOutput = """
+    pulling ghcr.io/cirruslabs/macos-tahoe-base:latest...
+    pulling manifest...
+    pulling disk (27.0 GB compressed)...
+    0%
+    1%
+    2%
+    50%
+    99%
+    100%
+    pulling NVRAM...
+
+    """
+
+    private static let realEvents: [TartPullEvent] = [
+        .line("pulling ghcr.io/cirruslabs/macos-tahoe-base:latest..."),
+        .line("pulling manifest..."),
+        .size("27.0 GB"), .line("pulling disk (27.0 GB compressed)..."),
+        .progress(0), .progress(0.01), .progress(0.02), .progress(0.5), .progress(0.99), .progress(1),
+        .line("pulling NVRAM..."),
+    ]
+
+    @Test("real tart 2.42.0 output parses the same however it is chunked", arguments: [1, 2, 3, 7, 50, 1000])
+    func realOutputAnyChunking(chunkSize: Int) {
+        var parser = TartPullOutputParser()
+        var events: [TartPullEvent] = []
+        var rest = Substring(Self.realOutput)
+        while !rest.isEmpty {
+            events += parser.feed(String(rest.prefix(chunkSize)))
+            rest = rest.dropFirst(chunkSize)
+        }
+        events += parser.finish()
+        #expect(events == Self.realEvents)
+    }
 }

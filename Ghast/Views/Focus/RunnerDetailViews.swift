@@ -56,10 +56,7 @@ struct LocalRunnerDetail: View {
     }
 
     /// A VM runner's image as people read it ("macOS Tahoe · Xcode 27.2"); nil on the host.
-    private var imageLabel: String? {
-        guard case let .tart(image) = runner.backend else { return nil }
-        return TartImageCatalog.label(for: image)
-    }
+    private var imageLabel: String? { runner.imageLabel }
 
     private func header(time: DisplayTime) -> some View {
         RunnerStatusHeader(
