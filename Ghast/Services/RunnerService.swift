@@ -232,7 +232,7 @@ class RunnerService {
     /// Deletes VM clones and runner registrations an earlier Ghast left behind. Once per
     /// launch, after sign-in has restored the GitHub token.
     func recoverTartLeftovers() async {
-        await tart.recoverLeftovers()
+        await tart.recoverLeftovers(runners: localRunners)
     }
     
     /// SIGKILLs whatever runner processes are still tracked, without waiting. The last step of a

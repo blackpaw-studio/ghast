@@ -27,6 +27,7 @@ enum TartGuestScript {
             echo "Error: runner package not found at $ARCHIVE"
             exit 1
         fi
+        [ -d "$JOB" ] || { echo "Error: job share missing at $JOB" >&2; exit 1; }
         mkdir -p "$HOME/actions-runner" && cd "$HOME/actions-runner" || exit 1
         tar xzf "$ARCHIVE" || { echo "Error: could not extract the runner package"; exit 1; }
         if [ -f "$JOB/\(VMJobFiles.environmentFile)" ]; then cat "$JOB/\(VMJobFiles.environmentFile)" >> .env || exit 1; fi

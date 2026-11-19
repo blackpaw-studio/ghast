@@ -48,4 +48,12 @@ struct TartGuestScriptTests {
         let run = try #require(script.range(of: "./run.sh"))
         #expect(extract.lowerBound < copy.lowerBound && copy.lowerBound < run.lowerBound)
     }
+
+    @Test("a missing job share fails the run loudly instead of running without scripts")
+    func jobShareMissing() throws {
+        let script = TartGuestScript.make(tarball: "r.tar.gz")
+        let check = try #require(script.range(of: #"[ -d "$JOB" ] || { echo "Error: job share missing at $JOB" >&2; exit 1; }"#))
+        let run = try #require(script.range(of: "./run.sh"))
+        #expect(check.lowerBound < run.lowerBound)
+    }
 }

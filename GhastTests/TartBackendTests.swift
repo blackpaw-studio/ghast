@@ -111,9 +111,11 @@ final class TartHarness {
         return nil
     }
 
-    /// Ends the running job and, once its VM is gone, reports one more queued job.
+    /// Ends the running job (its JobCompleted reports no demand) and, once its VM is gone,
+    /// reports one more queued job.
     func nextJob(_ runner: LocalRunner) async throws {
         let vm = try #require(cli.currentJobVM)
+        demand.source(runner)?.emit(0)
         cli.endJob(vm, code: 0)
         _ = await settled { log.all.contains("delete \(vm)") && vms(runner)?.booting == 0 && vms(runner)?.running == 0 }
         demand.source(runner)?.emit(1)
@@ -194,6 +196,25 @@ struct TartBackendTests {
         #expect(await h.settled { !FileManager.default.fileExists(atPath: share.path.path) })
         let everything = h.lines.lines + h.log.all + h.cli.streamedCommands.flatMap { $0 }
         #expect(!everything.contains { $0.contains("s3cr3t") })
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("launch recovery deletes job folders a crash left behind, but not a running VM's")
+    func recoveryDeletesJobFolders() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        let stale = URL(fileURLWithPath: runner.path).appendingPathComponent("vm-jobs/abcdef")
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try Data("TOKEN=s3cr3t\n".utf8).write(to: stale.appendingPathComponent(".env"))
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let live = try #require(h.cli.shares(of: h.vmName(runner, iteration: 1)).first { $0.name == VMJobFiles.shareName }?.path)
+
+        await h.service.recoverTartLeftovers()
+
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileManager.default.fileExists(atPath: live.path))
         await h.service.stopRunner(id: runner.id)
     }
 

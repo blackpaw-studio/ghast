@@ -112,6 +112,7 @@ struct TartBackendOnDemandTests {
 
         try await h.service.startRunner(id: runner.id)
         #expect(await h.settled { h.cli.jobsStarted == 1 })
+        h.demand.source(runner)?.emit(0) // JobCompleted's statistics
         h.cli.endJob(vm, code: 0)
 
         #expect(await h.settled { h.log.all.contains("delete \(vm)") })
@@ -271,6 +272,80 @@ struct TartBackendOnDemandTests {
         let runner = h.addRunner()
         try await h.service.startRunner(id: runner.id)
         #expect(await h.settled { h.cli.jobsStarted == 2 })
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("job A's JobCompleted before its VM exits still leaves queued job B a VM")
+    func jobCompletedBeforeGuestExit() async throws {
+        let h = TartHarness(initialDemand: 1)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        let first = h.vmName(runner, iteration: 1)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let source = try #require(h.demand.source(runner))
+
+        // B queues: VM 2 boots and holds at its probe.
+        let probe = HoldGate()
+        h.cli.probeGate = probe
+        source.emit(2)
+        #expect(await h.settled { h.log.all.contains("probe \(h.vmName(runner, iteration: 2))") })
+        // A's JobCompleted arrives while A's guest is still exiting.
+        source.emit(1)
+        await probe.open()
+        for _ in 0..<50 { await Task.yield() }
+        h.cli.endJob(first, code: 0)
+
+        #expect(await h.settled { h.cli.jobsStarted == 2 })
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("a guest that exits before its JobCompleted boots at most one extra VM, which then stands down")
+    func guestExitBeforeJobCompleted() async throws {
+        let h = TartHarness(initialDemand: 1)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        let first = h.vmName(runner, iteration: 1)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let source = try #require(h.demand.source(runner))
+
+        let probe = HoldGate()
+        h.cli.probeGate = probe
+        h.cli.endJob(first, code: 0)
+        #expect(await h.settled { h.log.all.contains("delete \(first)") })
+        for _ in 0..<50 { await Task.yield() }
+        source.emit(0)
+        await probe.open()
+
+        #expect(await h.settled { onDemand(h.state(runner)) == OnDemandState(since: onDemand(h.state(runner))!.since) && h.leases.all().isEmpty })
+        #expect(clones(h).count <= 2)
+        #expect(h.api.jitRequests.count == 1)
+        #expect(h.cli.jobsStarted == 1)
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("a source that fails again right after each setup backs off further each time")
+    func setupOnlyRunsBackOff() async throws {
+        let h = TartHarness(initialDemand: 0)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        let source = try #require(h.demand.source(runner))
+
+        for run in 1...3 {
+            #expect(await h.settled { source.runCount == run && source.isRunning })
+            source.failRun(DemandSourceError.interrupted(ScaleSetError.notFound))
+        }
+        #expect(await h.settled { source.runCount == 4 })
+        #expect(h.sleeps.all.filter { $0 >= .seconds(5) } == [.seconds(5), .seconds(10), .seconds(20)])
+
+        // A run that got past setup to a message starts the backoff over.
+        #expect(await h.settled { source.isRunning })
+        source.emit(0)
+        source.failRun(DemandSourceError.interrupted(ScaleSetError.notFound))
+        #expect(await h.settled { source.runCount == 5 })
+        #expect(h.sleeps.all.filter { $0 >= .seconds(5) }.last == .seconds(5))
         await h.service.stopRunner(id: runner.id)
     }
 }

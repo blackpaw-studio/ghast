@@ -306,11 +306,10 @@ struct ScaleSetMessage: Equatable, Sendable {
         }
         var message = ScaleSetMessage(messageID: envelope.messageId, statistics: envelope.statistics)
         guard let body = envelope.body, !body.isEmpty else { return message }
-        let elements: [ScaleSetJobMessage]
-        do {
-            elements = try JSONDecoder().decode([ScaleSetJobMessage].self, from: Data(body.utf8))
-        } catch {
-            throw ScaleSetError.badResponse("message body: \(error.localizedDescription)")
+        guard let elements = try? JSONDecoder().decode([ScaleSetJobMessage].self, from: Data(body.utf8)) else {
+            var skipped = ScaleSetMessage(messageID: id, statistics: nil)
+            skipped.unsupportedType = "\(jobMessagesType) (unreadable body)"
+            return skipped
         }
         for element in elements {
             switch element.messageType {

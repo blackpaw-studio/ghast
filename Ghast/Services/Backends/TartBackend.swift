@@ -32,6 +32,8 @@ final class TartBackend: RunnerBackend {
     /// VMs one runner entry runs at once.
     static let maxVMsPerRunner = 2
     static let clonePrefix = "ghast-"
+    /// Under a VM runner's folder: one folder per VM boot with its scripts and `.env`.
+    static let jobFoldersName = "vm-jobs"
     private static let maxRunnerNameLength = 64
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "tart")
 
@@ -112,9 +114,13 @@ final class TartBackend: RunnerBackend {
     private func runDemand(_ entry: OnDemandEntry) async {
         var failures = 0
         while !entry.isStopRequested, !Task.isCancelled {
+            // The first report of a run comes from setup (the session's statistics); only a
+            // later one shows the source working, so only that resets the backoff.
+            var reports = 0
             do {
                 try await entry.source.run { [weak self] demand in
-                    failures = 0
+                    reports += 1
+                    if reports > 1 { failures = 0 }
                     self?.demandChanged(entry, to: demand)
                 }
                 return
@@ -230,11 +236,9 @@ final class TartBackend: RunnerBackend {
         let command = TartGuestScript.command(tarball: tarball, jitConfig: jit.encodedConfig)
         let exitCode = await runGuest(cli, vm: vm, command: command, entry: entry, runner: runner)
         log("ghast: exit code=\(exitCode)", runner: runner, vm: vm)
-        if exitCode == 0 {
-            // The job is done: count it out now, before cleanup, so a fresh report that
-            // arrives while the VM is deleted is not lowered again afterwards.
-            entry.demand = max(0, entry.demand - 1)
-        }
+        // Demand is not lowered here: the source's next report (JobCompleted's statistics)
+        // says what is still wanted. Until then a replacement VM may boot; the check before
+        // registering stands it down if its job is not wanted.
         return .exited(exitCode)
     }
 
@@ -382,7 +386,7 @@ final class TartBackend: RunnerBackend {
     }
 
     private static func jobFolder(for runner: LocalRunner, vm: VMRun) -> URL {
-        URL(fileURLWithPath: runner.path).appendingPathComponent("vm-jobs").appendingPathComponent(vm.id)
+        URL(fileURLWithPath: runner.path).appendingPathComponent(jobFoldersName).appendingPathComponent(vm.id)
     }
 
     private func waitForGuest(_ cli: any TartCLI, vm: VMRun, entry: OnDemandEntry) async throws {
@@ -667,7 +671,8 @@ final class TartBackend: RunnerBackend {
     /// the JIT runner registrations they held. Best effort: a failure is logged and the rest
     /// goes on; a lease whose cleanup failed stays for the next launch. Leaves anything an
     /// active runner owns alone, since restarted runners may already be booting.
-    func recoverLeftovers() async {
+    func recoverLeftovers(runners: [LocalRunner] = []) async {
+        deleteLeftoverJobFolders(runners)
         let cli: (any TartCLI)?
         do {
             cli = try await cliProvider()
@@ -688,6 +693,20 @@ final class TartBackend: RunnerBackend {
             }
             // Without a CLI the VM's fate is unknown, so the lease stays.
             if isClean, cli != nil, !remaining.contains(clone) { leases.remove(clone: clone) }
+        }
+    }
+
+    /// Job folders hold variable values and scripts; any a crash left behind go, except the
+    /// ones VMs running now booted with.
+    private func deleteLeftoverJobFolders(_ runners: [LocalRunner]) {
+        for runner in runners {
+            guard case .tart = runner.backend else { continue }
+            let parent = URL(fileURLWithPath: runner.path).appendingPathComponent(Self.jobFoldersName)
+            let live = Set(entries[runner.id]?.vms.map(\.id) ?? [])
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+            for name in names where !live.contains(name) {
+                try? FileManager.default.removeItem(at: parent.appendingPathComponent(name))
+            }
         }
     }
 

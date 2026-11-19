@@ -118,6 +118,7 @@ import Foundation
         (#"{"messageId":5,"messageType":"SomethingNew","body":"{not json"}"#, "SomethingNew"),
         (#"{"messageId":6,"messageType":7}"#, "(unreadable)"),
         (#"{"messageId":8}"#, "(unreadable)"),
+        (#"{"messageId":9,"messageType":"RunnerScaleSetJobMessages","body":"{not json"}"#, "RunnerScaleSetJobMessages (unreadable body)"),
     ])
     func unsupportedType(json: String, type: String) throws {
         let message = try ScaleSetMessage.decode(Data(json.utf8))
