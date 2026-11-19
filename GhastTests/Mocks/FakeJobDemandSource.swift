@@ -12,7 +12,7 @@ final class FakeJobDemandSource: JobDemandSource {
     var runFailures: [Error] = []
     var deleteRemoteError: Error?
     private let jit: @MainActor (String, String) async throws -> GitHubJITConfig
-    private var onDemand: (@MainActor (Int) -> Void)?
+    private var context: DemandRunContext?
     private var running: CheckedContinuation<Void, Error>?
     private(set) var runCount = 0
     private(set) var closeCount = 0
@@ -26,11 +26,11 @@ final class FakeJobDemandSource: JobDemandSource {
 
     var isRunning: Bool { running != nil }
 
-    func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
+    func run(_ context: DemandRunContext) async throws {
         runCount += 1
         if !runFailures.isEmpty { throw runFailures.removeFirst() }
-        self.onDemand = onDemand
-        if let initialDemand { onDemand(initialDemand) }
+        self.context = context
+        if let initialDemand { context.onDemand(initialDemand) }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { running = $0 }
         } onCancel: {
@@ -38,12 +38,19 @@ final class FakeJobDemandSource: JobDemandSource {
         }
     }
 
-    func emit(_ demand: Int) { onDemand?(demand) }
+    func emit(_ demand: Int) { context?.onDemand(demand) }
+
+    func emitQueue(_ status: JobQueueStatus) { context?.onQueue(status) }
+
+    /// The role the runner would give the source right now.
+    var role: QueueRole? { context?.role() }
+    /// Since when the runner has been idle, as the runner would tell the source right now.
+    var idleSince: Date? { context?.idleSince() }
 
     func failRun(_ error: Error) {
         let continuation = running
         running = nil
-        onDemand = nil
+        context = nil
         continuation?.resume(throwing: error)
     }
 

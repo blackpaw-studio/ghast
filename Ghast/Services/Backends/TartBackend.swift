@@ -118,11 +118,12 @@ final class TartBackend: RunnerBackend {
             // later one shows the source working, so only that resets the backoff.
             var reports = 0
             do {
-                try await entry.source.run { [weak self] demand in
+                let context = DemandRunContext(onDemand: { [weak self] demand in
                     reports += 1
                     if reports > 1 { failures = 0 }
                     self?.demandChanged(entry, to: demand)
-                }
+                })
+                try await entry.source.run(context)
                 return
             } catch {
                 if entry.isStopRequested || error.isCancellation { return }

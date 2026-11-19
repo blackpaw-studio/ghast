@@ -18,7 +18,7 @@ import Foundation
     /// Starts `run` and waits for `polls` demand reports.
     private func start(_ source: RESTPollingDemandSource, polls: Int = 1) async -> Task<Void, any Error> {
         let recorder = demand
-        let task = Task { try await source.run(onDemand: recorder.record) }
+        let task = Task { try await source.run(recorder.context) }
         while demand.values.count < polls { await Task.yield() }
         return task
     }
@@ -37,6 +37,18 @@ import Foundation
 
         #expect(demand.values == [3])
         #expect(sleeper.requested == [.seconds(15)])
+    }
+
+    @Test("polling reports no job queue, once")
+    func reportsNoQueue() async throws {
+        let task = await start(makeSource(), polls: 1)
+        sleeper.wakeAll()
+        while demand.values.count < 2 { await Task.yield() }
+        task.cancel()
+        sleeper.wakeAll()
+        _ = await task.result
+
+        #expect(demand.queue == [.noQueue])
     }
 
     @Test("the next poll sends each URL's ETag and keeps what a 304 did not change")
@@ -77,7 +89,7 @@ import Foundation
     @Test("a poll failure is thrown for the caller's backoff")
     func failure() async throws {
         api.workflowError = GitHubAPIError.serverError(502)
-        await #expect(throws: GitHubAPIError.self) { try await makeSource().run(onDemand: demand.record) }
+        await #expect(throws: GitHubAPIError.self) { try await makeSource().run(demand.context) }
     }
 
     @Test("a JIT runner is registered in the Default group with the runner's name as a label")

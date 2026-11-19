@@ -57,15 +57,17 @@ final class ScaleSetDemandSource: JobDemandSource {
         return set.id
     }
 
-    func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
+    func run(_ context: DemandRunContext) async throws {
         let id = try await ensureScaleSet()
+        context.onQueue(.connecting)
         let session = ScaleSetMessageSession(client: client, scaleSetID: id, transport: transport)
         self.session = session
         do {
             let created = try await session.create(ownerName: ownerName)
             guard let statistics = created.statistics else { throw ScaleSetError.badResponse("session statistics missing") }
-            onDemand(statistics.totalAssignedJobs)
-            try await listen(session, onDemand: onDemand)
+            context.onQueue(.holding)
+            context.onDemand(statistics.totalAssignedJobs)
+            try await listen(session, onDemand: context.onDemand)
         } catch {
             // A retry opens a new session; this one must go first or the next create gets 409.
             // On cancellation `close()` does it, from the stop path.

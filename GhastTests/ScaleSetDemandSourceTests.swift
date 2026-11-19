@@ -21,7 +21,7 @@ import Foundation
     }
 
     private func run(_ source: ScaleSetDemandSource) async {
-        _ = try? await source.run(onDemand: demand.record)
+        _ = try? await source.run(demand.context)
     }
 
     private func paths(_ transport: FakeTransport) async -> [String] {
@@ -101,6 +101,13 @@ import Foundation
         #expect(lastPoll?.url?.query?.contains("lastMessageId=7") == true)
     }
 
+    @Test("the queue is connecting before the session exists, then held once it does")
+    func queueConnectingThenHolding() async throws {
+        let (source, _) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 0)])
+        await run(source)
+        #expect(demand.queue == [.connecting, .holding])
+    }
+
     @Test("a JIT config comes from the scale set")
     func jit() async throws {
         let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.jit(id: 77)])
@@ -112,7 +119,7 @@ import Foundation
     @Test("a run that fails deletes its session before it returns")
     func failedRunClosesSession() async throws {
         let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(), .json("", status: 404), ScaleSetReplies.noContent])
-        await #expect(throws: ScaleSetError.self) { try await source.run(onDemand: demand.record) }
+        await #expect(throws: ScaleSetError.self) { try await source.run(demand.context) }
         #expect(await paths(transport).last == "DELETE /abc/_apis/runtime/runnerscalesets/9/sessions/s-1")
     }
 
@@ -126,7 +133,7 @@ import Foundation
             .hang,
         ])
         let recorder = demand
-        let task = Task { try await source.run(onDemand: recorder.record) }
+        let task = Task { try await source.run(recorder.context) }
         for _ in 0..<10_000 where !demand.values.contains(3) { await Task.yield() }
         task.cancel()
         _ = await task.result
@@ -139,7 +146,7 @@ import Foundation
     @Test("polls that keep failing give up after the retry limit and close the session")
     func pollGivesUp() async throws {
         let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session()] + Array(repeating: .json("", status: 502), count: 5) + [ScaleSetReplies.noContent])
-        await #expect(throws: ScaleSetError.transient("HTTP 502")) { try await source.run(onDemand: demand.record) }
+        await #expect(throws: ScaleSetError.transient("HTTP 502")) { try await source.run(demand.context) }
         #expect(sleeps.durations.count == 4)
         #expect(await paths(transport).last == "DELETE /abc/_apis/runtime/runnerscalesets/9/sessions/s-1")
     }
@@ -154,7 +161,7 @@ import Foundation
             .hang,
         ])
         let recorder = demand
-        let task = Task { try await source.run(onDemand: recorder.record) }
+        let task = Task { try await source.run(recorder.context) }
         for _ in 0..<10_000 where !demand.values.contains(2) { await Task.yield() }
         task.cancel()
         _ = await task.result
@@ -169,7 +176,7 @@ import Foundation
     func closeDeletesSession() async throws {
         let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(), .hang, ScaleSetReplies.noContent])
         let recorder = demand
-        let task = Task { try await source.run(onDemand: recorder.record) }
+        let task = Task { try await source.run(recorder.context) }
         while await transport.requests.count < 4 { await Task.yield() }
         task.cancel()
         _ = await task.result
@@ -192,10 +199,22 @@ import Foundation
     }
 }
 
-/// Collects every demand a source reports.
+/// Collects every demand and queue status a source reports, and answers its role and idle
+/// questions from settable values.
 @MainActor final class DemandRecorder {
     private(set) var values: [Int] = []
+    private(set) var queue: [JobQueueStatus] = []
+    var role = QueueRole.primary
+    var idleSince: Date?
 
     var record: @MainActor (Int) -> Void { { [self] in values.append($0) } }
 
+    var context: DemandRunContext {
+        DemandRunContext(
+            onDemand: { [self] in values.append($0) },
+            onQueue: { [self] in queue.append($0) },
+            role: { [self] in role },
+            idleSince: { [self] in idleSince }
+        )
+    }
 }

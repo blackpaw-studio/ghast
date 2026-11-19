@@ -76,10 +76,10 @@ final class FallbackDemandSource: JobDemandSource {
 
     /// Setup failures pass through (a refused org token, a missing group need the user);
     /// once a source is chosen, whatever ends its run is worth another try.
-    func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
+    func run(_ context: DemandRunContext) async throws {
         let source = try await resolved()
         do {
-            try await source.run(onDemand: onDemand)
+            try await source.run(context)
         } catch {
             if error.isCancellation { throw error }
             throw DemandSourceError.interrupted(error)

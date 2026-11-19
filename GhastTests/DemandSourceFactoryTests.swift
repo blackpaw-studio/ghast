@@ -30,7 +30,7 @@ import Foundation
         let (factory, _) = makeFactory([Self.rejected])
         let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
         let recorder = demand
-        let task = Task { try await source.run(onDemand: recorder.record) }
+        let task = Task { try await source.run(recorder.context) }
         while demand.values.isEmpty { await Task.yield() }
         task.cancel()
         sleeper.wakeAll()
@@ -43,7 +43,7 @@ import Foundation
         let (factory, _) = makeFactory([Self.rejected])
         let source = factory.make(for: runner(.organization(login: "octo")))
         await #expect(throws: TartBackendError.scaleSetAuthRejected) {
-            try await source.run(onDemand: demand.record)
+            try await source.run(demand.context)
         }
         #expect(!TartBackend.isTransient(TartBackendError.scaleSetAuthRejected))
         #expect(api.conditionalFetches.isEmpty)
@@ -53,7 +53,7 @@ import Foundation
     func otherFailureNoFallback() async throws {
         let (factory, _) = makeFactory([.json("", status: 502)])
         let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
-        await #expect(throws: ScaleSetError.self) { try await source.run(onDemand: demand.record) }
+        await #expect(throws: ScaleSetError.self) { try await source.run(demand.context) }
         #expect(api.conditionalFetches.isEmpty)
     }
 
@@ -64,7 +64,7 @@ import Foundation
             ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 1),
         ])
         let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
-        _ = try? await source.run(onDemand: demand.record)
+        _ = try? await source.run(demand.context)
         #expect(demand.values == [1])
         #expect(await transport.requests.contains { $0.url?.path.hasSuffix("/runnerscalesets/9/sessions") == true })
         #expect(api.conditionalFetches.isEmpty)
@@ -81,7 +81,7 @@ import Foundation
         let (factory, transport) = makeFactory([
             ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600)), ScaleSetReplies.list([9]),
         ])
-        _ = try? await factory.make(for: org).run(onDemand: demand.record)
+        _ = try? await factory.make(for: org).run(demand.context)
         #expect(await transport.requests[1].url?.query?.contains("runnerGroupId=7") == true)
     }
 
@@ -96,7 +96,7 @@ import Foundation
         ] + failure + [ScaleSetReplies.noContent])
         let source = factory.make(for: runner(.organization(login: "octo")))
         do {
-            try await source.run(onDemand: demand.record)
+            try await source.run(demand.context)
             Issue.record("run should fail")
         } catch {
             #expect(TartBackend.isTransient(error), "\(error)")
@@ -111,9 +111,9 @@ import Foundation
             ScaleSetReplies.list([12]), ScaleSetReplies.session(assigned: 2), .hang,
         ])
         let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
-        _ = try? await source.run(onDemand: demand.record)
+        _ = try? await source.run(demand.context)
         let recorder = demand
-        let task = Task { try await source.run(onDemand: recorder.record) }
+        let task = Task { try await source.run(recorder.context) }
         for _ in 0..<10_000 where !demand.values.contains(2) { await Task.yield() }
         task.cancel()
         _ = await task.result
