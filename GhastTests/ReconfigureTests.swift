@@ -274,18 +274,19 @@ import Foundation
         #expect(saved.backend == .host)
     }
 
-    @Test func aRunningVMSlotPicksUpTheNewImageOnItsNextIteration() async throws {
+    @Test func aRunningVMRunnerBootsItsNextVMFromTheNewImage() async throws {
         let runner = vmRunner()
         try FileManager.default.createDirectory(at: h.folder("vm-1"), withIntermediateDirectories: true)
         try await h.service.startRunner(id: runner.id)
         #expect(await eventually { h.tart.jobsStarted == 1 })
 
         h.service.updateTartSettings(id: runner.id, labels: runner.labels, runnerGroup: nil, image: "my-vm")
-        h.tart.endJob(try #require(h.tart.currentJobVM), code: 0)
+        // A second queued job boots a second VM.
+        h.demand.source(runner)?.emit(2)
         let other = "my-vm"
 
-        // "my-vm" is a local name that does not exist: the next iteration fails on it, which
-        // shows it reads the saved image, not the one the slot started with.
+        // "my-vm" is a local name that does not exist: the next VM fails on it, which shows
+        // it reads the saved image, not the one the runner started with.
         #expect(await eventually { if case .exited? = h.service.processStates[runner.id] { true } else { false } })
         #expect(!h.log.all.contains { $0.hasPrefix("clone \(other)") })
         #expect(h.log.all.filter { $0.hasPrefix("clone ") }.count == 1)
