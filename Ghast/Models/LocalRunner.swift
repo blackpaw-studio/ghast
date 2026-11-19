@@ -53,6 +53,9 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     var runnerGroup: String?
     var workFolder: String
     var backend: RunnerBackendKind
+    /// A VM runner from before on-demand VMs: its detail view says once that labels no
+    /// longer apply and workflows use `runs-on: <name>`. Dismissing it clears this.
+    var showsOnDemandNote: Bool
 
     /// Repository full name or organization login (see `RunnerScope.displayName`).
     var repository: String { scope.displayName }
@@ -74,6 +77,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         self.runnerGroup = nil
         self.workFolder = Self.defaultWorkFolder
         self.backend = .host
+        self.showsOnDemandNote = false
     }
 
     /// A repository-level runner for `repository` (`owner/repo`).
@@ -85,6 +89,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         case id, name, scope, repository, path, labels, status, createdAt
         case environmentVariables, preJobScript, postJobScript
         case shouldBeRunning, lastExit, outputClearOffset, runnerGroup, workFolder, backend
+        case showsOnDemandNote
     }
 
     /// Runners saved before scopes existed (or rewritten by an older build) carry only
@@ -116,6 +121,15 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         workFolder = try container.decodeIfPresent(String.self, forKey: .workFolder) ?? Self.defaultWorkFolder
         // Runners saved before VM backends existed ran on the host.
         backend = try container.decodeIfPresent(RunnerBackendKind.self, forKey: .backend) ?? .host
+        // A VM runner saved before on-demand VMs has no key: it ran always-on with labels.
+        // Its labels stay saved (an older build still reads them) but no longer apply.
+        if let saved = try container.decodeIfPresent(Bool.self, forKey: .showsOnDemandNote) {
+            showsOnDemandNote = saved
+        } else if case .tart = backend {
+            showsOnDemandNote = true
+        } else {
+            showsOnDemandNote = false
+        }
     }
 
     private static func legacyScope(_ repository: String) -> RunnerScope {
@@ -143,6 +157,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         try container.encodeIfPresent(runnerGroup, forKey: .runnerGroup)
         try container.encode(workFolder, forKey: .workFolder)
         try container.encode(backend, forKey: .backend)
+        try container.encode(showsOnDemandNote, forKey: .showsOnDemandNote)
     }
 
     // Custom equality based on ID only

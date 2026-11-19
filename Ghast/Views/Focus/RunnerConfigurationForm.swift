@@ -100,7 +100,7 @@ struct RunnerConfigurationForm: View {
 
     // MARK: Virtual machine
 
-    /// A VM runner's image, runner group and labels: the only settings it has. Each new VM
+    /// A VM runner's image and runner group, and the `runs-on` line that targets it. Each new VM
     /// reads them, so a change never needs a restart.
     private var virtualMachineSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -117,7 +117,7 @@ struct RunnerConfigurationForm: View {
                 FocusFormDivider()
                 vmField("Runner group", prompt: "Default", text: $draft.tartGroup)
                 FocusFormDivider()
-                vmField("Labels", prompt: "self-hosted, macOS, ARM64", text: $draft.tartLabels)
+                FocusFormRow(label: "Workflow") { RunsOnLine(runnerName: runner.name) }
             }
             Text("Applied to the next VM. A VM in a job keeps the settings it started with.")
                 .font(FocusType.subheadline)

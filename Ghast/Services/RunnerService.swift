@@ -451,6 +451,11 @@ class RunnerService {
         }
     }
     
+    /// Hides the "labels no longer apply" note for good.
+    func dismissOnDemandNote(id: String) {
+        updateRunner(id: id) { $0.showsOnDemandNote = false }
+    }
+
     // MARK: - Environment and Scripts Management
     
     func updateRunnerEnvironmentVariables(id: String, environmentVariables: [String: String]) {

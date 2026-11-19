@@ -178,8 +178,12 @@ struct NewRunnerConfigureView: View {
                     .focused($isNameFocused)
             }
             FocusFormDivider()
-            row("Labels") {
-                LabelTokenField(labels: Binding(get: { tokens }, set: { labels = $0 }))
+            if runIn == .tartVM {
+                row("Workflow") { RunsOnLine(runnerName: name.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            } else {
+                row("Labels") {
+                    LabelTokenField(labels: Binding(get: { tokens }, set: { labels = $0 }))
+                }
             }
         }
         .background(

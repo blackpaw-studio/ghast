@@ -20,6 +20,11 @@ struct LocalRunnerDetail: View {
             case .output:
                 VStack(alignment: .leading, spacing: 0) {
                     header(time: time)
+                    if runner.showsOnDemandNote {
+                        OnDemandNote(runnerName: runner.name) { runnerService.dismissOnDemandNote(id: runner.id) }
+                            .padding(.horizontal, FocusMetrics.contentInset)
+                            .padding(.bottom, FocusMetrics.formHelpTop)
+                    }
                     ContentSeparator()
                     RunnerOutputView(
                         lines: activity.lines,

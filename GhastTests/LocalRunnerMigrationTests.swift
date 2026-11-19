@@ -132,4 +132,31 @@ struct LocalRunnerMigrationTests {
         #expect(reloaded.localRunners.first?.lastExit?.code == 3)
         #expect(reloaded.localRunners.first?.lastExit?.wasRequested == true)
     }
+
+    // MARK: On-demand VM runners
+
+    private static let tartBackendJSON = #","backend":{"tart":{"image":"ghcr.io/cirruslabs/macos-tahoe-base:latest"}}"#
+
+    @Test("a VM runner saved before on-demand shows the runs-on note once, and keeps its labels")
+    func vmRunnerGetsTheNote() throws {
+        let runner = try decode(legacyJSON(status: "stopped", extra: Self.tartBackendJSON))
+        #expect(runner.backend == .tart(image: "ghcr.io/cirruslabs/macos-tahoe-base:latest"))
+        #expect(runner.showsOnDemandNote)
+        #expect(runner.labels == ["self-hosted"])
+        #expect(try object(runner)["labels"] as? [String] == ["self-hosted"])
+    }
+
+    @Test("a host runner, a new VM runner and a dismissed note show no note")
+    func noNote() throws {
+        #expect(try !decode(legacyJSON(status: "stopped")).showsOnDemandNote)
+
+        var fresh = LocalRunner(name: "vm", scope: .repository(fullName: "acme/app"), path: "/tmp/ghast-vm")
+        fresh.backend = .tart(image: "img")
+        #expect(!fresh.showsOnDemandNote)
+
+        var dismissed = try decode(legacyJSON(status: "stopped", extra: Self.tartBackendJSON))
+        dismissed.showsOnDemandNote = false
+        #expect(try !decode(JSONEncoder().encode(dismissed)).showsOnDemandNote)
+        #expect(try object(dismissed)["showsOnDemandNote"] as? Bool == false)
+    }
 }
