@@ -13,10 +13,12 @@ import SnapshotTesting
 struct FocusMainSnapshotTests {
     enum State: String, CaseIterable {
         case running, idle, stopped, starting, error, remote, empty, configuration
-        /// A VM runner in the phases around a job, and its Configuration tab.
+        /// A VM runner in each on-demand phase, and its Configuration tab. `vmWaitingForJobs`
+        /// is a runner saved before on-demand VMs, so it shows the one-time note.
         case vmBooting, vmPulling, vmConfiguration
+        case vmWaitingForJobs, vmTwoJobs, vmWaitingForSlot
 
-        var isVM: Bool { [.vmBooting, .vmPulling, .vmConfiguration].contains(self) }
+        var isVM: Bool { [.vmBooting, .vmPulling, .vmConfiguration, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot].contains(self) }
     }
 
     /// The detail column of the 1440 × 900 kit window, beside the 264 pt sidebar.
@@ -78,7 +80,7 @@ struct FocusMainSnapshotTests {
             case .error: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
             }
-            let runner = try runningInVM(state.isVM, #require(service.localRunners.first { $0.name == runnerName }))
+            let runner = try runningInVM(state, #require(service.localRunners.first { $0.name == runnerName }))
             let (processState, activity) = try inputs(for: state, runner: runner, fixture: fixture)
             let item = try #require(catalog(fixture, overriding: runner.id, processState, activity).thisMac.first { $0.id == runner.id })
             LocalRunnerDetail(
@@ -105,7 +107,13 @@ struct FocusMainSnapshotTests {
         case .stopped:
             return (.stopped, OutputParser.consume(log, into: .initial).activity)
         case .vmBooting:
-            return (.booting, OutputParser.consume(vmLog(booting: true), into: .initial).activity)
+            return (onDemand(fixture, booting: 1), OutputParser.consume(vmLog(booting: true), into: .initial).activity)
+        case .vmWaitingForJobs:
+            return (onDemand(fixture), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
+        case .vmTwoJobs:
+            return (onDemand(fixture, running: 2), OutputParser.consume(twoJobsLog, into: .initial).activity)
+        case .vmWaitingForSlot:
+            return (onDemand(fixture, isWaitingForSlot: true), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmPulling:
             return (.pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB")), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .starting:
@@ -118,18 +126,38 @@ struct FocusMainSnapshotTests {
     }
 
     /// The fixture world has only host runners; a VM state shows one of them as a VM runner.
-    private func runningInVM(_ isVM: Bool, _ runner: LocalRunner) -> LocalRunner {
-        guard isVM else { return runner }
+    private func runningInVM(_ state: State, _ runner: LocalRunner) -> LocalRunner {
+        guard state.isVM else { return runner }
         var copy = runner
         copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
+        copy.showsOnDemandNote = state == .vmWaitingForJobs
         return copy
+    }
+
+    /// An on-demand runner started an hour before the fixture's "now".
+    private func onDemand(_ fixture: FixtureDependencies, booting: Int = 0, running: Int = 0, isWaitingForSlot: Bool = false) -> RunnerProcessState {
+        let since = fixture.appDependencies.clock.now().addingTimeInterval(-3600)
+        return .onDemand(OnDemandState(since: since, booting: booting, running: running, isWaitingForSlot: isWaitingForSlot))
     }
 
     /// The lifecycle lines Ghast writes before a VM runner has a listener.
     private func vmLog(booting: Bool) -> Data {
         let lines = booting
-            ? ["Cloning ghcr.io/cirruslabs/macos-tahoe-xcode:latest…", "Booting VM ghast-1f2e3d-a1b2c3…"]
+            ? ["[vm a1b2c3] Cloning ghcr.io/cirruslabs/macos-tahoe-xcode:latest…", "[vm a1b2c3] Booting VM ghast-1f2e3d-a1b2c3…"]
             : ["Pulling ghcr.io/cirruslabs/macos-tahoe-xcode:latest…"]
+        return Data((lines.joined(separator: "\n") + "\n").utf8)
+    }
+
+    /// Two VMs sharing one log, each line marked with its VM.
+    private var twoJobsLog: Data {
+        let lines = [
+            "[vm a1b2c3] Booting VM ghast-1f2e3d-a1b2c3…",
+            "[vm d4e5f6] Booting VM ghast-1f2e3d-d4e5f6…",
+            "[vm a1b2c3] √ Connected to GitHub",
+            "[vm a1b2c3] Running job: build",
+            "[vm d4e5f6] √ Connected to GitHub",
+            "[vm d4e5f6] Running job: test",
+        ]
         return Data((lines.joined(separator: "\n") + "\n").utf8)
     }
 

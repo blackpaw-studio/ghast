@@ -68,7 +68,8 @@ struct LocalRunnerDetail: View {
             status: item.status,
             secondaryLine: item.status.secondaryLine(location: .thisMac, time: time, imageLabel: imageLabel),
             stats: RunnerDisplayStatus.localStats(processState: processState, lastExit: runner.lastExit, activity: activity, time: time),
-            labels: item.labels
+            // A VM runner takes jobs by name (`runs-on: <name>`); its labels pick nothing.
+            labels: runner.backend == .host ? item.labels : []
         ) {
             switch item.status {
             case .error:
