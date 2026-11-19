@@ -19,6 +19,7 @@ struct DemandSourceFactory: JobDemandSourceMaking {
     /// The Mac's name, shown as the owner of the scale set's session.
     let ownerName: String
     var retry = ActionsServiceClient.RetryPolicy()
+    var queueTiming = QueueTiming.standard
 
     func make(for runner: LocalRunner) -> any JobDemandSource {
         let client = ActionsServiceClient(scope: runner.scope, api: api, transport: transport, clock: clock, sleeper: sleeper, retry: retry)
@@ -30,6 +31,8 @@ struct DemandSourceFactory: JobDemandSourceMaking {
             transport: transport,
             ownerName: ownerName,
             sleeper: sleeper,
+            clock: clock,
+            timing: queueTiming,
             retry: retry
         )
         let fallback: (@MainActor () -> any JobDemandSource)?
