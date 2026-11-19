@@ -201,6 +201,8 @@ final class TartBackend: RunnerBackend {
             }
         )
         try await waitForGuest(cli, vm: vm, entry: entry)
+        vm.isReachable = true
+        publish(entry)
 
         let jit = try await registerRunner(runner, vm: vm, source: entry.source)
         vm.jitRunnerID = jit.runnerID
@@ -430,6 +432,7 @@ final class TartBackend: RunnerBackend {
         defer { vm.holdsSlot = false }
         guard vm.holdsSlot, let cli = vm.cli else { return }
         vm.phase = .cleaningUp
+        vm.isReachable = false
         publish(entry)
         log("Cleaning up", runner: runner, vm: vm)
 

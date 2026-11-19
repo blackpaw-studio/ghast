@@ -41,4 +41,6 @@ struct OnDemandState: Sendable, Equatable {
     var booting = 0
     var running = 0
     var isWaitingForSlot = false
+    /// Clones a shell can reach: from the readiness probe until cleanup starts, oldest first.
+    var liveVMs: [String] = []
 }

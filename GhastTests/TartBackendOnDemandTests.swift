@@ -177,4 +177,31 @@ struct TartBackendOnDemandTests {
         #expect(await h.settled { onDemand(h.state(runner))?.booting == 1 })
         await h.service.stopRunner(id: runner.id)
     }
+
+    @Test("a VM is offered for a shell from its readiness probe until its cleanup starts")
+    func liveVMs() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let probe = HoldGate()
+        let stop = HoldGate()
+        h.cli.probeGate = probe
+        h.cli.stopGate = stop
+        let runner = h.addRunner()
+        let vm = h.vmName(runner, iteration: 1)
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.log.all.contains("probe \(vm)") })
+        #expect(onDemand(h.state(runner))?.liveVMs == [])
+
+        await probe.open()
+        #expect(await h.settled { onDemand(h.state(runner))?.liveVMs == [vm] })
+
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        h.cli.endJob(vm, code: 0)
+        #expect(await h.settled { h.log.all.contains("stop \(vm)") })
+        #expect(onDemand(h.state(runner))?.liveVMs == [])
+
+        await stop.open()
+        await h.service.stopRunner(id: runner.id)
+    }
 }

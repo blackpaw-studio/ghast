@@ -30,6 +30,10 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var pullGate: HoldGate?
     /// Reported to `pull`'s progress callback before it waits on the gate.
     var pullProgress: [TartPullProgress] = []
+    /// While set, the readiness probe waits here (cancellable) before it answers.
+    var probeGate: HoldGate?
+    /// While set, `stop` waits here (cancellable) after recording the call.
+    var stopGate: HoldGate?
     /// `exec pkill` ends the running job, as SIGTERM does to a real listener.
     var pkillEndsJob = true
 
@@ -91,6 +95,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
         if command == ["/usr/bin/true"] {
             log.append("probe \(vm)")
+            try await probeGate?.wait()
             return lock.withLock { () -> Int32 in
                 probes += 1
                 return probes > failedProbesBeforeReady ? 0 : 1
@@ -111,6 +116,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
 
     func stop(_ vm: String, timeout: Int) async throws {
         log.append("stop \(vm)")
+        try await stopGate?.wait()
         if let stopError { throw stopError }
         let exit = lock.withLock { () -> (@Sendable (Int32) -> Void)? in
             setRunning(vm, false)

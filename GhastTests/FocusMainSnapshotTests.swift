@@ -111,7 +111,7 @@ struct FocusMainSnapshotTests {
         case .vmWaitingForJobs:
             return (onDemand(fixture), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmTwoJobs:
-            return (onDemand(fixture, running: 2), OutputParser.consume(twoJobsLog, into: .initial).activity)
+            return (onDemand(fixture, running: 2, liveVMs: ["ghast-1f2e3d-a1b2c3", "ghast-1f2e3d-d4e5f6"]), OutputParser.consume(twoJobsLog, into: .initial).activity)
         case .vmWaitingForSlot:
             return (onDemand(fixture, isWaitingForSlot: true), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmPulling:
@@ -135,9 +135,9 @@ struct FocusMainSnapshotTests {
     }
 
     /// An on-demand runner started an hour before the fixture's "now".
-    private func onDemand(_ fixture: FixtureDependencies, booting: Int = 0, running: Int = 0, isWaitingForSlot: Bool = false) -> RunnerProcessState {
+    private func onDemand(_ fixture: FixtureDependencies, booting: Int = 0, running: Int = 0, isWaitingForSlot: Bool = false, liveVMs: [String] = []) -> RunnerProcessState {
         let since = fixture.appDependencies.clock.now().addingTimeInterval(-3600)
-        return .onDemand(OnDemandState(since: since, booting: booting, running: running, isWaitingForSlot: isWaitingForSlot))
+        return .onDemand(OnDemandState(since: since, booting: booting, running: running, isWaitingForSlot: isWaitingForSlot, liveVMs: liveVMs))
     }
 
     /// The lifecycle lines Ghast writes before a VM runner has a listener.

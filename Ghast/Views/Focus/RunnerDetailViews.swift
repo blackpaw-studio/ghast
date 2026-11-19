@@ -25,6 +25,11 @@ struct LocalRunnerDetail: View {
                             .padding(.horizontal, FocusMetrics.contentInset)
                             .padding(.bottom, FocusMetrics.formHelpTop)
                     }
+                    if case let .onDemand(state) = processState, !state.liveVMs.isEmpty {
+                        VMShellCommands(clones: state.liveVMs)
+                            .padding(.horizontal, FocusMetrics.contentInset)
+                            .padding(.bottom, FocusMetrics.formHelpTop)
+                    }
                     ContentSeparator()
                     RunnerOutputView(
                         lines: activity.lines,

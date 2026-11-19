@@ -37,7 +37,8 @@ final class OnDemandEntry {
             since: since,
             booting: vms.count { $0.phase == .booting },
             running: vms.count { $0.phase == .running },
-            isWaitingForSlot: isWaitingForSlot
+            isWaitingForSlot: isWaitingForSlot,
+            liveVMs: vms.filter(\.isReachable).map(\.clone)
         )
     }
 }
@@ -60,6 +61,8 @@ final class VMRun {
     var vmProcessExited = false
     var guest: GuestRun?
     var jitRunnerID: Int?
+    /// The guest answered its readiness probe; cleared when cleanup starts.
+    var isReachable = false
 
     init(id: String, clone: String) {
         self.id = id
