@@ -144,6 +144,27 @@ import Foundation
         #expect(await paths(transport).last == "DELETE /abc/_apis/runtime/runnerscalesets/9/sessions/s-1")
     }
 
+    @Test("a message of an unknown type is acknowledged and skipped, and the next one handled")
+    func unknownMessageTypeSkipped() async throws {
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 0),
+            .json(#"{"messageId":5,"messageType":"SomethingNew","body":"SECRET-BODY","statistics":{"totalAssignedJobs":9}}"#),
+            ScaleSetReplies.noContent,
+            ScaleSetReplies.message(id: 6, assigned: 2), ScaleSetReplies.noContent,
+            .hang,
+        ])
+        let recorder = demand
+        let task = Task { try await source.run(onDemand: recorder.record) }
+        for _ in 0..<10_000 where !demand.values.contains(2) { await Task.yield() }
+        task.cancel()
+        _ = await task.result
+
+        #expect(demand.values == [0, 2])
+        let calls = await paths(transport)
+        #expect(calls.contains("DELETE /q/abc/5"))
+        #expect(calls.filter { $0 == "POST /abc/_apis/runtime/runnerscalesets/9/sessions" }.count == 1)
+    }
+
     @Test("close after a cancelled run deletes the session")
     func closeDeletesSession() async throws {
         let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(), .hang, ScaleSetReplies.noContent])
@@ -176,4 +197,5 @@ import Foundation
     private(set) var values: [Int] = []
 
     var record: @MainActor (Int) -> Void { { [self] in values.append($0) } }
+
 }

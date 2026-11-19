@@ -88,7 +88,6 @@ import Foundation
     @Test("once the scale set is set up, any run failure is one to retry, never a config error", arguments: [
         [FakeTransport.Reply.json("", status: 404)],
         [.json("", status: 401), .json("", status: 401)],
-        [.json(#"{"messageId":1,"messageType":"SomethingNew","body":""}"#)],
     ])
     func failuresAfterSetupAreTransient(failure: [FakeTransport.Reply]) async throws {
         let (factory, _) = makeFactory([
@@ -129,5 +128,25 @@ import Foundation
         let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
         try await source.deleteRemote()
         #expect(!(await transport.requests).contains { $0.httpMethod == "DELETE" })
+    }
+
+    @Test("a JIT config that fails after setup is one to retry, and a missing set is found again for the next")
+    func jitFailureAfterSetup() async throws {
+        let (factory, transport) = makeFactory([
+            ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600)),
+            ScaleSetReplies.list([9]), .json("", status: 404),
+            ScaleSetReplies.list([12]), ScaleSetReplies.jit(id: 77),
+        ])
+        let source = factory.make(for: runner(.organization(login: "octo")))
+        do {
+            _ = try await source.jitConfig(runnerName: "mac-vm-a1b2c3", workFolder: "_work")
+            Issue.record("jitConfig should fail")
+        } catch {
+            #expect(TartBackend.isTransient(error), "\(error)")
+        }
+
+        let jit = try await source.jitConfig(runnerName: "mac-vm-d4e5f6", workFolder: "_work")
+        #expect(jit.runnerID == 77)
+        #expect(await transport.requests.last?.url?.path.hasSuffix("/runnerscalesets/12/generatejitconfig") == true)
     }
 }

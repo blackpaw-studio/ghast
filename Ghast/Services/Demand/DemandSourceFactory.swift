@@ -86,8 +86,15 @@ final class FallbackDemandSource: JobDemandSource {
         }
     }
 
+    /// Like `run`: past setup, a failed registration fails only that VM, transiently.
     func jitConfig(runnerName: String, workFolder: String) async throws -> GitHubJITConfig {
-        try await resolved().jitConfig(runnerName: runnerName, workFolder: workFolder)
+        let source = try await resolved()
+        do {
+            return try await source.jitConfig(runnerName: runnerName, workFolder: workFolder)
+        } catch {
+            if error.isCancellation { throw error }
+            throw DemandSourceError.interrupted(error)
+        }
     }
 
     func close() async {

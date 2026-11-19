@@ -60,13 +60,6 @@ import Foundation
         #expect(message.statistics == nil)
     }
 
-    @Test("a message of another type is rejected")
-    func otherMessageType() {
-        #expect(throws: ScaleSetError.self) {
-            try ScaleSetMessage.decode(data(#"{"messageId":1,"messageType":"RunnerScaleSetStatistics","body":"[]"}"#))
-        }
-    }
-
     @Test("a scale-set JIT config decodes the runner id and encoded config")
     func jit() throws {
         let json = #"{"runner":{"id":77,"name":"mac-vm-a1b2c3","runnerScaleSetId":9},"encodedJITConfig":"QUJD"}"#
@@ -119,5 +112,16 @@ import Foundation
     func notAnException() {
         #expect(ActionsException.parse(data("oops")) == nil)
         #expect(ActionsException.parse(Data()) == nil)
+    }
+
+    @Test("a message of a type Ghast does not know keeps its id so it can be acknowledged, and nothing else", arguments: [
+        (#"{"messageId":5,"messageType":"SomethingNew","body":"{not json"}"#, "SomethingNew"),
+        (#"{"messageId":6,"messageType":7}"#, "(unreadable)"),
+        (#"{"messageId":8}"#, "(unreadable)"),
+    ])
+    func unsupportedType(json: String, type: String) throws {
+        let message = try ScaleSetMessage.decode(Data(json.utf8))
+        #expect(message.unsupportedType == type)
+        #expect(message.statistics == nil && message.jobsAvailable.isEmpty)
     }
 }

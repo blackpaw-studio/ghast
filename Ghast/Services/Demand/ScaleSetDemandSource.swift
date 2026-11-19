@@ -81,6 +81,14 @@ final class ScaleSetDemandSource: JobDemandSource {
         while true {
             try Task.checkCancellation()
             guard let message = try await poll(session, lastID: lastMessageID) else { continue }
+            if let type = message.unsupportedType {
+                // Only the type is logged: the body may hold anything.
+                Self.logger.notice("Skipping a message of unsupported type \(type, privacy: .public)")
+                lastMessageID = message.messageID
+                let messageID = message.messageID
+                try await Task { try await session.ack(id: messageID) }.value
+                continue
+            }
             let available = message.jobsAvailable.map(\.runnerRequestID)
             if !available.isEmpty {
                 _ = try await session.acquire(requestIDs: available)
@@ -125,7 +133,13 @@ final class ScaleSetDemandSource: JobDemandSource {
 
     func jitConfig(runnerName: String, workFolder: String) async throws -> GitHubJITConfig {
         let id = try await ensureScaleSet()
-        return try await client.jitConfig(scaleSetID: id, name: runnerName, workFolder: workFolder)
+        do {
+            return try await client.jitConfig(scaleSetID: id, name: runnerName, workFolder: workFolder)
+        } catch ScaleSetError.notFound {
+            // The set is gone (deleted on GitHub): find or create it again next time.
+            if scaleSetID == id { scaleSetID = nil }
+            throw ScaleSetError.notFound
+        }
     }
 
     func close() async {

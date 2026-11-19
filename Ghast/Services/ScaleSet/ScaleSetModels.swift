@@ -264,6 +264,9 @@ struct ScaleSetMessage: Equatable, Sendable {
     var jobsAssigned: [ScaleSetJobMessage] = []
     var jobsStarted: [ScaleSetJobMessage] = []
     var jobsCompleted: [ScaleSetJobMessage] = []
+    /// Set (to the type, or "(unreadable)") for a message Ghast cannot read: it is only
+    /// acknowledged, so it cannot block the queue.
+    var unsupportedType: String?
 
     private struct Envelope: Decodable {
         let messageId: Int
@@ -272,9 +275,26 @@ struct ScaleSetMessage: Equatable, Sendable {
         let statistics: ScaleSetStatistics?
     }
 
+    private struct Identified: Decodable { let messageId: Int }
+    private struct Typed: Decodable { let messageType: String }
+
     /// Decodes the envelope, then its `body`, which is a JSON string holding an array.
-    /// Element types Ghast does not know are skipped, as in the reference.
+    /// Element types Ghast does not know are skipped, as in the reference. A message whose
+    /// own type Ghast cannot read comes back with only its id and `unsupportedType`, so it
+    /// can be acknowledged instead of blocking every later message.
     static func decode(_ data: Data) throws -> ScaleSetMessage {
+        let id: Int
+        do {
+            id = try JSONDecoder().decode(Identified.self, from: data).messageId
+        } catch {
+            throw ScaleSetError.badResponse("message: \(error.localizedDescription)")
+        }
+        let type = (try? JSONDecoder().decode(Typed.self, from: data))?.messageType
+        guard type == jobMessagesType else {
+            var skipped = ScaleSetMessage(messageID: id, statistics: nil)
+            skipped.unsupportedType = type.map { String($0.filter { !$0.isNewline }.prefix(64)) } ?? "(unreadable)"
+            return skipped
+        }
         let envelope: Envelope
         do {
             envelope = try JSONDecoder().decode(Envelope.self, from: data)
