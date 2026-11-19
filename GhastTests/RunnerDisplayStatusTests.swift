@@ -304,4 +304,45 @@ struct RunnerDisplayStatusTests {
         #expect(RunnerDisplayStatus.remoteBusy.accessibilityLabel(name: "r", scope: Self.scope, location: .otherMachine, time: time)
             == "r, running a job, blackpaw-studio, other machine")
     }
+
+    // MARK: - On-demand VM runners
+
+    @Test("on-demand phases follow the VM counts: running wins, then booting, then a full budget")
+    func onDemandDerivation() {
+        let since = at("10:00")
+        func status(_ state: OnDemandState) -> RunnerDisplayStatus {
+            RunnerDisplayStatus.make(processState: .onDemand(state), lastExit: nil, activity: RunnerActivity())
+        }
+        #expect(status(OnDemandState(since: since)) == .onDemand(.waitingForJobs))
+        #expect(status(OnDemandState(since: since, booting: 1)) == .onDemand(.booting))
+        #expect(status(OnDemandState(since: since, booting: 1, running: 1)) == .onDemand(.running(1)))
+        #expect(status(OnDemandState(since: since, running: 2)) == .onDemand(.running(2)))
+        #expect(status(OnDemandState(since: since, isWaitingForSlot: true)) == .onDemand(.waitingForSlot))
+        #expect(status(OnDemandState(since: since, booting: 1, isWaitingForSlot: true)) == .onDemand(.booting))
+    }
+
+    @Test("on-demand phases: title, secondary line, sidebar subtitle and spinner", arguments: [
+        (OnDemandPhase.waitingForJobs, "Waiting for jobs", "No VM runs until a job asks for this runner", "Waiting for jobs · blackpaw-studio", false),
+        (.booting, "Booting for a queued job", "Starting a fresh virtual machine…", "Booting for a queued job", true),
+        (.running(1), "1 job running", "Each job runs in its own VM, deleted when the job ends", "1 job running", false),
+        (.running(2), "2 jobs running", "Each job runs in its own VM, deleted when the job ends", "2 jobs running", false),
+        (.waitingForSlot, "Waiting for a free VM slot", "macOS runs at most 2 VMs at once; the job waits on GitHub", "Waiting for a free VM slot", false),
+    ])
+    func onDemandWords(phase: OnDemandPhase, title: String, secondary: String, sidebar: String, spinner: Bool) {
+        let status = RunnerDisplayStatus.onDemand(phase)
+        #expect(status.title == title)
+        #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == secondary)
+        #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
+        #expect(status.showsProgress == spinner)
+        #expect(status.toolbarButtons(location: .thisMac) == [
+            RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true),
+        ])
+    }
+
+    @Test("an on-demand runner shows its uptime since start")
+    func onDemandUptime() {
+        let state = RunnerProcessState.onDemand(OnDemandState(since: at("10:00")))
+        let stats = RunnerDisplayStatus.localStats(processState: state, lastExit: nil, activity: RunnerActivity(), time: displayTime(now: "10:30:00"))
+        #expect(stats.first?.label == "Uptime")
+    }
 }

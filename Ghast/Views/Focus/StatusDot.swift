@@ -10,9 +10,9 @@ struct StatusDot: View {
     var body: some View {
         Group {
             switch status {
-            case .idle:
+            case .idle, .onDemand(.waitingForJobs):
                 Circle().fill(Color.green)
-            case .runningJob, .remoteBusy:
+            case .runningJob, .remoteBusy, .onDemand(.running):
                 Circle()
                     .fill(Color.orange)
                     .background(
@@ -22,7 +22,7 @@ struct StatusDot: View {
                     )
             case .error:
                 Circle().fill(Color.red)
-            case .stopped, .starting, .pulling, .booting, .cleaningUp, .stopping, .offline:
+            case .stopped, .starting, .pulling, .booting, .cleaningUp, .stopping, .offline, .onDemand:
                 Circle().strokeBorder(Color(nsColor: .tertiaryLabelColor), lineWidth: Self.ringWidth)
             }
         }

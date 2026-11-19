@@ -53,8 +53,10 @@ struct RunnerActions {
     var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) } }
 
     func isRunning(_ localID: String) -> Bool {
-        if case .running? = runnerService.processStates[localID] { return true }
-        return false
+        switch runnerService.processStates[localID] {
+        case .running?, .onDemand?: return true
+        default: return false
+        }
     }
 
     func showInFinder(_ localID: String) {

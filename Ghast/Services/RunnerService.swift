@@ -200,6 +200,7 @@ class RunnerService {
         var startedAt: Date?
         switch processStates[id] {
         case let .running(since)?, let .stopping(since)?: startedAt = since
+        case let .onDemand(state)?: startedAt = state.since
         default: break
         }
         let exit = RunnerExit(code: code, startedAt: startedAt, at: clock.now(), wasRequested: wasRequested)
