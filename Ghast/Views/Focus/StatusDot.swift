@@ -22,6 +22,8 @@ struct StatusDot: View {
                     )
             case .error:
                 Circle().fill(Color.red)
+            case .onDemand(.standingBy), .onDemand(.handingOff):
+                Circle().strokeBorder(Color(nsColor: .secondaryLabelColor), style: StrokeStyle(lineWidth: Self.ringWidth, dash: [2, 1.5]))
             case .stopped, .starting, .pulling, .booting, .cleaningUp, .stopping, .offline, .onDemand:
                 Circle().strokeBorder(Color(nsColor: .tertiaryLabelColor), lineWidth: Self.ringWidth)
             }

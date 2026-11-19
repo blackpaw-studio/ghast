@@ -11,6 +11,11 @@ final class OnDemandEntry {
     /// The last demand the source reported, lowered by one for each job that ended until
     /// the source reports again.
     var demand = 0
+    /// Whether this Mac holds the scale set's job queue, as the source last reported.
+    var queue = JobQueueStatus.connecting
+    /// Since when there has been no demand and no VM; nil while busy. A standby uses it to
+    /// decide when to give the queue up.
+    var idleSince: Date?
     var vms: [VMRun] = []
     /// A wanted VM found the 2-VM budget full; no new VM boots until a re-check or a Ghast
     /// VM exit clears this.
@@ -22,6 +27,12 @@ final class OnDemandEntry {
     var isStopRequested = false
     /// Set once teardown has begun (Stop, or a failure), so it runs once.
     var isShuttingDown = false
+    /// The Mac is asleep: the demand source is closed and its loop stopped until wake. VMs
+    /// are not touched.
+    var isAsleep = false
+    /// The source's session deletion started at sleep; wake waits for it so it cannot delete
+    /// the session the wake opens.
+    var sleepRelease: Task<Void, Never>?
     /// Consecutive VM runs that failed with a transient error; sets the backoff.
     var vmFailures = 0
     var waiters: [CheckedContinuation<Void, Never>] = []
@@ -38,7 +49,8 @@ final class OnDemandEntry {
             booting: vms.count { $0.phase == .booting },
             running: vms.count { $0.phase == .running },
             isWaitingForSlot: isWaitingForSlot,
-            liveVMs: vms.filter(\.isReachable).map(\.clone)
+            liveVMs: vms.filter(\.isReachable).map(\.clone),
+            queue: queue
         )
     }
 }

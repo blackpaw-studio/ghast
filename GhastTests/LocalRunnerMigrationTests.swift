@@ -75,6 +75,20 @@ struct LocalRunnerMigrationTests {
         #expect(LocalRunner(name: "n", scope: .organization(login: "acme"), path: "/tmp/x").backend == .host)
     }
 
+    @Test("a record without a queue role decodes as primary")
+    func legacyQueueRoleIsPrimary() throws {
+        #expect(try decode(legacyJSON(status: "stopped")).queueRole == .primary)
+        #expect(LocalRunner(name: "n", scope: .organization(login: "acme"), path: "/tmp/x").queueRole == .primary)
+    }
+
+    @Test("a standby queue role round-trips")
+    func queueRoleRoundTrip() throws {
+        var runner = LocalRunner(name: "n", scope: .organization(login: "acme"), path: "/tmp/x")
+        runner.queueRole = .standby
+
+        #expect(try decode(JSONEncoder().encode(runner)).queueRole == .standby)
+    }
+
     @Test("a Tart backend round-trips with its image", arguments: [
         "ghcr.io/cirruslabs/macos-tahoe-base:latest", "my-local-vm",
     ])

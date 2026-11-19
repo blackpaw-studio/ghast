@@ -39,10 +39,11 @@ final class RESTPollingDemandSource: JobDemandSource {
         self.interval = interval
     }
 
-    func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
+    func run(_ context: DemandRunContext) async throws {
+        context.onQueue(.noQueue)
         while true {
             try Task.checkCancellation()
-            onDemand(try await poll())
+            context.onDemand(try await poll())
             try await sleeper(interval)
         }
     }

@@ -114,6 +114,19 @@ struct RunnerConfigurationForm: View {
                 FocusFormDivider()
                 vmField("Runner group", prompt: "Default", text: $draft.tartGroup)
                 FocusFormDivider()
+                FocusFormRow(label: "Queue role") {
+                    Picker("Queue role", selection: $draft.queueRole) {
+                        ForEach(QueueRole.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .onChange(of: draft.queueRole) {
+                        draft.saveSoon()
+                        draft.flush()
+                    }
+                }
+                FocusFormDivider()
                 FocusFormRow(label: "Workflow") { RunsOnLine(runnerName: runner.name) }
             }
             Text("Applied to the next VM. A VM in a job keeps the settings it started with.")
@@ -121,8 +134,16 @@ struct RunnerConfigurationForm: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, FocusMetrics.formRowInset)
                 .padding(.top, FocusMetrics.formHelpTop)
+            Text(Self.queueRoleHelp)
+                .font(FocusType.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+                .padding(.top, FocusMetrics.formHelpTop)
         }
     }
+
+    /// The queue role's help line; the queue role changes apply at once.
+    static let queueRoleHelp = "Use Standby on an always-on Mac that should take jobs only when your primary Mac is asleep or off. Set exactly one Mac to Primary."
 
     private func vmField(_ label: String, prompt: String, text: Binding<String>) -> some View {
         FocusFormRow(label: label) {

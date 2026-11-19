@@ -55,6 +55,7 @@ final class TartBackend: RunnerBackend {
     ///   - cliProvider: Finds Tart and returns a CLI for it; throws when Tart is unusable.
     ///   - demandSources: Builds each started runner's demand source.
     ///   - makeID: A short unique id (6 hex digits) for a clone and its JIT runner name.
+    ///   - power: Sleep and wake: a sleeping Mac gives up its job queue so another Mac can use it.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
@@ -65,7 +66,8 @@ final class TartBackend: RunnerBackend {
         clock: any AppClock,
         sleeper: @escaping Sleeper,
         makeID: @escaping @Sendable () -> String = TartBackend.randomID,
-        timing: Timing = .standard
+        timing: Timing = .standard,
+        power: any PowerEventSource = NoPowerEvents()
     ) {
         self.cliProvider = cliProvider
         self.api = api
@@ -77,6 +79,10 @@ final class TartBackend: RunnerBackend {
         self.sleeper = sleeper
         self.makeID = makeID
         self.timing = timing
+        power.observe(
+            willSleep: { [weak self] in self?.systemWillSleep() },
+            didWake: { [weak self] in self?.systemDidWake() }
+        )
     }
 
     nonisolated static func randomID() -> String {
@@ -96,6 +102,7 @@ final class TartBackend: RunnerBackend {
         guard case .tart = runner.backend else { throw RunnerError.failedToStart }
 
         let entry = OnDemandEntry(runnerID: id, since: clock.now(), source: demandSources.make(for: runner))
+        entry.idleSince = clock.now()
         entries[id] = entry
         host?.updateRunner(id: id) {
             $0.shouldBeRunning = true
@@ -118,11 +125,17 @@ final class TartBackend: RunnerBackend {
             // later one shows the source working, so only that resets the backoff.
             var reports = 0
             do {
-                try await entry.source.run { [weak self] demand in
-                    reports += 1
-                    if reports > 1 { failures = 0 }
-                    self?.demandChanged(entry, to: demand)
-                }
+                let context = DemandRunContext(
+                    onDemand: { [weak self] demand in
+                        reports += 1
+                        if reports > 1 { failures = 0 }
+                        self?.demandChanged(entry, to: demand)
+                    },
+                    onQueue: { [weak self] status in self?.queueChanged(entry, to: status) },
+                    role: { [weak self] in self?.host?.runner(id: entry.runnerID)?.queueRole ?? .primary },
+                    idleSince: { entry.idleSince }
+                )
+                try await entry.source.run(context)
                 return
             } catch {
                 if entry.isStopRequested || error.isCancellation { return }
@@ -132,15 +145,96 @@ final class TartBackend: RunnerBackend {
                 if let runner = host?.runner(id: entry.runnerID) {
                     log("Error: \(error.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
                 }
+                // The failed run's session is gone: don't keep showing a queue this Mac may not hold.
+                queueChanged(entry, to: .connecting)
                 try? await sleeper(delay)
             }
         }
     }
 
+    // MARK: - Sleep and wake
+
+    /// Gives up the job queue: stops polling and deletes the message session, so another Mac
+    /// can take the queue instead of waiting on this sleeping one. The deletion is not awaited
+    /// (sleep must not be held up). VMs are left alone: they freeze with the host anyway.
+    private func systemWillSleep() {
+        for entry in entries.values where !entry.isShuttingDown && !entry.isAsleep {
+            entry.isAsleep = true
+            entry.demandTask?.cancel()
+            let source = entry.source
+            entry.sleepRelease = Task { @MainActor in await source.close() }
+            entry.queue = .released(.sleep)
+            forgetDemand(entry)
+            if let line = Self.queueLogLine(entry.queue), let runner = host?.runner(id: entry.runnerID) {
+                log(line, runner: runner)
+            }
+            publish(entry)
+        }
+    }
+
+    /// Reopens the queue for every runner that slept, unless Stop ended it meanwhile.
+    private func systemDidWake() {
+        for entry in entries.values where entry.isAsleep && !entry.isShuttingDown {
+            Task { @MainActor [weak self] in await self?.resume(entry) }
+        }
+    }
+
+    private func resume(_ entry: OnDemandEntry) async {
+        await entry.demandTask?.value
+        await entry.sleepRelease?.value
+        guard isCurrent(entry), entry.isAsleep, !entry.isStopRequested else { return }
+        entry.isAsleep = false
+        entry.queue = .connecting
+        publish(entry)
+        entry.demandTask = Task { @MainActor [weak self] in await self?.runDemand(entry) }
+    }
+
     private func demandChanged(_ entry: OnDemandEntry, to demand: Int) {
-        guard isCurrent(entry), !entry.isStopRequested else { return }
+        guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep else { return }
         entry.demand = max(0, demand)
         reconcile(entry)
+    }
+
+    /// Shows who holds the job queue, and logs each change once.
+    private func queueChanged(_ entry: OnDemandEntry, to status: JobQueueStatus) {
+        guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep, entry.queue != status else { return }
+        entry.queue = status
+        if Self.losesJobs(status) { forgetDemand(entry) }
+        if let line = Self.queueLogLine(status), let runner = host?.runner(id: entry.runnerID) {
+            log(line, runner: runner)
+        }
+        publish(entry)
+    }
+
+    /// Without the queue this Mac no longer hears about jobs: the demand it last saw may now
+    /// belong to another Mac, so it must not boot VMs for it. Running VMs are untouched; the
+    /// next `.holding` brings the real demand back through the session's statistics.
+    private static func losesJobs(_ status: JobQueueStatus) -> Bool {
+        switch status {
+        case .heldElsewhere, .released: true
+        case .connecting, .holding, .noQueue: false
+        }
+    }
+
+    private func forgetDemand(_ entry: OnDemandEntry) {
+        entry.demand = 0
+        refreshIdle(entry)
+    }
+
+    private static func queueLogLine(_ status: JobQueueStatus) -> String? {
+        switch status {
+        case .holding: "Took the job queue"
+        case .heldElsewhere: "Another Mac has the job queue; standing by"
+        case .released(.handoff): "Handing the job queue back to the primary"
+        case .released(.sleep): "Released the job queue (sleep)"
+        case .connecting, .noQueue: nil
+        }
+    }
+
+    /// Idle runs from the moment there is neither demand nor a VM until either appears.
+    private func refreshIdle(_ entry: OnDemandEntry) {
+        let isIdle = entry.demand == 0 && entry.vms.isEmpty
+        if isIdle { entry.idleSince = entry.idleSince ?? clock.now() } else { entry.idleSince = nil }
     }
 
     /// Boots VMs while the demand exceeds the live VMs, up to two, unless the budget is known
@@ -149,10 +243,12 @@ final class TartBackend: RunnerBackend {
         guard isCurrent(entry), !entry.isStopRequested,
               let runner = host?.runner(id: entry.runnerID), case let .tart(image) = runner.backend
         else { return }
-        let wanted = min(entry.demand, Self.maxVMsPerRunner)
+        // A sleeping Mac boots nothing; a VM that ends meanwhile is not replaced.
+        let wanted = entry.isAsleep ? 0 : min(entry.demand, Self.maxVMsPerRunner)
         while entry.vms.count < wanted, !entry.isWaitingForSlot {
             launchVM(entry, runner: runner, image: image)
         }
+        refreshIdle(entry)
         publish(entry)
     }
 
@@ -284,6 +380,7 @@ final class TartBackend: RunnerBackend {
 
     private func remove(_ vm: VMRun, from entry: OnDemandEntry) {
         entry.vms.removeAll { $0 === vm }
+        refreshIdle(entry)
     }
 
     // MARK: - The VM budget

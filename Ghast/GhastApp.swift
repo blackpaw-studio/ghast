@@ -220,7 +220,8 @@ struct AppDependencies {
             leases: TartLeaseStore(defaults: .standard),
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
-            sleeper: sleeper
+            sleeper: sleeper,
+            power: WorkspacePowerEvents()
         )
         let dependencies = AppDependencies(
             runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend),

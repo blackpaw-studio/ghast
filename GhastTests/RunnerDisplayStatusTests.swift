@@ -313,16 +313,25 @@ struct RunnerDisplayStatusTests {
         func status(_ state: OnDemandState) -> RunnerDisplayStatus {
             RunnerDisplayStatus.make(processState: .onDemand(state), lastExit: nil, activity: RunnerActivity())
         }
-        #expect(status(OnDemandState(since: since)) == .onDemand(.waitingForJobs))
-        #expect(status(OnDemandState(since: since, booting: 1)) == .onDemand(.booting))
-        #expect(status(OnDemandState(since: since, booting: 1, running: 1)) == .onDemand(.running(1)))
-        #expect(status(OnDemandState(since: since, running: 2)) == .onDemand(.running(2)))
-        #expect(status(OnDemandState(since: since, isWaitingForSlot: true)) == .onDemand(.waitingForSlot))
-        #expect(status(OnDemandState(since: since, booting: 1, isWaitingForSlot: true)) == .onDemand(.booting))
+        #expect(status(OnDemandState(since: since)) == .onDemand(.connecting))
+        #expect(status(OnDemandState(since: since, queue: .holding)) == .onDemand(.waitingForJobs(.thisMac)))
+        #expect(status(OnDemandState(since: since, queue: .noQueue)) == .onDemand(.waitingForJobs(.noQueue)))
+        #expect(status(OnDemandState(since: since, queue: .heldElsewhere)) == .onDemand(.standingBy))
+        #expect(status(OnDemandState(since: since, queue: .released(.handoff))) == .onDemand(.handingOff))
+        #expect(status(OnDemandState(since: since, queue: .released(.sleep))) == .onDemand(.connecting))
+        #expect(status(OnDemandState(since: since, booting: 1, queue: .holding)) == .onDemand(.booting))
+        #expect(status(OnDemandState(since: since, booting: 1, running: 1, queue: .holding)) == .onDemand(.running(1)))
+        #expect(status(OnDemandState(since: since, running: 2, queue: .heldElsewhere)) == .onDemand(.running(2)))
+        #expect(status(OnDemandState(since: since, isWaitingForSlot: true, queue: .holding)) == .onDemand(.waitingForSlot))
+        #expect(status(OnDemandState(since: since, booting: 1, isWaitingForSlot: true, queue: .heldElsewhere)) == .onDemand(.booting))
     }
 
     @Test("on-demand phases: title, secondary line, sidebar subtitle and spinner", arguments: [
-        (OnDemandPhase.waitingForJobs, "Waiting for jobs", "No VM runs until a job asks for this runner", "Waiting for jobs · blackpaw-studio", false),
+        (OnDemandPhase.waitingForJobs(.thisMac), "Waiting for jobs", "This Mac has the queue · no VM runs until a job asks for this runner", "Waiting for jobs · blackpaw-studio", false),
+        (.waitingForJobs(.noQueue), "Waiting for jobs", "No job queue (polling GitHub) · no VM runs until a job asks for this runner", "Waiting for jobs · blackpaw-studio", false),
+        (.standingBy, "Standing by", "Another Mac has the queue · this Mac takes over if it sleeps or quits", "Standing by · blackpaw-studio", false),
+        (.handingOff, "Handing off the queue…", "Handing the queue to the primary Mac…", "Handing off the queue…", true),
+        (.connecting, "Connecting…", "Connecting to GitHub…", "Connecting…", true),
         (.booting, "Booting for a queued job", "Starting a fresh virtual machine…", "Booting for a queued job", true),
         (.running(1), "1 job running", "Each job runs in its own VM, deleted when the job ends", "1 job running", false),
         (.running(2), "2 jobs running", "Each job runs in its own VM, deleted when the job ends", "2 jobs running", false),

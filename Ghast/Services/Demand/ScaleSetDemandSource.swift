@@ -15,6 +15,8 @@ final class ScaleSetDemandSource: JobDemandSource {
     private let transport: any HTTPTransport
     private let ownerName: String
     private let sleeper: Sleeper
+    private let clock: any AppClock
+    private let timing: QueueTiming
     private let retry: ActionsServiceClient.RetryPolicy
     private var scaleSetID: Int?
     private var session: ScaleSetMessageSession?
@@ -24,6 +26,8 @@ final class ScaleSetDemandSource: JobDemandSource {
     ///   - groupID: Resolves the runner group the set lives in.
     ///   - ownerName: Shown as the session's owner on GitHub (the Mac's name).
     ///   - sleeper, retry: The wait between retries of a failed poll on the same session.
+    ///   - clock, timing: When this Mac retries a queue another Mac holds, and when a standby
+    ///     gives the queue up.
     init(
         name: String,
         groupID: @escaping @MainActor () async throws -> Int,
@@ -31,9 +35,13 @@ final class ScaleSetDemandSource: JobDemandSource {
         transport: any HTTPTransport,
         ownerName: String,
         sleeper: @escaping Sleeper,
+        clock: any AppClock = SystemClock(),
+        timing: QueueTiming = .standard,
         retry: ActionsServiceClient.RetryPolicy = .init()
     ) {
         self.sleeper = sleeper
+        self.clock = clock
+        self.timing = timing
         self.retry = retry
         self.name = name
         self.groupID = groupID
@@ -57,29 +65,68 @@ final class ScaleSetDemandSource: JobDemandSource {
         return set.id
     }
 
-    func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
+    /// Holds the job queue and listens on it. Another Mac holding it is waited out here (never
+    /// thrown); a standby that sits idle gives the queue up for the handoff window and then
+    /// takes it again if no primary did.
+    func run(_ context: DemandRunContext) async throws {
         let id = try await ensureScaleSet()
-        let session = ScaleSetMessageSession(client: client, scaleSetID: id, transport: transport)
-        self.session = session
-        do {
-            let created = try await session.create(ownerName: ownerName)
-            guard let statistics = created.statistics else { throw ScaleSetError.badResponse("session statistics missing") }
-            onDemand(statistics.totalAssignedJobs)
-            try await listen(session, onDemand: onDemand)
-        } catch {
-            // A retry opens a new session; this one must go first or the next create gets 409.
-            // On cancellation `close()` does it, from the stop path.
-            if !error.isCancellation { await closeUncancelled(session) }
-            // The set (or its session) is gone: the next run finds or creates the set again.
-            if case ScaleSetError.notFound = error { scaleSetID = nil }
-            throw error
+        context.onQueue(.connecting)
+        while true {
+            let (session, heldSince) = try await takeQueue(id, context)
+            do {
+                try await listen(session, context, heldSince: heldSince)
+            } catch {
+                await cleanUp(after: error, session: session)
+                throw error
+            }
+            // `listen` returns only when this standby yields.
+            await closeUncancelled(session)
+            context.onQueue(.released(.handoff))
+            try await sleeper(timing.handoffWindow)
         }
     }
 
-    private func listen(_ session: ScaleSetMessageSession, onDemand: @MainActor (Int) -> Void) async throws {
+    /// Opens the message session, retrying while another Mac holds it. A primary retries at a
+    /// fixed pace, a standby backs off. Reports `.heldElsewhere` once per streak of conflicts.
+    private func takeQueue(_ scaleSetID: Int, _ context: DemandRunContext) async throws -> (ScaleSetMessageSession, heldSince: Date) {
+        var conflicts = 0
+        while true {
+            try Task.checkCancellation()
+            let session = ScaleSetMessageSession(client: client, scaleSetID: scaleSetID, transport: transport)
+            self.session = session
+            do {
+                let created = try await session.create(ownerName: ownerName)
+                guard let statistics = created.statistics else { throw ScaleSetError.badResponse("session statistics missing") }
+                context.onQueue(.holding)
+                context.onDemand(statistics.totalAssignedJobs)
+                return (session, clock.now())
+            } catch ScaleSetError.conflict {
+                self.session = nil
+                if conflicts == 0 { context.onQueue(.heldElsewhere) }
+                try await sleeper(timing.conflictWait(role: context.role(), streak: conflicts))
+                conflicts += 1
+            } catch {
+                await cleanUp(after: error, session: session)
+                throw error
+            }
+        }
+    }
+
+    /// A retry opens a new session, so this one must go first or the next create gets 409.
+    /// On cancellation `close()` does it, from the stop path.
+    private func cleanUp(after error: any Error, session: ScaleSetMessageSession) async {
+        if !error.isCancellation { await closeUncancelled(session) }
+        // The set (or its session) is gone: the next run finds or creates the set again.
+        if case ScaleSetError.notFound = error { scaleSetID = nil }
+    }
+
+    /// Polls until cancelled or a failure; returns early only when a standby yields the queue.
+    private func listen(_ session: ScaleSetMessageSession, _ context: DemandRunContext, heldSince: Date) async throws {
         var lastMessageID = 0
         while true {
             try Task.checkCancellation()
+            let shouldYield = timing.shouldYield(role: context.role(), idleSince: context.idleSince(), heldSince: heldSince, now: clock.now())
+            if shouldYield { return }
             guard let message = try await poll(session, lastID: lastMessageID) else { continue }
             if let type = message.unsupportedType {
                 // Only the type is logged: the body may hold anything.
@@ -94,7 +141,7 @@ final class ScaleSetDemandSource: JobDemandSource {
                 _ = try await session.acquire(requestIDs: available)
             }
             if let statistics = message.statistics {
-                onDemand(statistics.totalAssignedJobs)
+                context.onDemand(statistics.totalAssignedJobs)
             }
             lastMessageID = message.messageID
             // Acknowledged even when Stop cancels this task, as the reference does.

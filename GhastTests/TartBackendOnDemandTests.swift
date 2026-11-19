@@ -27,7 +27,8 @@ struct TartBackendOnDemandTests {
         for _ in 0..<20 { await Task.yield() }
 
         #expect(clones(h).isEmpty)
-        #expect(RunnerDisplayStatus.make(processState: h.state(runner)!, lastExit: nil, activity: RunnerActivity()) == .onDemand(.waitingForJobs))
+        h.demand.source(runner)?.emitQueue(.holding)
+        #expect(RunnerDisplayStatus.make(processState: h.state(runner)!, lastExit: nil, activity: RunnerActivity()) == .onDemand(.waitingForJobs(.thisMac)))
         await h.service.stopRunner(id: runner.id)
     }
 

@@ -19,6 +19,7 @@ struct DemandSourceFactory: JobDemandSourceMaking {
     /// The Mac's name, shown as the owner of the scale set's session.
     let ownerName: String
     var retry = ActionsServiceClient.RetryPolicy()
+    var queueTiming = QueueTiming.standard
 
     func make(for runner: LocalRunner) -> any JobDemandSource {
         let client = ActionsServiceClient(scope: runner.scope, api: api, transport: transport, clock: clock, sleeper: sleeper, retry: retry)
@@ -30,6 +31,8 @@ struct DemandSourceFactory: JobDemandSourceMaking {
             transport: transport,
             ownerName: ownerName,
             sleeper: sleeper,
+            clock: clock,
+            timing: queueTiming,
             retry: retry
         )
         let fallback: (@MainActor () -> any JobDemandSource)?
@@ -76,10 +79,10 @@ final class FallbackDemandSource: JobDemandSource {
 
     /// Setup failures pass through (a refused org token, a missing group need the user);
     /// once a source is chosen, whatever ends its run is worth another try.
-    func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
+    func run(_ context: DemandRunContext) async throws {
         let source = try await resolved()
         do {
-            try await source.run(onDemand: onDemand)
+            try await source.run(context)
         } catch {
             if error.isCancellation { throw error }
             throw DemandSourceError.interrupted(error)

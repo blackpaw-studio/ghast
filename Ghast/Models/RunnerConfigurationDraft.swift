@@ -15,6 +15,9 @@ final class RunnerConfigurationDraft {
     var tartImage = ""
     var tartGroup = ""
     var tartLabels = ""
+    /// Which Mac wins the job queue when two Macs run this runner. Applies at once: the
+    /// backend reads it live.
+    var queueRole = QueueRole.primary
     /// Set by a saved edit: it applies the next time the runner starts.
     var needsRestart = false
     private(set) var runnerID: String?
@@ -40,6 +43,7 @@ final class RunnerConfigurationDraft {
             tartImage = image
             tartGroup = runner.runnerGroup ?? ""
             tartLabels = runner.labels.joined(separator: ", ")
+            queueRole = runner.queueRole
         }
         needsRestart = false
     }
@@ -61,7 +65,7 @@ final class RunnerConfigurationDraft {
         let variables = editor.savedVariables
         let pre = preScript.savedScript
         let post = postScript.savedScript
-        let tart = (image: tartImage.trimmingCharacters(in: .whitespacesAndNewlines), group: tartGroup, labels: Self.parseLabels(tartLabels))
+        let tart = (image: tartImage.trimmingCharacters(in: .whitespacesAndNewlines), group: tartGroup, labels: Self.parseLabels(tartLabels), role: queueRole)
         debouncer.schedule { [weak self, runnerService] in
             guard let current = runnerService.localRunners.first(where: { $0.id == id }) else { return }
             if case let .tart(savedImage) = current.backend {
@@ -73,6 +77,9 @@ final class RunnerConfigurationDraft {
                 let group = tart.group.trimmingCharacters(in: .whitespacesAndNewlines)
                 if image != savedImage || labels != current.labels || (group.isEmpty ? nil : group) != current.runnerGroup {
                     runnerService.updateTartSettings(id: id, labels: labels, runnerGroup: group, image: image)
+                }
+                if current.queueRole != tart.role {
+                    runnerService.updateRunner(id: id) { $0.queueRole = tart.role }
                 }
                 if current.environmentVariables != variables || current.preJobScript != pre || current.postJobScript != post {
                     runnerService.updateRunner(id: id) {
