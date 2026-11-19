@@ -43,4 +43,6 @@ struct OnDemandState: Sendable, Equatable {
     var isWaitingForSlot = false
     /// Clones a shell can reach: from the readiness probe until cleanup starts, oldest first.
     var liveVMs: [String] = []
+    /// Whether this Mac holds the scale set's job queue (its one message session).
+    var queue: JobQueueStatus = .connecting
 }

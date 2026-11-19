@@ -56,6 +56,8 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     /// A VM runner from before on-demand VMs: its detail view says once that labels no
     /// longer apply and workflows use `runs-on: <name>`. Dismissing it clears this.
     var showsOnDemandNote: Bool
+    /// Which Mac wins the job queue when two Macs run a VM runner of the same name.
+    var queueRole: QueueRole
 
     /// Repository full name or organization login (see `RunnerScope.displayName`).
     var repository: String { scope.displayName }
@@ -78,6 +80,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         self.workFolder = Self.defaultWorkFolder
         self.backend = .host
         self.showsOnDemandNote = false
+        self.queueRole = .primary
     }
 
     /// A repository-level runner for `repository` (`owner/repo`).
@@ -89,7 +92,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         case id, name, scope, repository, path, labels, status, createdAt
         case environmentVariables, preJobScript, postJobScript
         case shouldBeRunning, lastExit, outputClearOffset, runnerGroup, workFolder, backend
-        case showsOnDemandNote
+        case showsOnDemandNote, queueRole
     }
 
     /// Runners saved before scopes existed (or rewritten by an older build) carry only
@@ -123,6 +126,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         backend = try container.decodeIfPresent(RunnerBackendKind.self, forKey: .backend) ?? .host
         // A VM runner saved before on-demand VMs has no key: it ran always-on with labels.
         // Its labels stay saved (an older build still reads them) but no longer apply.
+        queueRole = try container.decodeIfPresent(QueueRole.self, forKey: .queueRole) ?? .primary
         if let saved = try container.decodeIfPresent(Bool.self, forKey: .showsOnDemandNote) {
             showsOnDemandNote = saved
         } else if case .tart = backend {
@@ -158,6 +162,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         try container.encode(workFolder, forKey: .workFolder)
         try container.encode(backend, forKey: .backend)
         try container.encode(showsOnDemandNote, forKey: .showsOnDemandNote)
+        try container.encode(queueRole, forKey: .queueRole)
     }
 
     // Custom equality based on ID only
