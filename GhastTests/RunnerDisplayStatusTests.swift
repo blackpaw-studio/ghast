@@ -115,6 +115,15 @@ struct RunnerDisplayStatusTests {
         #expect(known.downloadFraction == 0.42)
     }
 
+    @Test("the pulling line names the image by its label")
+    func pullingLineNamesImage() {
+        let status = RunnerDisplayStatus.pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB"))
+        #expect(status.secondaryLine(location: .thisMac, time: displayTime(), imageLabel: "macOS Tahoe · Xcode 27.2")
+            == "Pulling macOS Tahoe · Xcode 27.2 — 42% of 27.0 GB")
+        #expect(RunnerDisplayStatus.pulling(.indeterminate).secondaryLine(location: .thisMac, time: displayTime(), imageLabel: "macOS Tahoe")
+            == "Pulling macOS Tahoe…")
+    }
+
     @Test("VM phases: title, secondary line and sidebar subtitle", arguments: [
         (RunnerDisplayStatus.pulling(.indeterminate), "Pulling image…", "Pulling the VM image…", "Pulling image…"),
         (.pulling(TartPullProgress(fraction: 0.42, size: "27.0 GB")), "Pulling image…", "Pulling the VM image — 42% of 27.0 GB", "Pulling image · 42%"),

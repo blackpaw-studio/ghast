@@ -5,6 +5,7 @@ import os
 struct NewRunnerConfigureView: View {
     let initialCustomLabels: [String]
     let tartLocator: TartLocator
+    let xcodeVersions: any TartXcodeVersionProviding
     let create: (NewRunnerRequest) -> Void
     let cancel: () -> Void
 
@@ -29,25 +30,22 @@ struct NewRunnerConfigureView: View {
     @State private var runIn: NewRunnerRunIn
     /// nil until the locator has answered.
     @State private var tartInstallation: TartInstallation?
-    @State private var imageChoice = TartImageChoice.curated(TartImageCatalog.images[0].ref)
-    @State private var customImage = ""
+    /// The exact image ref; empty while the newest Xcode release is still being looked up.
+    @State private var tartImage = ""
     @FocusState private var isNameFocused: Bool
-
-    private enum TartImageChoice: Hashable {
-        case curated(String)
-        case custom
-    }
 
     init(
         initialCustomLabels: [String],
         initialRunIn: NewRunnerRunIn = .thisMac,
         initialTartInstallation: TartInstallation? = nil,
         tartLocator: TartLocator,
+        xcodeVersions: any TartXcodeVersionProviding = FallbackXcodeVersionProvider(),
         create: @escaping (NewRunnerRequest) -> Void,
         cancel: @escaping () -> Void
     ) {
         self.initialCustomLabels = initialCustomLabels
         self.tartLocator = tartLocator
+        self.xcodeVersions = xcodeVersions
         self.create = create
         self.cancel = cancel
         _runIn = State(initialValue: initialRunIn)
@@ -93,12 +91,7 @@ struct NewRunnerConfigureView: View {
 
     private var isTartUsable: Bool { tartInstallation?.isUsable == true }
 
-    private var selectedImage: String {
-        switch imageChoice {
-        case let .curated(ref): ref
-        case .custom: customImage.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-    }
+    private var selectedImage: String { tartImage.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var isRunInValid: Bool {
         switch runIn {
@@ -198,32 +191,8 @@ struct NewRunnerConfigureView: View {
     @ViewBuilder
     private var imageRows: some View {
         FocusFormDivider()
-        row("Image") {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                Picker("Image", selection: $imageChoice) {
-                    ForEach(TartImageCatalog.images, id: \.ref) { Text($0.title).tag(TartImageChoice.curated($0.ref)) }
-                    Divider()
-                    Text("Custom…").tag(TartImageChoice.custom)
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-            }
-        }
-        if imageChoice == .custom {
-            FocusFormDivider()
-            row("Custom image") {
-                VStack(alignment: .leading, spacing: 2) {
-                    TextField("Custom image", text: $customImage, prompt: Text("OCI reference or local VM name"))
-                        .textFieldStyle(.roundedBorder)
-                        .labelsHidden()
-                    Text(TartImageCatalog.customImageHint)
-                        .font(FocusType.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 6)
-            }
+        TartImagePicker(image: $tartImage, versions: xcodeVersions) { label, value in
+            row(label) { value }
         }
     }
 
