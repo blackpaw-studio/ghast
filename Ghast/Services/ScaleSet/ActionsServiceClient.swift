@@ -60,6 +60,9 @@ final class ActionsServiceClient {
         self.retry = retry
     }
 
+    /// The injected clock's time, for callers that map their own failures.
+    func now() -> Date { clock.now() }
+
     // MARK: - Scale sets
 
     /// The set with `name` in the group, or nil. Several sets with one name is an error.
