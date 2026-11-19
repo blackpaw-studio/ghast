@@ -14,6 +14,8 @@ final class ScaleSetDemandSource: JobDemandSource {
     private let client: ActionsServiceClient
     private let transport: any HTTPTransport
     private let ownerName: String
+    private let sleeper: Sleeper
+    private let retry: ActionsServiceClient.RetryPolicy
     private var scaleSetID: Int?
     private var session: ScaleSetMessageSession?
 
@@ -21,13 +23,18 @@ final class ScaleSetDemandSource: JobDemandSource {
     ///   - name: The runner's name, which is the scale set's name and its `runs-on` label.
     ///   - groupID: Resolves the runner group the set lives in.
     ///   - ownerName: Shown as the session's owner on GitHub (the Mac's name).
+    ///   - sleeper, retry: The wait between retries of a failed poll on the same session.
     init(
         name: String,
         groupID: @escaping @MainActor () async throws -> Int,
         client: ActionsServiceClient,
         transport: any HTTPTransport,
-        ownerName: String
+        ownerName: String,
+        sleeper: @escaping Sleeper,
+        retry: ActionsServiceClient.RetryPolicy = .init()
     ) {
+        self.sleeper = sleeper
+        self.retry = retry
         self.name = name
         self.groupID = groupID
         self.client = client
@@ -71,7 +78,7 @@ final class ScaleSetDemandSource: JobDemandSource {
         var lastMessageID = 0
         while true {
             try Task.checkCancellation()
-            guard let message = try await session.nextMessage(lastID: lastMessageID) else { continue }
+            guard let message = try await poll(session, lastID: lastMessageID) else { continue }
             let available = message.jobsAvailable.map(\.runnerRequestID)
             if !available.isEmpty {
                 _ = try await session.acquire(requestIDs: available)
@@ -83,6 +90,34 @@ final class ScaleSetDemandSource: JobDemandSource {
             // Acknowledged even when Stop cancels this task, as the reference does.
             let messageID = message.messageID
             try await Task { try await session.ack(id: messageID) }.value
+        }
+    }
+
+    /// One poll, retried on the same session after a transient failure (as the reference's
+    /// HTTP client does), waiting the backoff or the server's Retry-After, whichever is longer.
+    /// Anything else, or a failure past the retry limit, throws and the session is reopened.
+    private func poll(_ session: ScaleSetMessageSession, lastID: Int) async throws -> ScaleSetMessage? {
+        var attempt = 0
+        while true {
+            do {
+                return try await session.nextMessage(lastID: lastID)
+            } catch let error as ScaleSetError {
+                guard attempt < retry.maxRetries, let wait = Self.pollRetryWait(error, attempt: attempt + 1, retry: retry) else { throw error }
+                attempt += 1
+                Self.logger.notice("Message poll failed (\(error.localizedDescription, privacy: .public)); retry \(attempt)")
+                try await sleeper(wait)
+            }
+        }
+    }
+
+    /// The wait before retry `attempt` of a poll that failed with `error`; nil when a retry
+    /// on the same session cannot help.
+    private static func pollRetryWait(_ error: ScaleSetError, attempt: Int, retry: ActionsServiceClient.RetryPolicy) -> Duration? {
+        let backoff = retry.wait(beforeRetry: attempt)
+        switch error {
+        case .transient: return backoff
+        case let .rateLimited(retryAfter): return max(backoff, .seconds(retryAfter ?? 0))
+        case .authRejected, .notFound, .conflict, .badRequest, .badResponse: return nil
         }
     }
 

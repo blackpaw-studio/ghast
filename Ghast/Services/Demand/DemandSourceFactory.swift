@@ -28,7 +28,9 @@ struct DemandSourceFactory: JobDemandSourceMaking {
             groupID: { try await RunnerGroups.id(for: runner, api: api) },
             client: client,
             transport: transport,
-            ownerName: ownerName
+            ownerName: ownerName,
+            sleeper: sleeper,
+            retry: retry
         )
         let fallback: (@MainActor () -> any JobDemandSource)?
         switch runner.scope {
