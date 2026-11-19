@@ -1,0 +1,87 @@
+import Testing
+import Foundation
+@testable import Ghast
+
+@MainActor @Suite struct DemandSourceFactoryTests {
+    let clock = FakeClock()
+    let api = MockGitHubAPIService()
+    let sleeper = ManualSleeper()
+    let demand = DemandRecorder()
+
+    private func makeFactory(_ replies: [FakeTransport.Reply]) -> (DemandSourceFactory, FakeTransport) {
+        let transport = FakeTransport(replies)
+        let factory = DemandSourceFactory(
+            api: api, transport: transport, clock: clock, sleeper: sleeper.sleeper,
+            ownerName: "Dionysus", retry: .init(maxRetries: 0)
+        )
+        return (factory, transport)
+    }
+
+    private func runner(_ scope: RunnerScope) -> LocalRunner {
+        var runner = LocalRunner(name: "mac-vm", scope: scope, path: "/tmp/ghast-test-runner")
+        runner.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
+        return runner
+    }
+
+    private static let rejected = FakeTransport.Reply.json(#"{"message":"no"}"#, status: 403)
+
+    @Test("a repository runner whose token scale sets refuse falls back to REST polling")
+    func repositoryFallsBack() async throws {
+        let (factory, _) = makeFactory([Self.rejected])
+        let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
+        let recorder = demand
+        let task = Task { try await source.run(onDemand: recorder.record) }
+        while demand.values.isEmpty { await Task.yield() }
+        task.cancel()
+        sleeper.wakeAll()
+        _ = await task.result
+        #expect(api.conditionalFetches.first?.key == "runs:queued")
+    }
+
+    @Test("an organization runner whose token scale sets refuse stops with a config error")
+    func organizationErrors() async throws {
+        let (factory, _) = makeFactory([Self.rejected])
+        let source = factory.make(for: runner(.organization(login: "octo")))
+        await #expect(throws: TartBackendError.scaleSetAuthRejected) {
+            try await source.run(onDemand: demand.record)
+        }
+        #expect(!TartBackend.isTransient(TartBackendError.scaleSetAuthRejected))
+        #expect(api.conditionalFetches.isEmpty)
+    }
+
+    @Test("other setup failures do not fall back")
+    func otherFailureNoFallback() async throws {
+        let (factory, _) = makeFactory([.json("", status: 502)])
+        let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
+        await #expect(throws: ScaleSetError.self) { try await source.run(onDemand: demand.record) }
+        #expect(api.conditionalFetches.isEmpty)
+    }
+
+    @Test("an accepted token uses the scale set")
+    func usesScaleSet() async throws {
+        let (factory, transport) = makeFactory([
+            ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600)),
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 1),
+        ])
+        let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
+        _ = try? await source.run(onDemand: demand.record)
+        #expect(demand.values == [1])
+        #expect(await transport.requests.contains { $0.url?.path.hasSuffix("/runnerscalesets/9/sessions") == true })
+        #expect(api.conditionalFetches.isEmpty)
+    }
+
+    @Test("an organization runner's scale set lives in its named group")
+    func organizationGroup() async throws {
+        api.mockRunnerGroups = [
+            GitHubRunnerGroup(id: 1, name: "Default", isDefault: true),
+            GitHubRunnerGroup(id: 7, name: "Macs", isDefault: false),
+        ]
+        var org = runner(.organization(login: "octo"))
+        org.runnerGroup = "macs"
+        let (factory, transport) = makeFactory([
+            ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600)), ScaleSetReplies.list([9]),
+        ])
+        _ = try? await factory.make(for: org).run(onDemand: demand.record)
+        #expect(await transport.requests[1].url?.query?.contains("runnerGroupId=7") == true)
+    }
+}

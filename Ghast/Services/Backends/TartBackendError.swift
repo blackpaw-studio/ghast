@@ -9,6 +9,9 @@ enum TartBackendError: LocalizedError, Equatable {
     case vmExitedDuringBoot
     case runnerGroupNotFound(String)
     case tooManyRunnerFailures(Int)
+    /// GitHub's runner scale-set service refused the token for an organization runner,
+    /// which has no REST fallback.
+    case scaleSetAuthRejected
 
     var errorDescription: String? {
         switch self {
@@ -31,6 +34,8 @@ enum TartBackendError: LocalizedError, Equatable {
             "Runner group \"\(name)\" does not exist in this organization."
         case let .tooManyRunnerFailures(count):
             "The runner failed \(count) times in a row, so the slot stopped. Check the output."
+        case .scaleSetAuthRejected:
+            "GitHub did not let Ghast manage runner scale sets for this organization. Sign out and in again, or check that you own the organization."
         }
     }
 }
@@ -43,7 +48,7 @@ extension TartBackend {
         if let error = error as? TartBackendError {
             switch error {
             case .bootTimedOut, .vmExitedDuringBoot: return true
-            case .unavailable, .localImageMissing, .macOSVMLimit, .runnerGroupNotFound, .tooManyRunnerFailures: return false
+            case .unavailable, .localImageMissing, .macOSVMLimit, .runnerGroupNotFound, .tooManyRunnerFailures, .scaleSetAuthRejected: return false
             }
         }
         if error is TartError { return true }
