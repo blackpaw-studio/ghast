@@ -6,6 +6,8 @@ actor FakeTransport: HTTPTransport {
     enum Reply {
         case json(String, status: Int = 200, headers: [String: String] = [:])
         case failure(Error)
+        /// Never answers; ends only when the calling task is cancelled.
+        case hang
     }
 
     private var replies: [Reply]
@@ -22,6 +24,9 @@ actor FakeTransport: HTTPTransport {
             return (Data(body.utf8), response)
         case let .failure(error):
             throw error
+        case .hang:
+            try await Task.sleep(for: .seconds(86_400))
+            throw CancellationError()
         }
     }
 }
