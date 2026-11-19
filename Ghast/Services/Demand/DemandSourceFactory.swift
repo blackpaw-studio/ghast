@@ -16,6 +16,7 @@ struct DemandSourceFactory: JobDemandSourceMaking {
     let transport: any HTTPTransport
     let clock: any AppClock
     let sleeper: Sleeper
+    /// The Mac's name, shown as the owner of the scale set's session.
     let ownerName: String
     var retry = ActionsServiceClient.RetryPolicy()
 
@@ -38,11 +39,6 @@ struct DemandSourceFactory: JobDemandSourceMaking {
             fallback = nil
         }
         return FallbackDemandSource(primary: primary, fallback: fallback)
-    }
-
-    /// The Mac's name, shown as the owner of the scale set's session.
-    nonisolated static var hostOwnerName: String {
-        Host.current().localizedName ?? "ghast"
     }
 }
 

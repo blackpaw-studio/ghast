@@ -31,6 +31,7 @@ struct FlowHarness {
         let tartBackend = TartBackend(
             cliProvider: { tart },
             api: api,
+            demandSources: FakeDemandSources(initialDemand: nil) { _, _, _ in throw GitHubAPIError.notConfigured },
             tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: FakeArchiveFetcher()),
             leases: TartLeaseStore(defaults: defaults),
             logAppender: RecordingLogAppender(),
@@ -351,7 +352,8 @@ struct FlowHarness {
         #expect(runner.shouldBeRunning)
         #expect(flow.runnerID == runner.id)
         #expect(FileManager.default.fileExists(atPath: h.folder().path))
-        #expect(await eventually { h.log.all.contains { $0.hasPrefix("clone ") } })
+        // Started on demand: it listens for jobs and boots no VM until one wants it.
+        #expect(await eventually { if case .onDemand? = h.service.processStates[runner.id] { true } else { false } })
         let log = h.log.all
         #expect(!log.contains { $0.hasPrefix("download") || $0.hasPrefix("registration-token") || $0.hasPrefix("config") || $0.hasPrefix("launch") })
         #expect(await h.scripts.calls.isEmpty)

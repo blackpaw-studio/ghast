@@ -204,9 +204,17 @@ struct AppDependencies {
         let clock = SystemClock()
         let launcher = ProcessRunnerLauncher()
         let sleeper: Sleeper = { try await Task.sleep(for: $0) }
+        let demandSources = DemandSourceFactory(
+            api: apiService,
+            transport: URLSessionTransport(),
+            clock: clock,
+            sleeper: sleeper,
+            ownerName: SystemHostInfo().computerName
+        )
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
+            demandSources: demandSources,
             leases: TartLeaseStore(defaults: .standard),
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,

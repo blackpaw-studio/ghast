@@ -2,8 +2,10 @@ import Testing
 import Foundation
 @testable import Ghast
 
-/// A real `RunnerService` with a `TartBackend` over a fake Tart, fake GitHub and a sleeper
-/// that only yields, so a slot loop runs in microseconds and no process starts.
+/// A real `RunnerService` with a `TartBackend` over a fake Tart, fake GitHub, a fake demand
+/// source and a sleeper that only yields, so a VM run takes microseconds and no process
+/// starts. Each started runner reports a demand of `initialDemand` (1 by default) at once.
+/// The VM budget's re-check never fires by time: only a VM exit wakes a waiting runner.
 @MainActor
 final class TartHarness {
     static let image = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
@@ -36,24 +38,34 @@ final class TartHarness {
     let fetcher = FakeArchiveFetcher()
     let isolated = makeIsolatedDefaults()
     let leases: TartLeaseStore
+    let demand: FakeDemandSources
     let service: RunnerService
     let backend: TartBackend
 
-    init(entries: [TartVMEntry]? = nil, timing: TartBackend.Timing = .standard) {
+    init(entries: [TartVMEntry]? = nil, timing: TartBackend.Timing = .standard, initialDemand: Int? = 1) {
         let cli = FakeTartCLI(log: log, entries: entries ?? [TartVMEntry(name: Self.image, source: "OCI", isRunning: false)])
         let api = FlowGitHubAPI(log: log)
         let leases = TartLeaseStore(defaults: isolated.defaults)
         let ids = SequentialIDs()
         let clock = FrozenClock()
         let sleeps = sleeps
+        let demand = FakeDemandSources(initialDemand: initialDemand) { runner, name, folder in
+            try await api.generateJITConfig(for: runner.scope, name: name, runnerGroupID: 1, labels: [runner.name], workFolder: folder)
+        }
+        let recheck = timing.slotRecheckInterval
         let backend = TartBackend(
             cliProvider: { cli },
             api: api,
+            demandSources: demand,
             tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: fetcher),
             leases: leases,
             logAppender: lines,
             clock: clock,
-            sleeper: { sleeps.record($0); await Task.yield() },
+            sleeper: { duration in
+                sleeps.record(duration)
+                if duration == recheck { try await HoldGate().wait() }
+                await Task.yield()
+            },
             makeID: { ids.next() },
             timing: timing
         )
@@ -61,6 +73,7 @@ final class TartHarness {
         self.cli = cli
         self.api = api
         self.leases = leases
+        self.demand = demand
         self.backend = backend
         service = RunnerService(
             defaults: isolated.defaults,
@@ -92,6 +105,20 @@ final class TartHarness {
 
     func state(_ runner: LocalRunner) -> RunnerProcessState? { service.processStates[runner.id] }
 
+    /// The runner's VM counts while it is started on demand.
+    func vms(_ runner: LocalRunner) -> OnDemandState? {
+        if case let .onDemand(value)? = state(runner) { return value }
+        return nil
+    }
+
+    /// Ends the running job and, once its VM is gone, reports one more queued job.
+    func nextJob(_ runner: LocalRunner) async throws {
+        let vm = try #require(cli.currentJobVM)
+        cli.endJob(vm, code: 0)
+        _ = await settled { log.all.contains("delete \(vm)") && vms(runner)?.booting == 0 && vms(runner)?.running == 0 }
+        demand.source(runner)?.emit(1)
+    }
+
     /// Waits for `condition`, polling without a fixed delay; gives up after a few seconds.
     func settled(_ condition: @MainActor () -> Bool) async -> Bool {
         for _ in 0..<5_000 {
@@ -108,7 +135,7 @@ final class TartHarness {
     }
 }
 
-@Suite("TartBackend slot loop")
+@Suite("TartBackend VM runs")
 @MainActor
 struct TartBackendTests {
     @Test("one iteration clones, boots, waits for the guest, registers a runner, runs the job and cleans up, in that order")
@@ -120,7 +147,7 @@ struct TartBackendTests {
 
         try await h.service.startRunner(id: runner.id)
         #expect(await h.settled { h.cli.jobsStarted == 1 })
-        if case .running = h.state(runner) {} else { Issue.record("expected running, got \(String(describing: h.state(runner)))") }
+        #expect(h.vms(runner)?.running == 1, "got \(String(describing: h.state(runner)))")
         h.cli.endJob(vm, code: 0)
         #expect(await h.settled { h.log.all.contains("delete 1001 acme/ghast") })
         await h.service.stopRunner(id: runner.id)
@@ -252,7 +279,7 @@ struct TartBackendTests {
         #expect(h.lines.lines.contains { $0.contains("my-vm") })
     }
 
-    @Test("a guest that never answers is cleaned up, reported as an error, and never registers a runner")
+    @Test("a guest that never answers is cleaned up, logged and retried after a backoff, and never registers a runner")
     func bootTimeout() async throws {
         let h = TartHarness()
         defer { h.cleanup() }
@@ -262,16 +289,19 @@ struct TartBackendTests {
 
         try await h.service.startRunner(id: runner.id)
 
-        #expect(await h.settled { if case .exited? = h.state(runner) { true } else { false } })
+        #expect(await h.settled { h.log.all.contains("probe \(h.vmName(runner, iteration: 2))") })
         #expect(h.log.all.contains("stop \(vm)"))
         #expect(h.log.all.contains("delete \(vm)"))
         #expect(!h.log.all.contains { $0.hasPrefix("jit ") })
         #expect(h.lines.lines.contains { $0.contains("Tart Guest Agent") })
+        #expect(h.sleeps.all.contains(.seconds(5)))
+        #expect(h.leases.all()[vm] == nil)
+        #expect(h.service.localRunners.first?.shouldBeRunning == true)
+        await h.service.stopRunner(id: runner.id)
         #expect(h.leases.all().isEmpty)
-        #expect(h.service.localRunners.first?.shouldBeRunning == false)
     }
 
-    @Test("two macOS VMs already running, Ghast's or not, refuse the boot with no clone")
+    @Test("two macOS VMs already running, Ghast's or not, leave the runner waiting for a slot with no clone")
     func vmLimit() async throws {
         let h = TartHarness(entries: [
             TartVMEntry(name: TartHarness.image, source: "OCI", isRunning: false),
@@ -283,10 +313,13 @@ struct TartBackendTests {
 
         try await h.service.startRunner(id: runner.id)
 
-        #expect(await h.settled { if case .exited? = h.state(runner) { true } else { false } })
+        #expect(await h.settled { h.vms(runner)?.isWaitingForSlot == true })
         #expect(!h.log.all.contains { $0.hasPrefix("clone ") })
-        #expect(h.lines.lines.contains { $0.contains("at most 2") })
         #expect(h.leases.all().isEmpty)
+        #expect(h.backend.isActive(id: runner.id))
+        #expect(!h.sleeps.all.contains(.seconds(5)))
+        await h.service.stopRunner(id: runner.id)
+        #expect(h.state(runner) == .stopped)
     }
 
     @Test("a running Linux VM does not count against the macOS limit")
@@ -377,7 +410,7 @@ struct TartBackendTests {
         #expect(await h.settled { h.cli.jobsStarted == 1 })
         #expect(h.fetcher.fetched.count == 1)
 
-        h.cli.endJob(try #require(h.cli.currentJobVM), code: 0)
+        try await h.nextJob(runner)
         #expect(await h.settled { h.cli.jobsStarted == 2 })
         #expect(h.fetcher.fetched.count == 1)
 
@@ -386,7 +419,7 @@ struct TartBackendTests {
             downloadURL: "https://example.invalid/actions-runner-osx-arm64-2.330.0.tar.gz",
             filename: "actions-runner-osx-arm64-2.330.0.tar.gz"
         )]
-        h.cli.endJob(try #require(h.cli.currentJobVM), code: 0)
+        try await h.nextJob(runner)
         #expect(await h.settled { h.cli.jobsStarted == 3 })
         await h.service.stopRunner(id: runner.id)
 
@@ -395,21 +428,20 @@ struct TartBackendTests {
         ])
     }
 
-    @Test("an organization runner registers in its named group, with default labels first and no duplicates")
+    @Test("the JIT runner comes from the demand source, named after the runner plus the VM id, in its work folder")
     func registrationParameters() async throws {
         let h = TartHarness()
         defer { h.cleanup() }
-        h.api.runnerGroups["acme"] = [
-            GitHubRunnerGroup(id: 1, name: "Default", isDefault: true),
-            GitHubRunnerGroup(id: 7, name: "macOS builders", isDefault: false),
-        ]
-        let runner = h.addRunner(scope: .organization(login: "acme"), labels: ["self-hosted", "Custom", "macos"], group: "macOS builders")
+        let runner = h.addRunner(scope: .organization(login: "acme"))
 
         try await h.service.startRunner(id: runner.id)
         #expect(await h.settled { h.cli.jobsStarted == 1 })
         await h.service.stopRunner(id: runner.id)
 
-        #expect(h.api.jitRequests.first == TartHarness_JITRequest.expected)
+        let request = try #require(h.api.jitRequests.first)
+        #expect(request.name == "vm-1-000001")
+        #expect(request.workFolder == "_work")
+        #expect(h.log.all.contains("delete 1001 acme"))
     }
 
     @Test("starting a running slot again does nothing")
@@ -427,7 +459,7 @@ struct TartBackendTests {
         #expect(h.log.all.filter { $0.hasPrefix("clone ") }.count == 1)
     }
 
-    @Test("a runner that keeps exiting with an error ends the slot after three tries")
+    @Test("a runner that exits with an error is logged and its job retried in a fresh VM after a doubling backoff")
     func repeatedRunnerFailures() async throws {
         let h = TartHarness()
         defer { h.cleanup() }
@@ -439,9 +471,11 @@ struct TartBackendTests {
             h.cli.endJob(try #require(h.cli.currentJobVM), code: 1)
         }
 
-        #expect(await h.settled { if case .exited? = h.state(runner) { true } else { false } })
-        #expect(h.cli.jobsStarted == 3)
-        #expect(h.lines.lines.contains { $0.contains("failed 3 times") })
+        #expect(await h.settled { h.cli.jobsStarted == 4 })
+        #expect(h.sleeps.all.filter { $0 >= .seconds(5) } == [.seconds(5), .seconds(10), .seconds(20)])
+        #expect(h.lines.lines.contains { $0.contains("exited with code 1") })
+        #expect(h.backend.isActive(id: runner.id))
+        await h.service.stopRunner(id: runner.id)
     }
 
     @Test("a runner registration GitHub already dropped (404) is fine; any other failure keeps the lease for recovery")
@@ -585,14 +619,4 @@ struct TartBackendRecoveryTests {
         #expect(h.cli.terminatedProcesses.contains("vm \(vm)"))
         await h.service.stopRunner(id: runner.id)
     }
-}
-
-private enum TartHarness_JITRequest {
-    static let expected = FlowGitHubAPI.JITRequest(
-        scope: .organization(login: "acme"),
-        name: "vm-1-000001",
-        runnerGroupID: 7,
-        labels: ["self-hosted", "macOS", "ARM64", "Custom"],
-        workFolder: "_work"
-    )
 }

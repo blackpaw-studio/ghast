@@ -91,7 +91,7 @@ struct TartBackendStopTests {
         #expect(!h.cli.terminatedProcesses.contains("vm \(vm)"))
     }
 
-    // MARK: 9. Phases shown around Stop and between iterations
+    // MARK: 9. Phases shown around Stop and between VMs
 
     @Test("Stop while an image is pulling shows stopping at once")
     func stopWhilePullingShowsStopping() async throws {
@@ -129,8 +129,8 @@ struct TartBackendStopTests {
         await h.service.stopRunner(id: runner.id)
     }
 
-    @Test("the next iteration does not keep showing the last one's cleaning up while it prepares")
-    func nextIterationIsNotCleaningUp() async throws {
+    @Test("the next VM does not keep showing the last one's cleaning up while it prepares")
+    func nextVMIsNotCleaningUp() async throws {
         let h = TartHarness()
         defer { h.cleanup() }
         let runner = h.addRunner()
@@ -139,10 +139,10 @@ struct TartBackendStopTests {
         #expect(await h.settled { h.cli.jobsStarted == 1 })
         let gate = HoldGate()
         h.cli.listGate = gate
-        h.cli.endJob(try #require(h.cli.currentJobVM), code: 0)
+        try await h.nextJob(runner)
 
         #expect(await h.settled { h.log.all.filter { $0 == "list" }.count >= 3 })
-        #expect(h.state(runner) == .booting)
+        #expect(h.vms(runner) == OnDemandState(since: h.vms(runner)!.since, booting: 1))
         await gate.open()
         await h.service.stopRunner(id: runner.id)
     }

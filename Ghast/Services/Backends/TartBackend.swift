@@ -1,9 +1,11 @@
 import Foundation
 import os
 
-/// Runs a runner as an ephemeral Tart VM slot: clone an image, boot it, register a
-/// just-in-time runner, run one job in the guest, delete the VM, repeat while the runner
-/// should be running. One sidebar entry is one slot.
+/// Runs VM runners on demand: a started runner holds no VM while idle. Its demand source
+/// (a runner scale set, or REST polling) says how many jobs want it; for each, up to two,
+/// Ghast boots a fresh Tart VM, registers a just-in-time runner in it, runs that one job and
+/// deletes the VM. The host's 2-VM macOS budget is shared by every runner and counts VMs
+/// Ghast did not start.
 @MainActor
 final class TartBackend: RunnerBackend {
     weak var host: (any RunnerBackendHost)?
@@ -14,27 +16,28 @@ final class TartBackend: RunnerBackend {
         var bootPollInterval: Duration = .seconds(2)
         var stopGracePeriod: Duration = .seconds(15)
         var stopPollInterval: Duration = .milliseconds(100)
-        /// Pause after a job whose runner exited with an error, before the next VM.
-        var restartDelay: Duration = .seconds(5)
-        /// An iteration shorter than this waits `restartDelay` before the next, so a guest that
-        /// exits at once cannot spin clone, boot and registration.
-        var minIterationDuration: Duration = .seconds(30)
+        /// First wait after a transient failure; doubles with each consecutive one.
+        var retryDelay: Duration = .seconds(5)
+        var maxRetryDelay: Duration = .seconds(60)
+        /// How often a runner waiting for the VM budget looks again (any Ghast VM exit also wakes it).
+        var slotRecheckInterval: Duration = .seconds(15)
         /// `tart stop --timeout`, in seconds.
         var vmStopTimeout = 8
-        var maxConsecutiveRunnerFailures = 3
 
         static let standard = Timing()
     }
 
     /// macOS licenses at most two concurrent macOS VMs per host.
     static let macOSVMLimit = 2
+    /// VMs one runner entry runs at once.
+    static let maxVMsPerRunner = 2
     static let clonePrefix = "ghast-"
-    private static let defaultLabels = ["self-hosted", "macOS", "ARM64"]
     private static let maxRunnerNameLength = 64
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "tart")
 
     private let cliProvider: @Sendable () async throws -> any TartCLI
     private let api: any GitHubAPIServiceProtocol
+    private let demandSources: any JobDemandSourceMaking
     private let tarballs: RunnerTarballCache
     private let leases: TartLeaseStore
     private let logAppender: any RunnerLogAppending
@@ -44,14 +47,16 @@ final class TartBackend: RunnerBackend {
     private let timing: Timing
     private let bootGate = BootGate()
 
-    private var slots: [String: Slot] = [:]
+    private var entries: [String: OnDemandEntry] = [:]
 
     /// - Parameters:
     ///   - cliProvider: Finds Tart and returns a CLI for it; throws when Tart is unusable.
+    ///   - demandSources: Builds each started runner's demand source.
     ///   - makeID: A short unique id (6 hex digits) for a clone and its JIT runner name.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
+        demandSources: any JobDemandSourceMaking,
         tarballs: RunnerTarballCache = RunnerTarballCache(),
         leases: TartLeaseStore,
         logAppender: any RunnerLogAppending,
@@ -62,6 +67,7 @@ final class TartBackend: RunnerBackend {
     ) {
         self.cliProvider = cliProvider
         self.api = api
+        self.demandSources = demandSources
         self.tarballs = tarballs
         self.leases = leases
         self.logAppender = logAppender
@@ -75,239 +81,279 @@ final class TartBackend: RunnerBackend {
         String(format: "%06x", UInt32.random(in: 0..<0x1000000))
     }
 
-    // MARK: - Slot state
-
-    /// One runner's loop and what it currently holds.
-    @MainActor private final class Slot {
-        let runnerID: String
-        var task: Task<Void, Never>?
-        var isStopRequested = false
-        var cli: (any TartCLI)?
-        /// The clone this iteration is using, from its clone to its deletion.
-        var vm: String?
-        var vmProcess: (any RunnerProcessHandle)?
-        var vmProcessExited = false
-        var guest: GuestRun?
-        var waiters: [CheckedContinuation<Void, Never>] = []
-
-        init(runnerID: String) { self.runnerID = runnerID }
-    }
-
-    /// The guest command in flight: its process and whoever awaits its exit status.
-    private struct GuestRun {
-        let token: UUID
-        let process: any RunnerProcessHandle
-        let continuation: CheckedContinuation<Int32, Never>
-    }
-
     // MARK: - Starting
 
-    /// Starts the slot loop and returns at once; phases show through the runner's process
-    /// state. Ignored while the slot is already running. A start right after a stop waits for
-    /// that stop's cleanup first.
+    /// Starts listening for demand and returns at once. Ignored while the runner is already
+    /// started. A start right after a stop waits for that stop's cleanup first.
     func start(id: String) async throws {
         guard host?.runner(id: id) != nil else { throw RunnerError.runnerNotFound }
-        while let existing = slots[id], existing.isStopRequested {
+        while let existing = entries[id], existing.isShuttingDown {
             await waitForEnd(of: existing)
         }
-        guard slots[id] == nil, let runner = host?.runner(id: id) else { return }
+        guard entries[id] == nil, let runner = host?.runner(id: id) else { return }
         guard case .tart = runner.backend else { throw RunnerError.failedToStart }
 
-        let slot = Slot(runnerID: id)
-        slots[id] = slot
-        host?.setProcessState(.starting, id: id)
+        let entry = OnDemandEntry(runnerID: id, since: clock.now(), source: demandSources.make(for: runner))
+        entries[id] = entry
         host?.updateRunner(id: id) {
             $0.shouldBeRunning = true
             $0.status = .running
         }
-        slot.task = Task { @MainActor [weak self] in await self?.runSlot(slot) }
+        publish(entry)
+        log("Waiting for jobs with runs-on: \(runner.name)", runner: runner)
+        entry.demandTask = Task { @MainActor [weak self] in await self?.runDemand(entry) }
     }
 
-    // MARK: - The loop
+    // MARK: - Demand
 
-    private func runSlot(_ slot: Slot) async {
-        var consecutiveFailures = 0
-        while !slot.isStopRequested, let runner = host?.runner(id: slot.runnerID), case let .tart(image) = runner.backend {
-            let began = clock.now()
+    /// Keeps the demand source running; transient failures back off and retry, anything
+    /// else ends the runner with an error.
+    private func runDemand(_ entry: OnDemandEntry) async {
+        var failures = 0
+        while !entry.isStopRequested, !Task.isCancelled {
             do {
-                let exitCode = try await runIteration(slot, runner: runner, image: image)
-                if slot.isStopRequested { break }
-                guard exitCode != 0 else {
-                    consecutiveFailures = 0
-                    if clock.now().timeIntervalSince(began) < timing.minIterationDuration.seconds {
-                        try? await sleeper(timing.restartDelay)
-                    }
-                    continue
+                try await entry.source.run { [weak self] demand in
+                    failures = 0
+                    self?.demandChanged(entry, to: demand)
                 }
-                consecutiveFailures += 1
-                log("The runner exited with code \(exitCode)", runner: runner)
-                if consecutiveFailures >= timing.maxConsecutiveRunnerFailures {
-                    return finish(slot, failure: TartBackendError.tooManyRunnerFailures(consecutiveFailures))
-                }
-                try? await sleeper(timing.restartDelay)
+                return
             } catch {
-                if slot.isStopRequested || error.isCancellation { break }
-                guard Self.isTransient(error) else { return finish(slot, failure: error) }
-                consecutiveFailures += 1
-                guard consecutiveFailures < timing.maxConsecutiveRunnerFailures else { return finish(slot, failure: error) }
-                // 5 s, then 10 s: each consecutive failure doubles the wait.
-                let delay = timing.restartDelay * (1 << (consecutiveFailures - 1))
-                log("Error: \(error.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
+                if entry.isStopRequested || error.isCancellation { return }
+                guard Self.isTransient(error) else { return fail(entry, error) }
+                failures += 1
+                let delay = retryDelay(after: failures)
+                if let runner = host?.runner(id: entry.runnerID) {
+                    log("Error: \(error.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
+                }
                 try? await sleeper(delay)
             }
         }
-        finish(slot, failure: nil)
     }
 
-    /// Ends the slot: a failure is an error state (and clears the intent to run); anything
-    /// else is a requested stop.
-    private func finish(_ slot: Slot, failure: (any Error)?) {
-        if slots[slot.runnerID] === slot { slots.removeValue(forKey: slot.runnerID) }
-        if let failure, let runner = host?.runner(id: slot.runnerID) {
-            log("Error: \(failure.localizedDescription)", runner: runner)
+    private func demandChanged(_ entry: OnDemandEntry, to demand: Int) {
+        guard isCurrent(entry), !entry.isStopRequested else { return }
+        entry.demand = max(0, demand)
+        reconcile(entry)
+    }
+
+    /// Boots VMs while the demand exceeds the live VMs, up to two, unless the budget is known
+    /// to be full; then shows the state.
+    private func reconcile(_ entry: OnDemandEntry) {
+        guard isCurrent(entry), !entry.isStopRequested,
+              let runner = host?.runner(id: entry.runnerID), case let .tart(image) = runner.backend
+        else { return }
+        let wanted = min(entry.demand, Self.maxVMsPerRunner)
+        while entry.vms.count < wanted, !entry.isWaitingForSlot {
+            launchVM(entry, runner: runner, image: image)
         }
-        host?.recordExit(
-            id: slot.runnerID,
-            code: failure == nil ? 0 : RunnerExit.launchFailureCode,
-            wasRequested: failure == nil
-        )
-        for waiter in slot.waiters { waiter.resume() }
-        slot.waiters = []
+        publish(entry)
     }
 
-    /// What an iteration set up, so cleanup knows what to remove even after a failure.
-    private struct IterationResources: Sendable {
-        var vm: String?
-        var jitRunnerID: Int?
-        var scope: RunnerScope?
+    private func launchVM(_ entry: OnDemandEntry, runner: LocalRunner, image: String) {
+        let id = makeID()
+        let vm = VMRun(id: id, clone: "\(Self.clonePrefix)\(runner.id)-\(id)")
+        entry.vms.append(vm)
+        vm.task = Task { @MainActor [weak self] in await self?.runVM(vm, entry: entry, runner: runner, image: image) }
     }
 
-    private func runIteration(_ slot: Slot, runner: LocalRunner, image: String) async throws -> Int32 {
-        var resources = IterationResources(scope: runner.scope)
-        // Not the last iteration's "Cleaning up", while the list, package and boot gate are awaited.
-        setPhase(.booting, slot: slot)
-        let cli = try await cliProvider()
-        slot.cli = cli
+    // MARK: - One VM
+
+    private enum VMOutcome {
+        case noSlot
+        case exited(Int32)
+        case failed(any Error)
+    }
+
+    private func runVM(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner, image: String) async {
+        let outcome: VMOutcome
         do {
-            let exitCode = try await perform(slot, runner: runner, image: image, cli: cli, resources: &resources)
-            await cleanUpUncancelled(slot, runner: runner, cli: cli, resources: resources)
-            return exitCode
+            outcome = try await bootAndRun(vm, entry: entry, runner: runner, image: image)
         } catch {
-            await cleanUpUncancelled(slot, runner: runner, cli: cli, resources: resources)
-            throw error
+            outcome = .failed(error)
         }
+        await cleanUpUncancelled(vm, entry: entry, runner: runner)
+        await finished(vm, entry: entry, runner: runner, outcome: outcome)
     }
 
-    /// Cleanup runs to the end even when Stop cancelled the slot's task: it is what deletes
-    /// the VM and the GitHub registration, and a cancelled request would just throw.
-    private func cleanUpUncancelled(_ slot: Slot, runner: LocalRunner, cli: any TartCLI, resources: IterationResources) async {
-        await Task { await cleanUp(slot, runner: runner, cli: cli, resources: resources) }.value
-    }
+    private func bootAndRun(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner, image: String) async throws -> VMOutcome {
+        let cli = try await cliProvider()
+        vm.cli = cli
+        let tarball = try await prepare(entry, runner: runner, image: image, cli: cli)
+        try checkStop(entry)
+        guard try await reserveSlot(vm, cli: cli) else { return .noSlot }
+        try checkStop(entry)
 
-    /// Shows `state` unless Stop was requested, which keeps showing "stopping" until the end.
-    /// Progress only updates a runner that is still pulling: a late report never overwrites
-    /// booting, stopping or a stopped state.
-    private func setPullProgress(_ progress: TartPullProgress, runnerID: String) {
-        guard case let .pulling(current)? = host?.processState(id: runnerID) else { return }
-        // Updates hop to the main actor one task each and can land out of order.
-        if let next = progress.fraction, let now = current.fraction, next < now { return }
-        host?.setProcessState(.pulling(progress), id: runnerID)
-    }
-
-    private func setPhase(_ state: RunnerProcessState, slot: Slot) {
-        guard !slot.isStopRequested else { return }
-        host?.setProcessState(state, id: slot.runnerID)
-    }
-
-    private func perform(
-        _ slot: Slot,
-        runner: LocalRunner,
-        image: String,
-        cli: any TartCLI,
-        resources: inout IterationResources
-    ) async throws -> Int32 {
-        try await ensureImage(image, cli: cli, runner: runner, slot: slot)
-        let tarball = try await tarballs.ensureTarball(from: try await api.fetchRunnerApplications(for: runner.scope))
-        try checkStop(slot)
-
-        let iterationID = makeID()
-        let vm = "\(Self.clonePrefix)\(runner.id)-\(iterationID)"
-        try await bootGate.run {
-            guard try await runningMacOSVMCount(cli) < Self.macOSVMLimit else { throw TartBackendError.macOSVMLimit }
-            try checkStop(slot)
-            // Recorded before the clone exists, so a crash at any later point finds it.
-            leases.record(TartLease(runnerID: runner.id, jitRunnerID: nil, scope: runner.scope), forClone: vm)
-            resources.vm = vm
-            slot.vm = vm
-            setPhase(.booting, slot: slot)
-            log("Cloning…", runner: runner)
-            try await cli.clone(image, vm)
-            try checkStop(slot)
-            log("Booting VM…", runner: runner)
-            slot.vmProcessExited = false
-            slot.vmProcess = try cli.run(
-                vm,
-                shares: [TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true)],
-                log: logFile(for: runner),
-                onExit: { [weak self, weak slot] _ in
-                    Task { @MainActor in
-                        if let self, let slot { self.vmProcessEnded(slot, vm: vm) }
-                    }
+        // Recorded before the clone exists, so a crash at any later point finds it.
+        leases.record(TartLease(runnerID: runner.id, jitRunnerID: nil, scope: runner.scope), forClone: vm.clone)
+        log("Cloning…", runner: runner)
+        try await cli.clone(image, vm.clone)
+        try checkStop(entry)
+        log("Booting VM…", runner: runner)
+        vm.vmProcess = try cli.run(
+            vm.clone,
+            shares: [TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true)],
+            log: logFile(for: runner),
+            onExit: { [weak self, weak vm] _ in
+                Task { @MainActor in
+                    if let self, let vm { self.vmProcessEnded(vm) }
                 }
-            )
-            try await waitForGuest(cli, vm: vm, slot: slot)
-        }
+            }
+        )
+        try await waitForGuest(cli, vm: vm, entry: entry)
 
-        let jit = try await registerRunner(runner, iterationID: iterationID)
-        resources.jitRunnerID = jit.runnerID
-        leases.setJITRunnerID(jit.runnerID, forClone: vm)
-        try checkStop(slot)
+        let jit = try await registerRunner(runner, vm: vm, source: entry.source)
+        vm.jitRunnerID = jit.runnerID
+        leases.setJITRunnerID(jit.runnerID, forClone: vm.clone)
+        try checkStop(entry)
 
         log("Waiting for job", runner: runner)
         log("ghast: start", runner: runner)
-        host?.setProcessState(.running(since: clock.now()), id: runner.id)
-        let exitCode = await runGuest(cli, vm: vm, command: TartGuestScript.command(tarball: tarball, jitConfig: jit.encodedConfig), slot: slot, runner: runner)
+        let command = TartGuestScript.command(tarball: tarball, jitConfig: jit.encodedConfig)
+        let exitCode = await runGuest(cli, vm: vm, command: command, entry: entry, runner: runner)
         log("ghast: exit code=\(exitCode)", runner: runner)
-        return exitCode
-    }
-
-    private func checkStop(_ slot: Slot) throws {
-        if slot.isStopRequested { throw CancellationError() }
-    }
-
-    // MARK: - Steps
-
-    private func ensureImage(_ image: String, cli: any TartCLI, runner: LocalRunner, slot: Slot) async throws {
-        let present = try await cli.list().contains { $0.name == image }
-        guard !present else { return }
-        guard TartImageCatalog.isOCIRef(image) else { throw TartBackendError.localImageMissing(image) }
-        setPhase(.pulling(.indeterminate), slot: slot)
-        log("Pulling image…", runner: runner)
-        let runnerID = slot.runnerID
-        try await cli.pull(image, log: logFile(for: runner)) { [weak self] progress in
-            Task { @MainActor in self?.setPullProgress(progress, runnerID: runnerID) }
+        if exitCode == 0 {
+            // The job is done: count it out now, before cleanup, so a fresh report that
+            // arrives while the VM is deleted is not lowered again afterwards.
+            entry.demand = max(0, entry.demand - 1)
         }
-        log("Image pulled", runner: runner)
-        try checkStop(slot)
+        return .exited(exitCode)
     }
 
-    /// Running macOS VMs on the host, whoever started them.
-    private func runningMacOSVMCount(_ cli: any TartCLI) async throws -> Int {
+    /// What happens once a VM is gone: a finished job resets the backoff, a transient
+    /// failure waits out its backoff (still counted, so no VM replaces it early), a config
+    /// error ends the runner. Then every runner waiting for a slot looks again.
+    private func finished(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner, outcome: VMOutcome) async {
+        var failure: (any Error)?
+        switch outcome {
+        case .noSlot:
+            remove(vm, from: entry)
+            if !entry.isStopRequested {
+                entry.isWaitingForSlot = true
+                scheduleSlotRecheck(entry)
+            }
+            publish(entry)
+            return
+        case .exited(0):
+            entry.vmFailures = 0
+        case let .exited(code):
+            failure = TartBackendError.runnerExited(code)
+        case let .failed(error):
+            failure = error
+        }
+        if let failure, !entry.isStopRequested, !failure.isCancellation {
+            guard Self.isTransient(failure) else {
+                remove(vm, from: entry)
+                return fail(entry, failure)
+            }
+            entry.vmFailures += 1
+            let delay = retryDelay(after: entry.vmFailures)
+            log("Error: \(failure.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
+            vm.phase = .booting
+            publish(entry)
+            try? await sleeper(delay)
+        }
+        remove(vm, from: entry)
+        vmSlotFreed()
+        reconcile(entry)
+    }
+
+    private func remove(_ vm: VMRun, from entry: OnDemandEntry) {
+        entry.vms.removeAll { $0 === vm }
+    }
+
+    // MARK: - The VM budget
+
+    /// Takes a slot of the host's 2-VM budget for `vm`, or returns false when it is full.
+    /// One reservation at a time, so two boots cannot both see one free slot.
+    private func reserveSlot(_ vm: VMRun, cli: any TartCLI) async throws -> Bool {
+        try await bootGate.run {
+            let held = heldSlots()
+            let foreign = try await foreignMacOSVMCount(cli, excluding: Set(held.map(\.clone)))
+            guard foreign + held.count < Self.macOSVMLimit else { return false }
+            vm.holdsSlot = true
+            return true
+        }
+    }
+
+    private func heldSlots() -> [VMRun] {
+        entries.values.flatMap(\.vms).filter(\.holdsSlot)
+    }
+
+    /// Running macOS VMs Ghast does not hold a slot for: other apps', and clones a crashed
+    /// Ghast left running.
+    private func foreignMacOSVMCount(_ cli: any TartCLI, excluding held: Set<String>) async throws -> Int {
         var count = 0
-        for entry in try await cli.list() where entry.isRunning {
-            // An unreadable OS counts: better to refuse a boot than to exceed the limit.
+        for entry in try await cli.list() where entry.isRunning && !held.contains(entry.name) {
+            // An unreadable OS counts: better to wait than to exceed the limit.
             let os = (try? await cli.os(of: entry.name)) ?? "darwin"
             if os == "darwin" { count += 1 }
         }
         return count
     }
 
-    private func waitForGuest(_ cli: any TartCLI, vm: String, slot: Slot) async throws {
+    private func scheduleSlotRecheck(_ entry: OnDemandEntry) {
+        guard entry.slotRecheck == nil else { return }
+        entry.slotRecheck = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await sleeper(timing.slotRecheckInterval)
+            guard !Task.isCancelled else { return }
+            entry.slotRecheck = nil
+            entry.isWaitingForSlot = false
+            reconcile(entry)
+        }
+    }
+
+    /// A Ghast VM went away: every runner waiting for a slot looks again now.
+    private func vmSlotFreed() {
+        for entry in entries.values where entry.isWaitingForSlot {
+            entry.slotRecheck?.cancel()
+            entry.slotRecheck = nil
+            entry.isWaitingForSlot = false
+            reconcile(entry)
+        }
+    }
+
+    // MARK: - Steps
+
+    /// The image (pulled if missing) and the runner package, shared by VMs of one runner that
+    /// boot together.
+    private func prepare(_ entry: OnDemandEntry, runner: LocalRunner, image: String, cli: any TartCLI) async throws -> String {
+        if let preparation = entry.preparation { return try await preparation.value }
+        let task = Task { @MainActor [api, tarballs] in
+            try await self.ensureImage(image, cli: cli, runner: runner, entry: entry)
+            return try await tarballs.ensureTarball(from: try await api.fetchRunnerApplications(for: runner.scope))
+        }
+        entry.preparation = task
+        defer { if entry.preparation == task { entry.preparation = nil } }
+        return try await task.value
+    }
+
+    private func ensureImage(_ image: String, cli: any TartCLI, runner: LocalRunner, entry: OnDemandEntry) async throws {
+        let present = try await cli.list().contains { $0.name == image }
+        guard !present else { return }
+        guard TartImageCatalog.isOCIRef(image) else { throw TartBackendError.localImageMissing(image) }
+        entry.isPulling = true
+        defer {
+            entry.isPulling = false
+            publish(entry)
+        }
+        publish(entry)
+        log("Pulling image…", runner: runner)
+        let runnerID = entry.runnerID
+        try await cli.pull(image, log: logFile(for: runner)) { [weak self] progress in
+            Task { @MainActor in self?.setPullProgress(progress, runnerID: runnerID) }
+        }
+        log("Image pulled", runner: runner)
+        try checkStop(entry)
+    }
+
+    private func waitForGuest(_ cli: any TartCLI, vm: VMRun, entry: OnDemandEntry) async throws {
         var waited = Duration.zero
         while true {
-            try checkStop(slot)
-            if slot.vmProcessExited { throw TartBackendError.vmExitedDuringBoot }
-            if (try? await cli.exec(vm, ["/usr/bin/true"])) == 0 { return }
+            try checkStop(entry)
+            try Task.checkCancellation()
+            if vm.vmProcessExited { throw TartBackendError.vmExitedDuringBoot }
+            if (try? await cli.exec(vm.clone, ["/usr/bin/true"])) == 0 { return }
             guard waited < timing.bootTimeout else {
                 throw TartBackendError.bootTimedOut(seconds: Int(timing.bootTimeout.components.seconds))
             }
@@ -316,50 +362,39 @@ final class TartBackend: RunnerBackend {
         }
     }
 
-    private func registerRunner(_ runner: LocalRunner, iterationID: String) async throws -> GitHubJITConfig {
-        let suffix = "-\(iterationID)"
+    private func registerRunner(_ runner: LocalRunner, vm: VMRun, source: any JobDemandSource) async throws -> GitHubJITConfig {
+        let suffix = "-\(vm.id)"
         let name = String(runner.name.prefix(Self.maxRunnerNameLength - suffix.count)) + suffix
-        let groupID = try await runnerGroupID(for: runner)
-        let (scope, labels, workFolder, api) = (runner.scope, Self.jitLabels(custom: runner.labels), runner.workFolder, api)
+        let workFolder = runner.workFolder
         // In its own task: a Stop that cancels this one must not abandon a request that may
         // already have created the registration. The caller records the id before it looks at Stop.
-        return try await Task {
-            try await api.generateJITConfig(for: scope, name: name, runnerGroupID: groupID, labels: labels, workFolder: workFolder)
+        return try await Task { @MainActor in
+            try await source.jitConfig(runnerName: name, workFolder: workFolder)
         }.value
     }
 
-    /// Repositories have only the Default group (id 1); an organization resolves the runner's
-    /// group by name, falling back to its default group.
-    private func runnerGroupID(for runner: LocalRunner) async throws -> Int {
-        guard case let .organization(login) = runner.scope else { return 1 }
-        let groups = try await api.fetchRunnerGroups(org: login)
-        if let wanted = runner.runnerGroup, !wanted.isEmpty {
-            guard let match = groups.first(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }) else {
-                throw TartBackendError.runnerGroupNotFound(wanted)
-            }
-            return match.id
-        }
-        return groups.first(where: \.isDefault)?.id ?? 1
+    private func checkStop(_ entry: OnDemandEntry) throws {
+        if entry.isStopRequested { throw CancellationError() }
     }
 
-    /// The default macOS labels plus the runner's own, without duplicates (case-insensitively).
-    static func jitLabels(custom: [String]) -> [String] {
-        var seen = Set<String>()
-        return (defaultLabels + custom).filter { seen.insert($0.lowercased()).inserted }
+    private func retryDelay(after failures: Int) -> Duration {
+        min(timing.retryDelay * (1 << min(failures - 1, 16)), timing.maxRetryDelay)
     }
 
     // MARK: - The guest job
 
-    private func runGuest(_ cli: any TartCLI, vm: String, command: [String], slot: Slot, runner: LocalRunner) async -> Int32 {
+    private func runGuest(_ cli: any TartCLI, vm: VMRun, command: [String], entry: OnDemandEntry, runner: LocalRunner) async -> Int32 {
         await withCheckedContinuation { continuation in
             let token = UUID()
             do {
-                let process = try cli.execStreaming(vm, command, log: logFile(for: runner)) { [weak self, weak slot] code in
+                let process = try cli.execStreaming(vm.clone, command, log: logFile(for: runner)) { [weak self, weak vm] code in
                     Task { @MainActor in
-                        if let self, let slot { self.guestEnded(slot, token: token, code: code) }
+                        if let self, let vm { self.guestEnded(vm, token: token, code: code) }
                     }
                 }
-                slot.guest = GuestRun(token: token, process: process, continuation: continuation)
+                vm.guest = GuestRun(token: token, process: process, continuation: continuation)
+                vm.phase = .running
+                publish(entry)
             } catch {
                 log("Error: \(error.localizedDescription)", runner: runner)
                 continuation.resume(returning: RunnerExit.launchFailureCode)
@@ -367,59 +402,63 @@ final class TartBackend: RunnerBackend {
         }
     }
 
-    private func guestEnded(_ slot: Slot, token: UUID, code: Int32) {
-        guard let guest = slot.guest, guest.token == token else { return }
-        slot.guest = nil
+    private func guestEnded(_ vm: VMRun, token: UUID, code: Int32) {
+        guard let guest = vm.guest, guest.token == token else { return }
+        vm.guest = nil
         guest.continuation.resume(returning: code)
     }
 
-    /// Ignores the exit of a VM from an earlier iteration, which can arrive after the next
-    /// iteration has begun.
-    private func vmProcessEnded(_ slot: Slot, vm: String) {
-        guard slot.vm == vm else { return }
-        slot.vmProcessExited = true
+    private func vmProcessEnded(_ vm: VMRun) {
+        vm.vmProcessExited = true
         // The guest's exec ends by itself once the VM is gone; this only hurries a stuck one.
-        slot.guest?.process.terminate()
+        vm.guest?.process.terminate()
     }
 
     // MARK: - Cleanup
 
+    /// Cleanup runs to the end even when Stop cancelled the VM's task: it is what deletes the
+    /// VM and the GitHub registration, and a cancelled request would just throw.
+    private func cleanUpUncancelled(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner) async {
+        await Task { @MainActor in await cleanUp(vm, entry: entry, runner: runner) }.value
+    }
+
     /// Stops and deletes the clone, deletes the JIT registration if it is still there, and
     /// forgets the lease only when both went through. Failures are logged, never thrown.
-    private func cleanUp(_ slot: Slot, runner: LocalRunner, cli: any TartCLI, resources: IterationResources) async {
-        guard let vm = resources.vm else { return }
-        setPhase(.cleaningUp, slot: slot)
+    private func cleanUp(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner) async {
+        vm.guest = nil
+        defer { vm.holdsSlot = false }
+        guard vm.holdsSlot, let cli = vm.cli else { return }
+        vm.phase = .cleaningUp
+        publish(entry)
         log("Cleaning up", runner: runner)
 
         var isClean = true
         // Stopping a VM that never started fails harmlessly; delete is what matters.
         var vmStopFailed = false
         do {
-            try await cli.stop(vm, timeout: timing.vmStopTimeout)
+            try await cli.stop(vm.clone, timeout: timing.vmStopTimeout)
         } catch {
             vmStopFailed = true
         }
         do {
-            try await cli.delete(vm)
+            try await cli.delete(vm.clone)
         } catch {
             isClean = false
             vmStopFailed = true
-            Self.logger.error("Could not delete \(vm, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Could not delete \(vm.clone, privacy: .public): \(error.localizedDescription, privacy: .public)")
             log("Error: could not delete the VM: \(error.localizedDescription)", runner: runner)
         }
         // A VM that would not stop or be deleted must not keep running unseen: ending the
         // host's `tart run` ends the VM. Launch recovery deletes it if the lease stays.
-        if vmStopFailed { slot.vmProcess?.terminate() }
-        if let jitRunnerID = resources.jitRunnerID, let scope = resources.scope {
-            if let error = await deleteJITRunner(jitRunnerID, scope: scope) {
+        if vmStopFailed { vm.vmProcess?.terminate() }
+        if let jitRunnerID = vm.jitRunnerID {
+            if let error = await deleteJITRunner(jitRunnerID, scope: runner.scope) {
                 isClean = false
                 log("Error: could not delete the runner registration: \(error.localizedDescription)", runner: runner)
             }
         }
-        if isClean { leases.remove(clone: vm) }
-        slot.vm = nil
-        slot.vmProcess = nil
-        slot.guest = nil
+        if isClean { leases.remove(clone: vm.clone) }
+        vm.vmProcess = nil
     }
 
     /// A JIT runner deregisters itself after its job, so GitHub usually reports it gone (404),
@@ -440,70 +479,131 @@ final class TartBackend: RunnerBackend {
 
     func stop(id: String) async {
         requestStop(id: id, keepingRunIntent: false)
-        guard let slot = slots[id] else { return }
-        await waitForEnd(of: slot)
+        guard let entry = entries[id] else { return }
+        await waitForEnd(of: entry)
     }
 
     func requestStop(id: String, keepingRunIntent: Bool) {
         if !keepingRunIntent, host?.runner(id: id)?.shouldBeRunning == true {
             host?.updateRunner(id: id) { $0.shouldBeRunning = false }
         }
-        guard let slot = slots[id], !slot.isStopRequested else { return }
-        slot.isStopRequested = true
+        guard let entry = entries[id], !entry.isStopRequested else { return }
         host?.updateRunner(id: id) { $0.status = .stopped }
-        switch host?.processState(id: id) {
-        case let .running(since)?:
-            host?.setProcessState(.stopping(since: since), id: id)
-        case .starting?, .pulling?, .booting?, .cleaningUp?:
-            host?.setProcessState(.stopping(since: clock.now()), id: id)
-        default:
-            break
-        }
+        shutDown(entry, failure: nil)
+    }
 
-        if slot.guest != nil {
-            // A job is running: end the runner gracefully, so GitHub hears about it, then the exec.
-            Task { [weak self] in await self?.endGuestGracefully(slot) }
-        } else {
-            slot.task?.cancel()
+    /// Ends a runner, once: no new VMs; running jobs end gracefully, anything else is
+    /// cancelled; every VM is cleaned up; then the demand source releases its session.
+    private func shutDown(_ entry: OnDemandEntry, failure: (any Error)?) {
+        guard !entry.isShuttingDown else { return }
+        entry.isShuttingDown = true
+        entry.isStopRequested = true
+        host?.setProcessState(.stopping(since: entry.since), id: entry.runnerID)
+        entry.demandTask?.cancel()
+        entry.slotRecheck?.cancel()
+        entry.preparation?.cancel()
+        for vm in entry.vms {
+            if vm.guest != nil {
+                // A job is running: end the runner gracefully, so GitHub hears about it, then the exec.
+                Task { [weak self] in await self?.endGuestGracefully(vm) }
+            } else {
+                vm.task?.cancel()
+            }
         }
+        Task { @MainActor [weak self] in await self?.drain(entry, failure: failure) }
+    }
+
+    private func drain(_ entry: OnDemandEntry, failure: (any Error)?) async {
+        await entry.demandTask?.value
+        for vm in entry.vms { await vm.task?.value }
+        let source = entry.source
+        await Task { @MainActor in await source.close() }.value
+        finish(entry, failure: failure)
+    }
+
+    /// A runner-level failure: an error state, and the intent to run is cleared.
+    private func fail(_ entry: OnDemandEntry, _ failure: any Error) {
+        shutDown(entry, failure: failure)
+    }
+
+    private func finish(_ entry: OnDemandEntry, failure: (any Error)?) {
+        if isCurrent(entry) { entries.removeValue(forKey: entry.runnerID) }
+        if let failure, let runner = host?.runner(id: entry.runnerID) {
+            log("Error: \(failure.localizedDescription)", runner: runner)
+        }
+        host?.recordExit(
+            id: entry.runnerID,
+            code: failure == nil ? 0 : RunnerExit.launchFailureCode,
+            wasRequested: failure == nil
+        )
+        vmSlotFreed()
+        for waiter in entry.waiters { waiter.resume() }
+        entry.waiters = []
     }
 
     /// SIGTERM to the guest's listener, which ends its job and signs out; the exec is
     /// terminated if the guest has not exited within the grace period. The grace period runs
     /// from the start, alongside the `pkill`, so a guest agent that never answers cannot hold
     /// the stop up.
-    private func endGuestGracefully(_ slot: Slot) async {
-        let pkill = Task { [cli = slot.cli, vm = slot.vm] in
-            guard let cli, let vm else { return }
-            _ = try? await cli.exec(vm, ["pkill", "-TERM", "-f", "Runner.Listener"])
+    private func endGuestGracefully(_ vm: VMRun) async {
+        let pkill = Task { [cli = vm.cli, clone = vm.clone] in
+            guard let cli else { return }
+            _ = try? await cli.exec(clone, ["pkill", "-TERM", "-f", "Runner.Listener"])
         }
         var waited = Duration.zero
-        while slot.guest != nil, waited < timing.stopGracePeriod {
+        while vm.guest != nil, waited < timing.stopGracePeriod {
             try? await sleeper(timing.stopPollInterval)
             waited += timing.stopPollInterval
         }
-        slot.guest?.process.terminate()
+        vm.guest?.process.terminate()
         pkill.cancel()
     }
 
-    private func waitForEnd(of slot: Slot) async {
-        guard slots[slot.runnerID] === slot else { return }
-        await withCheckedContinuation { slot.waiters.append($0) }
+    private func waitForEnd(of entry: OnDemandEntry) async {
+        guard isCurrent(entry) else { return }
+        await withCheckedContinuation { entry.waiters.append($0) }
     }
 
     func stopAll() async {
-        let active = Array(slots.values)
-        for slot in active { requestStop(id: slot.runnerID, keepingRunIntent: true) }
-        for slot in active { await waitForEnd(of: slot) }
+        let active = Array(entries.values)
+        for entry in active { requestStop(id: entry.runnerID, keepingRunIntent: true) }
+        for entry in active { await waitForEnd(of: entry) }
     }
 
     /// Ends the host-side processes without waiting; the VMs themselves are deleted by launch
     /// recovery on the next start if a quit got this far.
     func killRemaining() {
-        for slot in slots.values {
-            slot.guest?.process.terminate()
-            slot.vmProcess?.terminate()
+        for vm in entries.values.flatMap(\.vms) {
+            vm.guest?.process.terminate()
+            vm.vmProcess?.terminate()
         }
+    }
+
+    // MARK: - State
+
+    private func isCurrent(_ entry: OnDemandEntry) -> Bool {
+        entries[entry.runnerID] === entry
+    }
+
+    /// Shows the runner's VMs, unless Stop was requested (it keeps showing "stopping" until
+    /// the end) or an image is pulling (its progress shows instead).
+    private func publish(_ entry: OnDemandEntry) {
+        guard isCurrent(entry), !entry.isStopRequested else { return }
+        if entry.isPulling {
+            if case .pulling? = host?.processState(id: entry.runnerID) { return }
+            host?.setProcessState(.pulling(.indeterminate), id: entry.runnerID)
+        } else {
+            host?.setProcessState(.onDemand(entry.state), id: entry.runnerID)
+        }
+    }
+
+    /// Progress only updates a runner that is still pulling: a late report never overwrites
+    /// a later state.
+    private func setPullProgress(_ progress: TartPullProgress, runnerID: String) {
+        guard case let .pulling(current)? = host?.processState(id: runnerID) else { return }
+        // Updates hop to the main actor one task each and can land out of order.
+        if let next = progress.fraction, let now = current.fraction, next < now { return }
+        host?.setProcessState(.pulling(progress), id: runnerID)
     }
 
     // MARK: - Launch recovery
@@ -511,14 +611,14 @@ final class TartBackend: RunnerBackend {
     /// Clones or registrations an earlier run recorded and never finished cleaning up.
     var hasLeases: Bool { !leases.all().isEmpty }
 
-    /// `ghast-<runner uuid>-<6 hex>`: what `start` names a clone. Matched exactly, so a VM the
+    /// `ghast-<runner uuid>-<6 hex>`: what a VM run names a clone. Matched exactly, so a VM the
     /// user happened to call `ghast-dev` is never touched.
     private static let cloneNamePattern = /ghast-[0-9A-Fa-f-]{36}-[0-9a-f]{6}/
 
     /// Deletes what an earlier Ghast left behind after a crash or force-quit: its clones and
     /// the JIT runner registrations they held. Best effort: a failure is logged and the rest
     /// goes on; a lease whose cleanup failed stays for the next launch. Leaves anything an
-    /// active slot owns alone, since restarted runners may already be booting.
+    /// active runner owns alone, since restarted runners may already be booting.
     func recoverLeftovers() async {
         let cli: (any TartCLI)?
         do {
@@ -532,7 +632,7 @@ final class TartBackend: RunnerBackend {
         if let cli {
             remaining = await deleteLeftoverClones(cli, known: known)
         }
-        for (clone, lease) in leases.all() where !isOwnedByActiveSlot(clone) {
+        for (clone, lease) in leases.all() where !isOwnedByActiveRunner(clone) {
             var isClean = true
             if let jitRunnerID = lease.jitRunnerID, let error = await deleteJITRunner(jitRunnerID, scope: lease.scope) {
                 isClean = false
@@ -545,38 +645,38 @@ final class TartBackend: RunnerBackend {
 
     /// Stops and deletes every leftover clone; returns the ones that are still there.
     private func deleteLeftoverClones(_ cli: any TartCLI, known: Set<String>) async -> Set<String> {
-        let entries: [TartVMEntry]
+        let vms: [TartVMEntry]
         do {
-            entries = try await cli.list()
+            vms = try await cli.list()
         } catch {
             Self.logger.error("Launch recovery could not list VMs: \(error.localizedDescription, privacy: .public)")
             return known
         }
         var remaining = Set<String>()
-        for entry in entries where entry.source == "local" && !isOwnedByActiveSlot(entry.name) {
-            guard known.contains(entry.name) || entry.name.wholeMatch(of: Self.cloneNamePattern) != nil else { continue }
-            try? await cli.stop(entry.name, timeout: timing.vmStopTimeout)
+        for vm in vms where vm.source == "local" && !isOwnedByActiveRunner(vm.name) {
+            guard known.contains(vm.name) || vm.name.wholeMatch(of: Self.cloneNamePattern) != nil else { continue }
+            try? await cli.stop(vm.name, timeout: timing.vmStopTimeout)
             do {
-                try await cli.delete(entry.name)
+                try await cli.delete(vm.name)
             } catch {
-                remaining.insert(entry.name)
-                Self.logger.error("Launch recovery could not delete \(entry.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                remaining.insert(vm.name)
+                Self.logger.error("Launch recovery could not delete \(vm.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
         return remaining
     }
 
-    private func isOwnedByActiveSlot(_ clone: String) -> Bool {
-        slots.values.contains { $0.vm == clone }
+    private func isOwnedByActiveRunner(_ clone: String) -> Bool {
+        entries.values.contains { $0.vms.contains { $0.clone == clone } }
     }
 
     // MARK: - Liveness
 
-    var hasActiveRunners: Bool { !slots.isEmpty }
+    var hasActiveRunners: Bool { !entries.isEmpty }
 
-    func isActive(id: String) -> Bool { slots[id] != nil }
+    func isActive(id: String) -> Bool { entries[id] != nil }
 
-    func isRunning(id: String) -> Bool { slots[id]?.guest != nil }
+    func isRunning(id: String) -> Bool { entries[id]?.vms.contains { $0.guest != nil } ?? false }
 
     func logFile(for runner: LocalRunner) -> URL {
         URL(fileURLWithPath: runner.path).appendingPathComponent(RunnerWrapperScript.logFileName)
@@ -591,9 +691,13 @@ extension TartBackend {
     /// A backend that finds no Tart and cannot reach GitHub: for a `RunnerService` built
     /// without VM support (tests, the design fixture). A VM runner on it ends in an error state.
     static func unavailable(defaults: UserDefaults, clock: any AppClock, sleeper: @escaping Sleeper) -> TartBackend {
-        TartBackend(
+        let api = UnconfiguredGitHubAPIService()
+        return TartBackend(
             cliProvider: { throw TartBackendError.unavailable(.missing) },
-            api: UnconfiguredGitHubAPIService(),
+            api: api,
+            demandSources: DemandSourceFactory(
+                api: api, transport: UnreachableTransport(), clock: clock, sleeper: sleeper, ownerName: "ghast"
+            ),
             leases: TartLeaseStore(defaults: defaults),
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
@@ -615,7 +719,14 @@ extension TartBackend {
     }
 }
 
-private extension Duration {
-    /// Whole and fractional seconds, for comparing with a `Date` interval and for messages.
+/// A transport that never sends: for a backend that must not reach the network.
+struct UnreachableTransport: HTTPTransport {
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw URLError(.notConnectedToInternet)
+    }
+}
+
+extension Duration {
+    /// Whole and fractional seconds, for messages.
     var seconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
 }
