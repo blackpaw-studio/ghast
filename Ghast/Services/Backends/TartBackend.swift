@@ -107,7 +107,8 @@ final class TartBackend: RunnerBackend {
     // MARK: - Demand
 
     /// Keeps the demand source running; transient failures back off and retry, anything
-    /// else ends the runner with an error.
+    /// else ends the runner with an error. Once a source is set up its failures are all
+    /// transient (`DemandSourceError`), so only setup can end the runner from here.
     private func runDemand(_ entry: OnDemandEntry) async {
         var failures = 0
         while !entry.isStopRequested, !Task.isCancelled {
@@ -121,7 +122,7 @@ final class TartBackend: RunnerBackend {
                 if entry.isStopRequested || error.isCancellation { return }
                 guard Self.isTransient(error) else { return fail(entry, error) }
                 failures += 1
-                let delay = retryDelay(after: failures)
+                let delay = retryDelay(after: failures, error: error)
                 if let runner = host?.runner(id: entry.runnerID) {
                     log("Error: \(error.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner)
                 }
@@ -253,7 +254,7 @@ final class TartBackend: RunnerBackend {
                 return fail(entry, failure)
             }
             entry.vmFailures += 1
-            let delay = retryDelay(after: entry.vmFailures)
+            let delay = retryDelay(after: entry.vmFailures, error: failure)
             log("Error: \(failure.localizedDescription) Trying again in \(delay.seconds) s.", runner: runner, vm: vm)
             vm.phase = .booting
             publish(entry)
@@ -401,8 +402,10 @@ final class TartBackend: RunnerBackend {
         if entry.isStopRequested { throw CancellationError() }
     }
 
-    private func retryDelay(after failures: Int) -> Duration {
-        min(timing.retryDelay * (1 << min(failures - 1, 16)), timing.maxRetryDelay)
+    /// The backoff for this many consecutive failures, or the server's Retry-After if longer.
+    private func retryDelay(after failures: Int, error: any Error) -> Duration {
+        let backoff = min(timing.retryDelay * (1 << min(failures - 1, 16)), timing.maxRetryDelay)
+        return max(backoff, Self.retryAfter(error) ?? .zero)
     }
 
     // MARK: - The guest job

@@ -70,6 +70,8 @@ final class ScaleSetDemandSource: JobDemandSource {
             // A retry opens a new session; this one must go first or the next create gets 409.
             // On cancellation `close()` does it, from the stop path.
             if !error.isCancellation { await closeUncancelled(session) }
+            // The set (or its session) is gone: the next run finds or creates the set again.
+            if case ScaleSetError.notFound = error { scaleSetID = nil }
             throw error
         }
     }

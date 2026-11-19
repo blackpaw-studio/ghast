@@ -14,3 +14,17 @@ protocol JobDemandSource: AnyObject {
     /// Remove: deletes the entry's footprint on GitHub (the scale set); already gone is fine.
     func deleteRemote() async throws
 }
+
+/// A demand source that had been set up stopped reporting. Always worth another try: a
+/// demand-side failure must never end the runner, and with it running jobs.
+enum DemandSourceError: LocalizedError {
+    case interrupted(any Error)
+
+    var underlying: any Error {
+        switch self {
+        case let .interrupted(error): error
+        }
+    }
+
+    var errorDescription: String? { underlying.localizedDescription }
+}

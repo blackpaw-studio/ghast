@@ -39,11 +39,19 @@ enum TartBackendError: LocalizedError, Equatable {
 }
 
 extension TartBackend {
+    /// How long the server asked Ghast to wait before trying again, if it did.
+    nonisolated static func retryAfter(_ error: any Error) -> Duration? {
+        if let error = error as? DemandSourceError { return retryAfter(error.underlying) }
+        if case let .rateLimited(seconds?)? = error as? ScaleSetError { return .seconds(seconds) }
+        return nil
+    }
+
     /// Whether another try, with a fresh VM, could succeed: a network or GitHub outage, a
     /// Tart command that failed, a VM that did not come up, a runner that exited with an
     /// error, a scale-set session another listener still holds. Everything else (a missing
     /// group or image, a refused token, no Tart) needs the user, so it ends the runner.
     nonisolated static func isTransient(_ error: any Error) -> Bool {
+        if error is DemandSourceError { return true }
         if let error = error as? TartBackendError {
             switch error {
             case .bootTimedOut, .vmExitedDuringBoot, .runnerExited: return true

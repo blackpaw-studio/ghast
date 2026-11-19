@@ -84,4 +84,50 @@ import Foundation
         _ = try? await factory.make(for: org).run(onDemand: demand.record)
         #expect(await transport.requests[1].url?.query?.contains("runnerGroupId=7") == true)
     }
+
+    @Test("once the scale set is set up, any run failure is one to retry, never a config error", arguments: [
+        [FakeTransport.Reply.json("", status: 404)],
+        [.json("", status: 401), .json("", status: 401)],
+        [.json(#"{"messageId":1,"messageType":"SomethingNew","body":""}"#)],
+    ])
+    func failuresAfterSetupAreTransient(failure: [FakeTransport.Reply]) async throws {
+        let (factory, _) = makeFactory([
+            ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600)),
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(),
+        ] + failure + [ScaleSetReplies.noContent])
+        let source = factory.make(for: runner(.organization(login: "octo")))
+        do {
+            try await source.run(onDemand: demand.record)
+            Issue.record("run should fail")
+        } catch {
+            #expect(TartBackend.isTransient(error), "\(error)")
+        }
+    }
+
+    @Test("a scale set that went missing is found again by the next run")
+    func missingSetIsFoundAgain() async throws {
+        let (factory, transport) = makeFactory([
+            ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600)),
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(), .json("", status: 404), ScaleSetReplies.noContent,
+            ScaleSetReplies.list([12]), ScaleSetReplies.session(assigned: 2), .hang,
+        ])
+        let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
+        _ = try? await source.run(onDemand: demand.record)
+        let recorder = demand
+        let task = Task { try await source.run(onDemand: recorder.record) }
+        for _ in 0..<10_000 where !demand.values.contains(2) { await Task.yield() }
+        task.cancel()
+        _ = await task.result
+
+        #expect(demand.values.contains(2))
+        #expect(await transport.requests.contains { $0.url?.path.hasSuffix("/runnerscalesets/12/sessions") == true })
+    }
+
+    @Test("Remove on a runner whose token scale sets refuse has no scale set to delete")
+    func deleteRemoteWhenRefused() async throws {
+        let (factory, transport) = makeFactory([Self.rejected])
+        let source = factory.make(for: runner(.repository(fullName: "octo/ghast")))
+        try await source.deleteRemote()
+        #expect(!(await transport.requests).contains { $0.httpMethod == "DELETE" })
+    }
 }

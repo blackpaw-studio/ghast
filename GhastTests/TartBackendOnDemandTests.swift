@@ -204,4 +204,41 @@ struct TartBackendOnDemandTests {
         await stop.open()
         await h.service.stopRunner(id: runner.id)
     }
+
+    @Test("a demand failure while a job runs retries the source and leaves the VM and job alone")
+    func demandFailureKeepsJobs() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        let vm = h.vmName(runner, iteration: 1)
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+        let source = try #require(h.demand.source(runner))
+
+        source.failRun(DemandSourceError.interrupted(ScaleSetError.notFound))
+
+        #expect(await h.settled { source.runCount == 2 && source.isRunning })
+        #expect(h.backend.isActive(id: runner.id))
+        #expect(onDemand(h.state(runner))?.running == 1)
+        #expect(!h.log.all.contains("stop \(vm)"))
+        #expect(!h.log.all.contains { $0.hasPrefix("exec \(vm) pkill") })
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("a rate-limited demand source waits at least the server's Retry-After")
+    func demandRetryAfter() async throws {
+        let h = TartHarness(initialDemand: 0)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        let source = try #require(h.demand.source(runner))
+        #expect(await h.settled { source.isRunning })
+
+        source.failRun(DemandSourceError.interrupted(ScaleSetError.rateLimited(retryAfter: 42)))
+
+        #expect(await h.settled { source.runCount == 2 })
+        #expect(h.sleeps.all.contains(.seconds(42)))
+        #expect(!h.sleeps.all.contains(.seconds(5)))
+        await h.service.stopRunner(id: runner.id)
+    }
 }

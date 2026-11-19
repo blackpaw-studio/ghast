@@ -74,8 +74,16 @@ final class FallbackDemandSource: JobDemandSource {
         }
     }
 
+    /// Setup failures pass through (a refused org token, a missing group need the user);
+    /// once a source is chosen, whatever ends its run is worth another try.
     func run(onDemand: @escaping @MainActor (Int) -> Void) async throws {
-        try await resolved().run(onDemand: onDemand)
+        let source = try await resolved()
+        do {
+            try await source.run(onDemand: onDemand)
+        } catch {
+            if error.isCancellation { throw error }
+            throw DemandSourceError.interrupted(error)
+        }
     }
 
     func jitConfig(runnerName: String, workFolder: String) async throws -> GitHubJITConfig {
@@ -87,8 +95,13 @@ final class FallbackDemandSource: JobDemandSource {
     }
 
     /// Looks the scale set up by name and deletes it; never creates one to do so.
+    /// A token scale sets refuse could never have made one, so there is nothing to delete.
     func deleteRemote() async throws {
-        try await primary.deleteRemote()
+        do {
+            try await primary.deleteRemote()
+        } catch ScaleSetError.authRejected {
+            Self.logger.notice("Scale sets refused the token; no scale set to delete")
+        }
     }
 }
 
