@@ -233,6 +233,14 @@ final class FlowGitHubAPI: GitHubAPIServiceProtocol {
         let workFolder: String
     }
 
+    func fetchWorkflowRuns(repo: String, status: String, etag: String?) async throws -> Conditional<[GitHubWorkflowRun]> {
+        .fresh([], etag: nil)
+    }
+
+    func fetchJobs(repo: String, runID: Int, etag: String?) async throws -> Conditional<[GitHubWorkflowJob]> {
+        .fresh([], etag: nil)
+    }
+
     func generateJITConfig(
         for scope: RunnerScope,
         name: String,

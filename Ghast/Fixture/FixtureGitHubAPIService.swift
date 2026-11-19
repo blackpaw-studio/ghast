@@ -182,6 +182,14 @@ final class FixtureGitHubAPIService: GitHubAPIServiceProtocol {
         GitHubJITConfig(runnerID: 9_001, encodedConfig: "fixture-jit-config")
     }
 
+    func fetchWorkflowRuns(repo: String, status: String, etag: String?) async throws -> Conditional<[GitHubWorkflowRun]> {
+        .fresh([], etag: nil)
+    }
+
+    func fetchJobs(repo: String, runID: Int, etag: String?) async throws -> Conditional<[GitHubWorkflowJob]> {
+        .fresh([], etag: nil)
+    }
+
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {
         [GitHubRunnerApplication(
             os: "osx",
