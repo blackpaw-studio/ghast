@@ -63,6 +63,8 @@ final class FakeJobDemandSource: JobDemandSource {
 @MainActor
 final class FakeDemandSources: JobDemandSourceMaking {
     var initialDemand: Int?
+    /// Given to every source made from now on.
+    var deleteRemoteError: Error?
     private let jit: @MainActor (LocalRunner, String, String) async throws -> GitHubJITConfig
     private(set) var sources: [String: FakeJobDemandSource] = [:]
 
@@ -76,6 +78,7 @@ final class FakeDemandSources: JobDemandSourceMaking {
         let source = FakeJobDemandSource(runnerName: runner.name, initialDemand: initialDemand) { name, folder in
             try await jit(runner, name, folder)
         }
+        source.deleteRemoteError = deleteRemoteError
         sources[runner.id] = source
         return source
     }

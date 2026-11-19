@@ -8,6 +8,8 @@ struct RunnerRemover {
     let runnerService: RunnerService
     let registrar: RunnerRegistrar
     let trasher: any FileTrasher
+    /// Builds a VM runner's demand source to delete its scale set; nil skips that step.
+    var demandSources: (any JobDemandSourceMaking)? = nil
 
     enum Outcome: Equatable, Sendable {
         case removed
@@ -19,11 +21,16 @@ struct RunnerRemover {
     /// drop. Throws only when the folder can't be trashed, after GitHub was told; the runner
     /// then stays listed.
     ///
-    /// A VM runner registers nothing of its own: stopping its slot deletes the VM and the
-    /// one-job registration, so it goes straight to the trash and the list.
+    /// A VM runner: stopping it deletes its VMs and one-job registrations; then its scale set
+    /// on GitHub is deleted (already gone is fine) before the trash and the list.
     func remove(_ runner: LocalRunner, gitHubRunnerID: Int?) async throws -> Outcome {
         await runnerService.stopRunner(id: runner.id)
         if case .tart = runner.backend {
+            do {
+                try await demandSources?.make(for: runner).deleteRemote()
+            } catch {
+                return .needsLocalOnlyConfirmation(reason: runner.scope.errorMessage(for: error))
+            }
             try await removeFromThisMacOnly(runner)
             return .removed
         }

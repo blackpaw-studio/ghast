@@ -78,6 +78,7 @@ struct AppDependencies {
         scriptRunner: any RunnerScriptRunner = BashRunnerScriptRunner(),
         tartLocator: TartLocator = TartLocator(),
         xcodeVersions: any TartXcodeVersionProviding = GHCRXcodeVersionProvider(),
+        demandSources: (any JobDemandSourceMaking)? = nil,
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
         router: AppWindowRouter = AppWindowRouter(),
         loginItemService: any LoginItemService = InertLoginItemService(),
@@ -108,6 +109,7 @@ struct AppDependencies {
             trasher: fileTrasher,
             sleeper: sleeper,
             readRunner: { id in (runnerService.processStates[id], activityStore.activity(for: id)) },
+            demandSources: demandSources,
             tartLocator: tartLocator,
             xcodeVersions: xcodeVersions
         )
@@ -227,6 +229,7 @@ struct AppDependencies {
             clock: clock,
             processLauncher: launcher,
             settings: AppSettings(defaults: .standard),
+            demandSources: demandSources,
             notificationCenter: SystemNotificationCenter(),
             loginItemService: MainAppLoginItemService(),
             updater: updater

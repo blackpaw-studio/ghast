@@ -14,6 +14,8 @@ struct FlowHarness {
     let output = FakeRunnerOutput()
     let timeout = ManualSleeper()
     let tart: FakeTartCLI
+    /// VM runners' demand: one queued job as soon as a runner starts.
+    let demand: FakeDemandSources
     let service: RunnerService
     let runnersDirectory = makeTemporaryDirectory()
     static let org = RunnerScope.organization(login: "blackpaw-studio")
@@ -28,10 +30,15 @@ struct FlowHarness {
         let defaults = makeIsolatedDefaults().defaults
         let tart = FakeTartCLI(log: log, entries: [TartVMEntry(name: Self.tartImage, source: "OCI", isRunning: false)])
         self.tart = tart
+        let api = api
+        let demand = FakeDemandSources(initialDemand: 1) { runner, name, folder in
+            try await api.generateJITConfig(for: runner.scope, name: name, runnerGroupID: 1, labels: [runner.name], workFolder: folder)
+        }
+        self.demand = demand
         let tartBackend = TartBackend(
             cliProvider: { tart },
             api: api,
-            demandSources: FakeDemandSources(initialDemand: nil) { _, _, _ in throw GitHubAPIError.notConfigured },
+            demandSources: demand,
             tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: FakeArchiveFetcher()),
             leases: TartLeaseStore(defaults: defaults),
             logAppender: RecordingLogAppender(),
@@ -59,7 +66,8 @@ struct FlowHarness {
             registrar: RunnerRegistrar(scripts: scripts),
             trasher: trasher,
             sleeper: timeout.sleeper,
-            readRunner: { id in (service.processStates[id], output.activities[id] ?? RunnerActivity()) }
+            readRunner: { id in (service.processStates[id], output.activities[id] ?? RunnerActivity()) },
+            demandSources: demand
         )
     }
 
