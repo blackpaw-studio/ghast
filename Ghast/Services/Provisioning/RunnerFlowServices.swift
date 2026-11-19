@@ -15,13 +15,16 @@ struct RunnerFlowServices {
     /// A runner's process state and parsed output. Read inside observation tracking, so it
     /// must read observable state.
     let readRunner: @MainActor (String) -> (RunnerProcessState?, RunnerActivity)
+    /// Builds a VM runner's demand source, so Remove can delete its scale set. Nil where VM
+    /// runners never reach GitHub (the design fixture).
+    var demandSources: (any JobDemandSourceMaking)? = nil
     /// Finds Tart for the New Runner sheet's Run in choice.
     var tartLocator = TartLocator()
     /// Lists the Xcode images for the New Runner sheet's and Configuration tab's image picker.
     var xcodeVersions: any TartXcodeVersionProviding = GHCRXcodeVersionProvider()
 
     var remover: RunnerRemover {
-        RunnerRemover(api: api, runnerService: runnerService, registrar: registrar, trasher: trasher)
+        RunnerRemover(api: api, runnerService: runnerService, registrar: registrar, trasher: trasher, demandSources: demandSources)
     }
 }
 

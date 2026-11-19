@@ -44,6 +44,9 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 - Process lifecycle: start/stop runners using `./run.sh` in runner directories
 - Shutdown: `/bin/bash` wrapper leads its own process group (Foundation `Process`); Ghast signals the group, never its own. Stop and quit send SIGTERM (Runner.Listener's handler ends its job and deletes its GitHub session; `run.sh` forwards nothing), then wait for the whole group to be gone, not just the wrapper, which dies at once. SIGKILL only after `RunnerService.stopGracePeriod` (15 s). `applicationShouldTerminate` returns `.terminateLater` until `stopAllRunners()` finishes, so Sparkle relaunches wait too. No machine-wide `pkill`
 - Launch: `startRunner` first ends any leftover `Runner.Listener` whose path is in that runner's folder (found with `ps` through the injected `RunnerProcessScanning`), so a second copy never hits "A session for this runner already exists"
+- VM runners (`.tart(image:)` backend, `TartBackend`) are on demand: no VM runs until a job asks for the runner. Each job gets a fresh clone (`ghast-<runnerID>-<6hex>`), deleted when the job ends. Up to 2 VMs per runner, and a global 2-VM budget shared by every runner, which counts macOS VMs Ghast didn't start (`.onDemand` state: waiting for jobs, booting, running n, waiting for a free VM slot). Each VM's log lines carry a `[vm a1b2c3] ` prefix (`PrefixedLogSink`)
+- Demand comes from a `JobDemandSource` (`Ghast/Services/Demand/`), made per runner by `DemandSourceFactory`. The default is a runner scale set (`ScaleSetDemandSource`, a port of github.com/actions/scaleset @ 716908e: `ActionsServiceClient` + `ScaleSetMessageSession`, `api-version=6.0-preview`). If the service rejects the token, a repo runner falls back to REST polling of queued workflow jobs (`RESTPollingDemandSource`, ETag conditional requests every 15 s), and an org runner stops with an error. Remove deletes the scale set
+- Workflows target a VM runner with `runs-on: <runner name>`; labels don't apply to VM runners (kept in the saved runner but hidden). Runners saved before on-demand show a one-time note (`LocalRunner.showsOnDemandNote`)
 
 **UI Architecture**:
 - Focus design: one main window (`FocusMainView`, sidebar of runners + detail with Output and Configuration tabs), a Welcome window for sign-in, a Settings window (General, Account), the New Runner sheet and a menu bar extra. Design tokens live in `Ghast/Design/` (`FocusColor`, `FocusType`, `FocusMetrics`)
@@ -65,7 +68,7 @@ xcodebuild test -project Ghast.xcodeproj -scheme Ghast
 
 #### Snapshot Testing
 Snapshots lock layout (glass and backdrop differ per macOS version, so they are covered by fidelity captures). All three suites are Swift Testing, parameterised over light and dark, and render against fixture dependencies:
-- `FocusMainSnapshotTests`: detail column in states running, idle, stopped, starting, error, remote, empty, configuration
+- `FocusMainSnapshotTests`: detail column in states running, idle, stopped, starting, error, remote, empty, configuration, and VM states vmBooting, vmPulling, vmConfiguration, vmWaitingForJobs, vmTwoJobs, vmWaitingForSlot
 - `FocusFlowSnapshotTests`: welcome, welcome-failed, device-code, new-runner, new-runner-progress, new-runner-loading, new-runner-long-names, new-runner-load-failed
 - `FocusSettingsSnapshotTests`: General, Account, Account with organization access not granted
 

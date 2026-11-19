@@ -200,6 +200,7 @@ class RunnerService {
         var startedAt: Date?
         switch processStates[id] {
         case let .running(since)?, let .stopping(since)?: startedAt = since
+        case let .onDemand(state)?: startedAt = state.since
         default: break
         }
         let exit = RunnerExit(code: code, startedAt: startedAt, at: clock.now(), wasRequested: wasRequested)
@@ -231,7 +232,7 @@ class RunnerService {
     /// Deletes VM clones and runner registrations an earlier Ghast left behind. Once per
     /// launch, after sign-in has restored the GitHub token.
     func recoverTartLeftovers() async {
-        await tart.recoverLeftovers()
+        await tart.recoverLeftovers(runners: localRunners)
     }
     
     /// SIGKILLs whatever runner processes are still tracked, without waiting. The last step of a
@@ -450,6 +451,11 @@ class RunnerService {
         }
     }
     
+    /// Hides the "labels no longer apply" note for good.
+    func dismissOnDemandNote(id: String) {
+        updateRunner(id: id) { $0.showsOnDemandNote = false }
+    }
+
     // MARK: - Environment and Scripts Management
     
     func updateRunnerEnvironmentVariables(id: String, environmentVariables: [String: String]) {

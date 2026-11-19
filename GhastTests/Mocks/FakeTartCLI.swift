@@ -30,6 +30,12 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var pullGate: HoldGate?
     /// Reported to `pull`'s progress callback before it waits on the gate.
     var pullProgress: [TartPullProgress] = []
+    /// While set, `clone` waits here (cancellable) after recording the call, before the clone exists.
+    var cloneGate: HoldGate?
+    /// While set, the readiness probe waits here (cancellable) before it answers.
+    var probeGate: HoldGate?
+    /// While set, `stop` waits here (cancellable) after recording the call.
+    var stopGate: HoldGate?
     /// `exec pkill` ends the running job, as SIGTERM does to a real listener.
     var pkillEndsJob = true
 
@@ -70,11 +76,27 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
 
     func clone(_ source: String, _ name: String) async throws {
         log.append("clone \(source) \(name)")
+        try await cloneGate?.wait()
         if let cloneError { throw cloneError }
         lock.withLock { table.append(TartVMEntry(name: name, source: "local", isRunning: false)) }
     }
 
-    func run(_ vm: String, shares: [TartShare], log file: URL, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    /// The shares each VM was last booted with.
+    func shares(of vm: String) -> [TartShare] { lock.withLock { bootShares[vm] ?? [] } }
+    private var bootShares: [String: [TartShare]] = [:]
+    /// Every `execStreaming` argv, in order.
+    var streamedCommands: [[String]] { lock.withLock { commands } }
+    private var commands: [[String]] = []
+
+    /// The line prefix of every `run` and `execStreaming`, in order.
+    var linePrefixes: [String] { lock.withLock { prefixes } }
+    private var prefixes: [String] = []
+
+    func run(_ vm: String, shares: [TartShare], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+        lock.withLock {
+            prefixes.append(linePrefix)
+            bootShares[vm] = shares
+        }
         log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))")
         lock.withLock {
             vmExits[vm] = onExit
@@ -86,6 +108,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
         if command == ["/usr/bin/true"] {
             log.append("probe \(vm)")
+            try await probeGate?.wait()
             return lock.withLock { () -> Int32 in
                 probes += 1
                 return probes > failedProbesBeforeReady ? 0 : 1
@@ -97,7 +120,11 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return 0
     }
 
-    func execStreaming(_ vm: String, _ command: [String], log file: URL, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    func execStreaming(_ vm: String, _ command: [String], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+        lock.withLock {
+            prefixes.append(linePrefix)
+            commands.append(command)
+        }
         log.append("exec-stream \(vm)")
         lock.withLock { jobExits[vm] = onExit }
         return Handle(label: "job \(vm)", owner: self)
@@ -105,6 +132,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
 
     func stop(_ vm: String, timeout: Int) async throws {
         log.append("stop \(vm)")
+        try await stopGate?.wait()
         if let stopError { throw stopError }
         let exit = lock.withLock { () -> (@Sendable (Int32) -> Void)? in
             setRunning(vm, false)

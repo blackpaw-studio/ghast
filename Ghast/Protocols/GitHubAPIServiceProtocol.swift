@@ -24,6 +24,11 @@ protocol GitHubAPIServiceProtocol {
         labels: [String],
         workFolder: String
     ) async throws -> GitHubJITConfig
+    /// The first page (100) of a repository's runs with `status`, sent with `If-None-Match`
+    /// when `etag` is given; 304 is `.notModified`, not an error.
+    func fetchWorkflowRuns(repo: String, status: String, etag: String?) async throws -> Conditional<[GitHubWorkflowRun]>
+    /// The first page (100) of a run's jobs, conditional like `fetchWorkflowRuns`.
+    func fetchJobs(repo: String, runID: Int, etag: String?) async throws -> Conditional<[GitHubWorkflowJob]>
 }
 
 /// Inert default for the environment key: never touches the network or a token.
@@ -58,6 +63,12 @@ struct UnconfiguredGitHubAPIService: GitHubAPIServiceProtocol {
         labels: [String],
         workFolder: String
     ) async throws -> GitHubJITConfig { throw unconfigured("generateJITConfig") }
+    func fetchWorkflowRuns(repo: String, status: String, etag: String?) async throws -> Conditional<[GitHubWorkflowRun]> {
+        throw unconfigured("fetchWorkflowRuns")
+    }
+    func fetchJobs(repo: String, runID: Int, etag: String?) async throws -> Conditional<[GitHubWorkflowJob]> {
+        throw unconfigured("fetchJobs")
+    }
 }
 
 /// Environment key for injecting API service

@@ -37,6 +37,36 @@ struct RunnerToolbarButton: Sendable, Equatable {
     let isEnabled: Bool
 }
 
+/// What a started on-demand VM runner is doing, by priority: running jobs, then booting,
+/// then waiting for the VM budget, else waiting for jobs.
+enum OnDemandPhase: Sendable, Equatable {
+    case waitingForJobs
+    case booting
+    case running(Int)
+    case waitingForSlot
+
+    init(_ state: OnDemandState) {
+        if state.running > 0 {
+            self = .running(state.running)
+        } else if state.booting > 0 {
+            self = .booting
+        } else if state.isWaitingForSlot {
+            self = .waitingForSlot
+        } else {
+            self = .waitingForJobs
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .waitingForJobs: "Waiting for jobs"
+        case .booting: "Booting for a queued job"
+        case let .running(count): count == 1 ? "1 job running" : "\(count) jobs running"
+        case .waitingForSlot: "Waiting for a free VM slot"
+        }
+    }
+}
+
 /// The single source for a runner's dot, words and VoiceOver text.
 enum RunnerDisplayStatus: Sendable, Equatable {
     case idle
@@ -56,6 +86,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     case offline
     /// Remote only.
     case remoteBusy
+    /// A started on-demand VM runner.
+    case onDemand(OnDemandPhase)
 
     // MARK: - Derivation
 
@@ -78,6 +110,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return .cleaningUp
         case .stopping:
             return .stopping
+        case let .onDemand(state):
+            return .onDemand(OnDemandPhase(state))
         case .running:
             if let job = activity.currentJob { return .runningJob(name: job.name, since: job.startedAt) }
             return activity.isListening ? .idle : .starting
@@ -94,8 +128,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     var showsProgress: Bool {
         switch self {
         case let .pulling(progress): progress.fraction == nil
-        case .starting, .stopping, .booting, .cleaningUp: true
-        case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy: false
+        case .starting, .stopping, .booting, .cleaningUp, .onDemand(.booting): true
+        case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy, .onDemand: false
         }
     }
 
@@ -119,6 +153,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .stopped: return "Stopped"
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline"
+        case let .onDemand(phase): return phase.title
         }
     }
 
@@ -149,6 +184,14 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "Not connected to GitHub"
         case .remoteBusy:
             return "Online and running a job"
+        case .onDemand(.waitingForJobs):
+            return "No VM runs until a job asks for this runner"
+        case .onDemand(.booting):
+            return "Starting a fresh virtual machine…"
+        case .onDemand(.running):
+            return "Each job runs in its own VM, deleted when the job ends"
+        case .onDemand(.waitingForSlot):
+            return "macOS runs at most 2 VMs at once; the job waits on GitHub"
         }
     }
 
@@ -167,6 +210,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline · \(detail)"
         case .remoteBusy: return "Running a job · \(detail)"
+        case .onDemand(.waitingForJobs): return "Waiting for jobs · \(detail)"
+        case let .onDemand(phase): return phase.title
         }
     }
 
@@ -175,7 +220,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     func toolbarButtons(location: RunnerLocation) -> [RunnerToolbarButton] {
         guard location == .thisMac else { return [] }
         switch self {
-        case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp:
+        case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp, .onDemand:
             return [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]
         case .stopping:
             return [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]
@@ -215,6 +260,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .stopped: return "stopped"
         case let .error(code, at): return "error, exited with code \(code) at \(time.timeOfDay.format(at))"
         case .offline: return "offline"
+        case let .onDemand(phase): return phase.title.lowercased()
         }
     }
 
@@ -229,6 +275,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .running(since), let .stopping(since):
             label = "Uptime"
             duration = time.now.timeIntervalSince(since)
+        case let .onDemand(state):
+            label = "Uptime"
+            duration = time.now.timeIntervalSince(state.since)
         case .starting, .pulling, .booting, .cleaningUp, .stopped, .exited:
             label = "Last Run"
             duration = lastExit?.startedAt.map { lastExit!.at.timeIntervalSince($0) }

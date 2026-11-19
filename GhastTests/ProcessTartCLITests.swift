@@ -92,30 +92,37 @@ struct ProcessTartCLITests {
         launcher.status = 9
         let exits = ExitBox()
 
+        let file = makeTemporaryDirectory().appendingPathComponent("runner.log")
+        launcher.chunks = ["booted\nlast"]
+
         _ = try ProcessTartCLI(executable: tart, launcher: launcher).run(
             "vm1",
             shares: [TartShare(name: "ghast", path: URL(fileURLWithPath: "/cache"), isReadOnly: true)],
-            log: log,
+            log: file,
+            linePrefix: "[vm a1b2c3] ",
             onExit: { exits.record($0) }
         )
 
         let spec = try #require(launcher.specs.first)
         #expect(spec.arguments == ["run", "--no-graphics", "--dir=ghast:/cache:ro", "vm1"])
-        #expect(spec.appendOutputTo == log)
         #expect(exits.codes == [9])
+        // The partial last line is written before the exit is reported.
+        #expect(try String(contentsOf: file, encoding: .utf8) == "[vm a1b2c3] booted\n[vm a1b2c3] last\n")
     }
 
-    @Test("execStreaming runs the guest command and logs its output")
+    @Test("execStreaming runs the guest command and logs its output, each line marked with the VM")
     func execStreaming() throws {
         let launcher = RecordingLauncher()
+        let file = makeTemporaryDirectory().appendingPathComponent("runner.log")
+        launcher.chunks = ["2026-11-18T10:00:00-0500 Listening for Jobs\n"]
 
         _ = try ProcessTartCLI(executable: tart, launcher: launcher).execStreaming(
-            "vm1", ["/bin/bash", "-c", "true"], log: log, onExit: { _ in }
+            "vm1", ["/bin/bash", "-c", "true"], log: file, linePrefix: "[vm a1b2c3] ", onExit: { _ in }
         )
 
         let spec = try #require(launcher.specs.first)
         #expect(spec.arguments == ["exec", "vm1", "/bin/bash", "-c", "true"])
-        #expect(spec.appendOutputTo == log)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "2026-11-18T10:00:00-0500 [vm a1b2c3] Listening for Jobs\n")
     }
 
     final class ExitBox: @unchecked Sendable {

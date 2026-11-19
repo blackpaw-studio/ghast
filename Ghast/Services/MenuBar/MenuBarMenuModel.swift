@@ -83,17 +83,17 @@ enum MenuBarMenuModel {
     /// The process is up: listening, running a job, or still connecting.
     static func isRunning(_ status: RunnerDisplayStatus) -> Bool {
         switch status {
-        case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp, .remoteBusy: return true
+        case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp, .remoteBusy, .onDemand: return true
         case .stopping, .stopped, .error, .offline: return false
         }
     }
 
     private static func dot(for status: RunnerDisplayStatus) -> MenuBarDot {
         switch status {
-        case .idle: return .idle
-        case .runningJob, .remoteBusy: return .running
+        case .idle, .onDemand(.waitingForJobs): return .idle
+        case .runningJob, .remoteBusy, .onDemand(.running): return .running
         case .error: return .error
-        case .starting, .pulling, .booting, .cleaningUp, .stopping, .stopped, .offline: return .hollow
+        case .starting, .pulling, .booting, .cleaningUp, .stopping, .stopped, .offline, .onDemand: return .hollow
         }
     }
 
@@ -110,6 +110,10 @@ enum MenuBarMenuModel {
         case .stopped: return "Stopped"
         case .error: return "Exited"
         case .offline: return "Offline"
+        case .onDemand(.waitingForJobs): return "Waiting"
+        case .onDemand(.booting): return "Booting"
+        case .onDemand(.running): return "Running"
+        case .onDemand(.waitingForSlot): return "No VM slot"
         }
     }
 }

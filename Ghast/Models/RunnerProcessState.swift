@@ -22,6 +22,8 @@ enum RunnerProcessState: Sendable, Equatable {
     case stopping(since: Date)
     /// The wrapper ended without Ghast asking it to.
     case exited(RunnerExit)
+    /// A started on-demand VM runner: its VMs, if any, and whether the VM budget is full.
+    case onDemand(OnDemandState)
 
     /// The state a runner starts a session in, from what was persisted: an unexpected exit
     /// stays visible across a relaunch, a requested stop does not.
@@ -29,4 +31,16 @@ enum RunnerProcessState: Sendable, Equatable {
         guard let lastExit, !lastExit.wasRequested else { return .stopped }
         return .exited(lastExit)
     }
+}
+
+/// What a started on-demand VM runner holds: VMs booting for queued jobs, VMs whose guest
+/// runs a job, and whether a wanted VM waits for the host's 2-VM budget.
+struct OnDemandState: Sendable, Equatable {
+    /// When the runner was started, for the Uptime stat.
+    var since: Date
+    var booting = 0
+    var running = 0
+    var isWaitingForSlot = false
+    /// Clones a shell can reach: from the readiness probe until cleanup starts, oldest first.
+    var liveVMs: [String] = []
 }

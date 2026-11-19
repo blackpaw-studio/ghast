@@ -233,3 +233,42 @@ extension GitHubJITConfig: Decodable {
         encodedConfig = try container.decode(String.self, forKey: .encodedConfig)
     }
 }
+
+/// A conditional GET's outcome: `notModified` for 304 (the caller keeps what it had), or the
+/// value and the `ETag` to send next time.
+enum Conditional<Value: Sendable>: Sendable {
+    case notModified
+    case fresh(Value, etag: String?)
+
+    func map<T: Sendable>(_ transform: (Value) -> T) -> Conditional<T> {
+        switch self {
+        case .notModified: .notModified
+        case let .fresh(value, etag): .fresh(transform(value), etag: etag)
+        }
+    }
+}
+
+/// A workflow run, as far as demand polling needs it.
+struct GitHubWorkflowRun: Decodable, Sendable, Equatable {
+    let id: Int
+    let status: String?
+}
+
+/// A job of a workflow run: its status and the `runs-on` labels it asks for.
+struct GitHubWorkflowJob: Decodable, Sendable, Equatable {
+    let id: Int
+    let status: String
+    let labels: [String]
+}
+
+struct GitHubWorkflowRunsPage: Decodable, Sendable {
+    let workflowRuns: [GitHubWorkflowRun]
+
+    enum CodingKeys: String, CodingKey {
+        case workflowRuns = "workflow_runs"
+    }
+}
+
+struct GitHubWorkflowJobsPage: Decodable, Sendable {
+    let jobs: [GitHubWorkflowJob]
+}

@@ -150,6 +150,20 @@ import Foundation
         #expect(h.trasher.trashed.map(\.lastPathComponent) == ["dionysus-3"])
         #expect(h.service.localRunners.isEmpty)
         #expect(!h.service.hasRunningProcesses)
+        // Its scale set on GitHub goes too.
+        #expect(h.demand.source(runner)?.deleteRemoteCount == 1)
+    }
+
+    @Test func aVMRunnerWhoseScaleSetCannotBeDeletedAsksToRemoveLocallyOnly() async throws {
+        let runner = try await runningVMRunner()
+        h.demand.deleteRemoteError = ScaleSetError.transient("HTTP 502")
+
+        let outcome = try await remover.remove(runner, gitHubRunnerID: nil)
+
+        guard case .needsLocalOnlyConfirmation = outcome else { Issue.record("got \(outcome)"); return }
+        #expect(h.service.localRunners.map(\.id) == [runner.id])
+        #expect(h.trasher.trashed.isEmpty)
+        #expect(!h.service.hasRunningProcesses)
     }
 
     @Test func aFailedGitHubDeleteNeverBlocksRemovingAVMRunner() async throws {

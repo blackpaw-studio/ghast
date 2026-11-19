@@ -28,4 +28,32 @@ struct TartGuestScriptTests {
 
         #expect(script.contains(#"'/Volumes/My Shared Files/ghast/a'\''b.tar.gz'"#))
     }
+
+    @Test("before run.sh, copies the job share's scripts and variables in, with a hook only for a script that is there")
+    func jobFiles() throws {
+        let script = TartGuestScript.make(tarball: "r.tar.gz")
+
+        #expect(script.contains("JOB='/Volumes/My Shared Files/ghast-job'"))
+        #expect(script.contains(#"if [ -f "$JOB/.env" ]; then cat "$JOB/.env" >> .env || exit 1; fi"#))
+        for (file, hook) in [("pre-job.sh", "ACTIONS_RUNNER_HOOK_JOB_STARTED"), ("post-job.sh", "ACTIONS_RUNNER_HOOK_JOB_COMPLETED")] {
+            #expect(script.contains("""
+            if [ -f "$JOB/\(file)" ]; then
+                cp "$JOB/\(file)" \(file) && chmod +x \(file) || exit 1
+                echo "\(hook)=$PWD/\(file)" >> .env
+            fi
+            """))
+        }
+        let copy = try #require(script.range(of: "$JOB/.env"))
+        let extract = try #require(script.range(of: "tar xzf"))
+        let run = try #require(script.range(of: "./run.sh"))
+        #expect(extract.lowerBound < copy.lowerBound && copy.lowerBound < run.lowerBound)
+    }
+
+    @Test("a missing job share fails the run loudly instead of running without scripts")
+    func jobShareMissing() throws {
+        let script = TartGuestScript.make(tarball: "r.tar.gz")
+        let check = try #require(script.range(of: #"[ -d "$JOB" ] || { echo "Error: job share missing at $JOB" >&2; exit 1; }"#))
+        let run = try #require(script.range(of: "./run.sh"))
+        #expect(check.lowerBound < run.lowerBound)
+    }
 }

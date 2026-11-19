@@ -99,6 +99,36 @@ final class GitHubAPIService: GitHubAPIServiceProtocol {
         return try await send(request)
     }
 
+    // MARK: - Workflow APIs
+
+    func fetchWorkflowRuns(repo: String, status: String, etag: String?) async throws -> Conditional<[GitHubWorkflowRun]> {
+        let query = [URLQueryItem(name: "status", value: status), URLQueryItem(name: "per_page", value: String(Self.pageSize))]
+        let page: Conditional<GitHubWorkflowRunsPage> = try await conditional(path: "/repos/\(repo)/actions/runs", query: query, etag: etag)
+        return page.map(\.workflowRuns)
+    }
+
+    func fetchJobs(repo: String, runID: Int, etag: String?) async throws -> Conditional<[GitHubWorkflowJob]> {
+        let query = [URLQueryItem(name: "per_page", value: String(Self.pageSize))]
+        let page: Conditional<GitHubWorkflowJobsPage> = try await conditional(path: "/repos/\(repo)/actions/runs/\(runID)/jobs", query: query, etag: etag)
+        return page.map(\.jobs)
+    }
+
+    /// A GET with `If-None-Match`; 304 is `.notModified`, other failures throw as usual.
+    private func conditional<Page: Decodable & Sendable>(path: String, query: [URLQueryItem], etag: String?) async throws -> Conditional<Page> {
+        var request = makeRequest(method: "GET", path: path, query: query)
+        if let etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
+        let (data, response): (Data, HTTPURLResponse)
+        do {
+            (data, response) = try await transport.send(request)
+        } catch {
+            if error.isCancellation { throw error }
+            throw GitHubAPIError.networkError(error)
+        }
+        if response.statusCode == 304 { return .notModified }
+        guard (200..<300).contains(response.statusCode) else { throw Self.error(for: response) }
+        return .fresh(try Self.decode(data), etag: response.value(forHTTPHeaderField: "ETag"))
+    }
+
     /// `{scope prefix}/actions/runners[/{suffix}]`.
     private static func runnersPath(_ scope: RunnerScope, _ suffix: String? = nil) -> String {
         let base = "\(scope.apiPathPrefix)/actions/runners"

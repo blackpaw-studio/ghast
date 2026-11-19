@@ -85,7 +85,11 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
         return mockRunners
     }
     
+    /// Every scope `createRegistrationToken` was asked for, in order.
+    private(set) var registrationTokenScopes: [RunnerScope] = []
+
     func createRegistrationToken(for scope: RunnerScope) async throws -> GitHubRunnerRegistrationToken {
+        registrationTokenScopes.append(scope)
         if shouldThrowError {
             throw GitHubAPIError.unauthorized
         }
@@ -130,6 +134,27 @@ class MockGitHubAPIService: GitHubAPIServiceProtocol {
     ) async throws -> GitHubJITConfig {
         if shouldThrowError { throw GitHubAPIError.unauthorized }
         return GitHubJITConfig(runnerID: 1, encodedConfig: "mock-jit-config")
+    }
+
+    /// Replies for `fetchWorkflowRuns` by status; a missing status is an empty fresh page.
+    var workflowRuns: [String: Conditional<[GitHubWorkflowRun]>] = [:]
+    /// Replies for `fetchJobs` by run id; a missing run is an empty fresh page.
+    var workflowJobs: [Int: Conditional<[GitHubWorkflowJob]>] = [:]
+    /// Thrown by the next conditional fetch, then cleared.
+    var workflowError: Error?
+    /// Each conditional fetch as `runs:<status>` or `jobs:<run id>`, with the ETag sent.
+    private(set) var conditionalFetches: [(key: String, etag: String?)] = []
+
+    func fetchWorkflowRuns(repo: String, status: String, etag: String?) async throws -> Conditional<[GitHubWorkflowRun]> {
+        conditionalFetches.append(("runs:\(status)", etag))
+        if let error = workflowError { workflowError = nil; throw error }
+        return workflowRuns[status] ?? .fresh([], etag: nil)
+    }
+
+    func fetchJobs(repo: String, runID: Int, etag: String?) async throws -> Conditional<[GitHubWorkflowJob]> {
+        conditionalFetches.append(("jobs:\(runID)", etag))
+        if let error = workflowError { workflowError = nil; throw error }
+        return workflowJobs[runID] ?? .fresh([], etag: nil)
     }
 
     func fetchRunnerApplications(for scope: RunnerScope) async throws -> [GitHubRunnerApplication] {

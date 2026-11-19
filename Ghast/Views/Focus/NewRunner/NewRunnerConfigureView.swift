@@ -178,8 +178,12 @@ struct NewRunnerConfigureView: View {
                     .focused($isNameFocused)
             }
             FocusFormDivider()
-            row("Labels") {
-                LabelTokenField(labels: Binding(get: { tokens }, set: { labels = $0 }))
+            if runIn == .tartVM {
+                row("Workflow") { RunsOnLine(runnerName: name.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            } else {
+                row("Labels") {
+                    LabelTokenField(labels: Binding(get: { tokens }, set: { labels = $0 }))
+                }
             }
         }
         .background(
@@ -303,8 +307,8 @@ struct NewRunnerConfigureView: View {
             .font(FocusType.subheadline)
             .padding(.horizontal, FocusMetrics.formRowInset)
         } else {
-            Text(scope.map { "Names must be unique in \($0.displayName). Default labels are added for you." }
-                 ?? "Default labels are added for you.")
+            let tail = runIn == .tartVM ? "Workflows pick this runner by name." : "Default labels are added for you."
+            Text(scope.map { "Names must be unique in \($0.displayName). \(tail)" } ?? tail)
                 .font(FocusType.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
