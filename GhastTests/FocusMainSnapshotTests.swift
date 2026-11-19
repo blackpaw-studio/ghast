@@ -17,8 +17,12 @@ struct FocusMainSnapshotTests {
         /// is a runner saved before on-demand VMs, so it shows the one-time note.
         case vmBooting, vmPulling, vmConfiguration
         case vmWaitingForJobs, vmTwoJobs, vmWaitingForSlot
+        /// A standby Mac: one that waits behind another Mac's job queue, and one that holds it.
+        case vmStandingBy, vmHoldingStandby
 
-        var isVM: Bool { [.vmBooting, .vmPulling, .vmConfiguration, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot].contains(self) }
+        var isVM: Bool {
+            [.vmBooting, .vmPulling, .vmConfiguration, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby].contains(self)
+        }
     }
 
     /// The detail column of the 1440 × 900 kit window, beside the 264 pt sidebar.
@@ -110,6 +114,10 @@ struct FocusMainSnapshotTests {
             return (onDemand(fixture, booting: 1), OutputParser.consume(vmLog(booting: true), into: .initial).activity)
         case .vmWaitingForJobs:
             return (onDemand(fixture), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
+        case .vmStandingBy:
+            return (onDemand(fixture, queue: .heldElsewhere), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
+        case .vmHoldingStandby:
+            return (onDemand(fixture), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmTwoJobs:
             return (onDemand(fixture, running: 2, liveVMs: ["ghast-1f2e3d-a1b2c3", "ghast-1f2e3d-d4e5f6"]), OutputParser.consume(twoJobsLog, into: .initial).activity)
         case .vmWaitingForSlot:
@@ -131,6 +139,7 @@ struct FocusMainSnapshotTests {
         var copy = runner
         copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
         copy.showsOnDemandNote = state == .vmWaitingForJobs
+        if state == .vmStandingBy || state == .vmHoldingStandby { copy.queueRole = .standby }
         if state == .vmConfiguration {
             // Scripts and variables ride into each VM, so its Configuration tab shows them.
             copy.environmentVariables = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer", "FASTLANE_SKIP_UPDATE_CHECK": "1"]
@@ -140,9 +149,12 @@ struct FocusMainSnapshotTests {
     }
 
     /// An on-demand runner started an hour before the fixture's "now".
-    private func onDemand(_ fixture: FixtureDependencies, booting: Int = 0, running: Int = 0, isWaitingForSlot: Bool = false, liveVMs: [String] = []) -> RunnerProcessState {
+    private func onDemand(
+        _ fixture: FixtureDependencies, booting: Int = 0, running: Int = 0, isWaitingForSlot: Bool = false, liveVMs: [String] = [],
+        queue: JobQueueStatus = .holding
+    ) -> RunnerProcessState {
         let since = fixture.appDependencies.clock.now().addingTimeInterval(-3600)
-        return .onDemand(OnDemandState(since: since, booting: booting, running: running, isWaitingForSlot: isWaitingForSlot, liveVMs: liveVMs))
+        return .onDemand(OnDemandState(since: since, booting: booting, running: running, isWaitingForSlot: isWaitingForSlot, liveVMs: liveVMs, queue: queue))
     }
 
     /// The lifecycle lines Ghast writes before a VM runner has a listener.
