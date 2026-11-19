@@ -37,13 +37,27 @@ struct RunnerToolbarButton: Sendable, Equatable {
     let isEnabled: Bool
 }
 
+/// Why a runner waiting for jobs says what it says about the job queue.
+enum QueueNote: Sendable, Equatable {
+    /// This Mac holds the scale set's job queue.
+    case thisMac
+    /// The runner polls GitHub's REST API: there is no job queue.
+    case noQueue
+}
+
 /// What a started on-demand VM runner is doing, by priority: running jobs, then booting,
-/// then waiting for the VM budget, else waiting for jobs.
+/// then waiting for the VM budget, then who holds the job queue.
 enum OnDemandPhase: Sendable, Equatable {
-    case waitingForJobs
+    case waitingForJobs(QueueNote)
     case booting
     case running(Int)
     case waitingForSlot
+    /// Another Mac holds the job queue; this one retries.
+    case standingBy
+    /// A standby gave the queue up so the primary Mac can take it.
+    case handingOff
+    /// Opening the queue's session, or reopening it after sleep.
+    case connecting
 
     init(_ state: OnDemandState) {
         if state.running > 0 {
@@ -53,7 +67,13 @@ enum OnDemandPhase: Sendable, Equatable {
         } else if state.isWaitingForSlot {
             self = .waitingForSlot
         } else {
-            self = .waitingForJobs
+            switch state.queue {
+            case .holding: self = .waitingForJobs(.thisMac)
+            case .noQueue: self = .waitingForJobs(.noQueue)
+            case .heldElsewhere: self = .standingBy
+            case .released(.handoff): self = .handingOff
+            case .connecting, .released(.sleep): self = .connecting
+            }
         }
     }
 
@@ -63,6 +83,9 @@ enum OnDemandPhase: Sendable, Equatable {
         case .booting: "Booting for a queued job"
         case let .running(count): count == 1 ? "1 job running" : "\(count) jobs running"
         case .waitingForSlot: "Waiting for a free VM slot"
+        case .standingBy: "Standing by"
+        case .handingOff: "Handing off the queue…"
+        case .connecting: "Connecting…"
         }
     }
 }
@@ -128,7 +151,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     var showsProgress: Bool {
         switch self {
         case let .pulling(progress): progress.fraction == nil
-        case .starting, .stopping, .booting, .cleaningUp, .onDemand(.booting): true
+        case .starting, .stopping, .booting, .cleaningUp, .onDemand(.booting), .onDemand(.handingOff), .onDemand(.connecting): true
         case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy, .onDemand: false
         }
     }
@@ -184,8 +207,16 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "Not connected to GitHub"
         case .remoteBusy:
             return "Online and running a job"
-        case .onDemand(.waitingForJobs):
-            return "No VM runs until a job asks for this runner"
+        case .onDemand(.waitingForJobs(.thisMac)):
+            return "This Mac has the queue · no VM runs until a job asks for this runner"
+        case .onDemand(.waitingForJobs(.noQueue)):
+            return "No job queue (polling GitHub) · no VM runs until a job asks for this runner"
+        case .onDemand(.standingBy):
+            return "Another Mac has the queue · this Mac takes over if it sleeps or quits"
+        case .onDemand(.handingOff):
+            return "Handing the queue to the primary Mac…"
+        case .onDemand(.connecting):
+            return "Connecting to GitHub…"
         case .onDemand(.booting):
             return "Starting a fresh virtual machine…"
         case .onDemand(.running):
@@ -210,8 +241,11 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline · \(detail)"
         case .remoteBusy: return "Running a job · \(detail)"
-        case .onDemand(.waitingForJobs): return "Waiting for jobs · \(detail)"
-        case let .onDemand(phase): return phase.title
+        case let .onDemand(phase):
+            switch phase {
+            case .waitingForJobs, .standingBy: return "\(phase.title) · \(detail)"
+            case .booting, .running, .waitingForSlot, .handingOff, .connecting: return phase.title
+            }
         }
     }
 

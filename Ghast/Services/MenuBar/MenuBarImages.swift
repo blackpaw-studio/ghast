@@ -62,6 +62,12 @@ enum MenuBarImages {
                 ring.lineWidth = 1.5
                 NSColor.tertiaryLabelColor.setStroke()
                 ring.stroke()
+            case .standby:
+                let ring = NSBezierPath(ovalIn: dotRect.insetBy(dx: 0.75, dy: 0.75))
+                ring.lineWidth = 1.5
+                ring.setLineDash([2, 1.5], count: 2, phase: 0)
+                NSColor.secondaryLabelColor.setStroke()
+                ring.stroke()
             }
             return true
         }

@@ -6,6 +6,8 @@ enum MenuBarDot: Sendable, Equatable {
     case running
     case error
     case hollow
+    /// An on-demand runner that does not hold the job queue: dashed, not ready to take a job.
+    case standby
 }
 
 enum MenuBarSubmenuItem: Sendable, Equatable {
@@ -93,6 +95,7 @@ enum MenuBarMenuModel {
         case .idle, .onDemand(.waitingForJobs): return .idle
         case .runningJob, .remoteBusy, .onDemand(.running): return .running
         case .error: return .error
+        case .onDemand(.standingBy), .onDemand(.handingOff): return .standby
         case .starting, .pulling, .booting, .cleaningUp, .stopping, .stopped, .offline, .onDemand: return .hollow
         }
     }
@@ -114,6 +117,9 @@ enum MenuBarMenuModel {
         case .onDemand(.booting): return "Booting"
         case .onDemand(.running): return "Running"
         case .onDemand(.waitingForSlot): return "No VM slot"
+        case .onDemand(.standingBy): return "Standing by"
+        case .onDemand(.handingOff): return "Handing off"
+        case .onDemand(.connecting): return "Connecting"
         }
     }
 }
