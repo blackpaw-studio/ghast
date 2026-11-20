@@ -28,7 +28,7 @@ final class TartBackend: RunnerBackend {
     }
 
     /// macOS licenses at most two concurrent macOS VMs per host.
-    static let macOSVMLimit = 2
+    nonisolated static let macOSVMLimit = 2
     /// VMs one runner entry runs at once.
     static let maxVMsPerRunner = 2
     static let clonePrefix = "ghast-"
