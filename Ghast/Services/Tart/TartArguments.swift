@@ -18,10 +18,23 @@ enum TartArguments {
     static func stop(_ vm: String, timeout: Int) -> [String] { ["stop", vm, "--timeout", String(timeout)] }
     static func delete(_ vm: String) -> [String] { ["delete", vm] }
 
-    /// Headless boot; the process lives as long as the VM does.
-    static func run(_ vm: String, shares: [TartShare]) -> [String] {
+    /// Headless boot; the process lives as long as the VM does. `--net-softnet` isolates the
+    /// guest from the local network; Tart fails the boot when softnet isn't set up.
+    static func run(_ vm: String, shares: [TartShare], isNetworkIsolated: Bool) -> [String] {
         let dirs = shares.map { "--dir=\($0.name):\($0.path.path)\($0.isReadOnly ? ":ro" : "")" }
-        return ["run", "--no-graphics"] + dirs + [vm]
+        return ["run", "--no-graphics"] + (isNetworkIsolated ? ["--net-softnet"] : []) + dirs + [vm]
+    }
+
+    private static let megabytesPerGB = 1024
+
+    /// Applies the size settings that are set; nil when none is (nothing to call).
+    static func set(_ vm: String, resources: VMResources) -> [String]? {
+        let flags: [String] = [
+            resources.cpuCount.map { ["--cpu", String($0)] },
+            resources.memoryGB.map { ["--memory", String($0 * megabytesPerGB)] },
+            resources.diskGB.map { ["--disk-size", String($0)] },
+        ].compactMap { $0 }.flatMap { $0 }
+        return flags.isEmpty ? nil : ["set", vm] + flags
     }
 
     /// Runs `command` in the guest through the Tart Guest Agent; needs Tart 2.27.0 or later.

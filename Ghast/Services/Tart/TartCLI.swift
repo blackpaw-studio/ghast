@@ -22,11 +22,16 @@ protocol TartCLI: Sendable {
     /// every other output line is appended to `log` (the percentage lines are not).
     func pull(_ image: String, log: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws
     func clone(_ source: String, _ name: String) async throws
+    /// The VM's disk size in whole GB.
+    func diskSizeGB(of vm: String) async throws -> Int
+    /// Applies the size settings that are set; does nothing when none is.
+    func set(_ vm: String, resources: VMResources) async throws
     /// Boots a VM headless. The process lives as long as the VM; `onExit` fires when it ends.
     /// Its output goes to `log`, each line marked with `linePrefix`.
     func run(
         _ vm: String,
         shares: [TartShare],
+        isNetworkIsolated: Bool,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
@@ -97,14 +102,25 @@ struct ProcessTartCLI: TartCLI {
         try await checked(TartArguments.clone(source, name))
     }
 
+    func diskSizeGB(of vm: String) async throws -> Int {
+        try TartJSON.decodeDiskSize(Data(try await checked(TartArguments.get(vm)).output.utf8))
+    }
+
+    func set(_ vm: String, resources: VMResources) async throws {
+        guard let arguments = TartArguments.set(vm, resources: resources) else { return }
+        try await checked(arguments)
+    }
+
     func run(
         _ vm: String,
         shares: [TartShare],
+        isNetworkIsolated: Bool,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        try launchPrefixed(TartArguments.run(vm, shares: shares), log: log, linePrefix: linePrefix, onExit: onExit)
+        let arguments = TartArguments.run(vm, shares: shares, isNetworkIsolated: isNetworkIsolated)
+        return try launchPrefixed(arguments, log: log, linePrefix: linePrefix, onExit: onExit)
     }
 
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {

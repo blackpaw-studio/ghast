@@ -81,6 +81,19 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         lock.withLock { table.append(TartVMEntry(name: name, source: "local", isRunning: false)) }
     }
 
+    /// The disk size `diskSizeGB(of:)` reports per VM; others read as 50.
+    var diskSizeByVM: [String: Int] = [:]
+
+    func diskSizeGB(of vm: String) async throws -> Int {
+        log.append("disk \(vm)")
+        return diskSizeByVM[vm] ?? 50
+    }
+
+    func set(_ vm: String, resources: VMResources) async throws {
+        guard let arguments = TartArguments.set(vm, resources: resources) else { return }
+        log.append("set \(vm) \(arguments.dropFirst(2).joined(separator: " "))")
+    }
+
     /// The shares each VM was last booted with.
     func shares(of vm: String) -> [TartShare] { lock.withLock { bootShares[vm] ?? [] } }
     private var bootShares: [String: [TartShare]] = [:]
@@ -92,12 +105,12 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var linePrefixes: [String] { lock.withLock { prefixes } }
     private var prefixes: [String] = []
 
-    func run(_ vm: String, shares: [TartShare], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    func run(_ vm: String, shares: [TartShare], isNetworkIsolated: Bool, log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
         lock.withLock {
             prefixes.append(linePrefix)
             bootShares[vm] = shares
         }
-        log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))")
+        log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))\(isNetworkIsolated ? " softnet" : "")")
         lock.withLock {
             vmExits[vm] = onExit
             setRunning(vm, true)

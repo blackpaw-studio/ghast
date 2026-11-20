@@ -302,6 +302,7 @@ final class TartBackend: RunnerBackend {
                 TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true),
                 TartShare(name: VMJobFiles.shareName, path: jobFolder, isReadOnly: true),
             ],
+            isNetworkIsolated: false,
             log: logFile(for: runner),
             linePrefix: vm.logPrefix,
             onExit: { [weak self, weak vm] _ in

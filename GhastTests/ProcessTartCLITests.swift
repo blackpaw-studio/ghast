@@ -98,6 +98,7 @@ struct ProcessTartCLITests {
         _ = try ProcessTartCLI(executable: tart, launcher: launcher).run(
             "vm1",
             shares: [TartShare(name: "ghast", path: URL(fileURLWithPath: "/cache"), isReadOnly: true)],
+            isNetworkIsolated: false,
             log: file,
             linePrefix: "[vm a1b2c3] ",
             onExit: { exits.record($0) }

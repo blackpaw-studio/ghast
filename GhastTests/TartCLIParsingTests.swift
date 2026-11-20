@@ -62,12 +62,44 @@ struct TartCLIParsingTests {
             TartShare(name: "out", path: URL(fileURLWithPath: "/tmp/out"), isReadOnly: false),
         ]
 
-        #expect(TartArguments.run("vm1", shares: shares) == [
+        #expect(TartArguments.run("vm1", shares: shares, isNetworkIsolated: false) == [
             "run", "--no-graphics",
             "--dir=ghast:/Users/x/.ghast/tart-cache:ro",
             "--dir=out:/tmp/out",
             "vm1",
         ])
+    }
+
+    @Test("run adds --net-softnet right after --no-graphics only when isolated")
+    func runSoftnetArguments() {
+        let share = TartShare(name: "ghast", path: URL(fileURLWithPath: "/x"), isReadOnly: true)
+
+        #expect(TartArguments.run("vm1", shares: [share], isNetworkIsolated: false) == [
+            "run", "--no-graphics", "--dir=ghast:/x:ro", "vm1",
+        ])
+        #expect(TartArguments.run("vm1", shares: [share], isNetworkIsolated: true) == [
+            "run", "--no-graphics", "--net-softnet", "--dir=ghast:/x:ro", "vm1",
+        ])
+    }
+
+    @Test("set passes only the flags that are set", arguments: [
+        (VMResources(cpuCount: 8), ["set", "vm1", "--cpu", "8"] as [String]?),
+        (VMResources(memoryGB: 16), ["set", "vm1", "--memory", "16384"]),
+        (VMResources(diskGB: 150), ["set", "vm1", "--disk-size", "150"]),
+        (VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150), ["set", "vm1", "--cpu", "8", "--memory", "16384", "--disk-size", "150"]),
+        (VMResources.empty, nil),
+        (VMResources(isNetworkIsolated: true), nil),
+    ])
+    func setArguments(resources: VMResources, expected: [String]?) {
+        #expect(TartArguments.set("vm1", resources: resources) == expected)
+    }
+
+    /// Live spike sample (Tart 2.42.0): `Disk` is whole GB, `Size` the used size as a string.
+    @Test("get decodes the disk size")
+    func getDiskSize() throws {
+        let json = #"{"Memory":16384,"DiskFormat":"raw","Display":"1024x768","Disk":150,"CPU":8,"Size":"32.673","Running":false,"State":"stopped","MACAddress":"9e:df:0d:1a:6f:d2","OS":"darwin"}"#
+
+        #expect(try TartJSON.decodeDiskSize(Data(json.utf8)) == 150)
     }
 
     @Test("exec puts the VM before the guest command, which is passed through untouched")
