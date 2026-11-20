@@ -121,4 +121,94 @@ import Foundation
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         #expect(files.isEmpty)
     }
+
+    // MARK: - VM resources
+
+    private func makeVMDraft(
+        resources: VMResources = .empty,
+        capacity: FakeHostCapacity = FakeHostCapacity(coreCount: 16, physicalMemoryGB: 64, freeDisk: 300)
+    ) -> (RunnerConfigurationDraft, RunnerService) {
+        var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm")
+        vm.backend = .tart(image: "my-vm")
+        vm.vmResources = resources
+        let service = makeTestRunnerService(runners: [vm])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper, hostCapacity: capacity)
+        draft.load(vm)
+        return (draft, service)
+    }
+
+    @Test func vmResourcesLoadAndSaveWithoutAskingForARestart() {
+        let (draft, service) = makeVMDraft(resources: VMResources(cpuCount: 4, memoryGB: 8, diskGB: 100, isNetworkIsolated: false))
+        #expect(draft.vmCPU == "4")
+        #expect(draft.vmMemory == "8")
+        #expect(draft.vmDisk == "100")
+        #expect(!draft.vmIsolated)
+
+        draft.vmCPU = "8"
+        draft.vmMemory = "16"
+        draft.vmDisk = "150"
+        draft.vmIsolated = true
+        draft.saveSoon()
+        draft.flush()
+
+        #expect(service.localRunners.first?.vmResources == VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150, isNetworkIsolated: true))
+        #expect(!draft.needsRestart)
+    }
+
+    @Test func blankResourceFieldsSaveAsImageDefault() {
+        let (draft, service) = makeVMDraft(resources: VMResources(cpuCount: 4, memoryGB: 8, diskGB: 100, isNetworkIsolated: true))
+
+        draft.vmCPU = ""
+        draft.vmMemory = "  "
+        draft.vmDisk = ""
+        draft.saveSoon()
+        draft.flush()
+
+        #expect(service.localRunners.first?.vmResources == VMResources(isNetworkIsolated: true))
+    }
+
+    @Test func outOfRangeOrNonNumericResourceKeepsTheSavedValue() {
+        let (draft, service) = makeVMDraft(resources: VMResources(cpuCount: 4, memoryGB: 8, diskGB: 100))
+
+        draft.vmCPU = "99"
+        draft.vmMemory = "2"
+        draft.vmDisk = "abc"
+        draft.saveSoon()
+        draft.flush()
+
+        #expect(service.localRunners.first?.vmResources == VMResources(cpuCount: 4, memoryGB: 8, diskGB: 100))
+        #expect(draft.resourceIssue(for: .cpu) != nil)
+        #expect(draft.resourceIssue(for: .memory) != nil)
+        #expect(draft.resourceIssue(for: .disk) != nil)
+    }
+
+    @Test func validOrBlankResourcesHaveNoIssue() {
+        let (draft, _) = makeVMDraft()
+
+        draft.vmCPU = "16"
+        draft.vmMemory = ""
+
+        #expect(draft.resourceIssue(for: .cpu) == nil)
+        #expect(draft.resourceIssue(for: .memory) == nil)
+        #expect(draft.resourceIssue(for: .disk) == nil)
+    }
+
+    @Test func typedResourcesDriveTheWarning() {
+        let (draft, _) = makeVMDraft()
+        #expect(draft.overages.isEmpty)
+
+        draft.vmCPU = "12"
+
+        #expect(draft.overages == [.cpu(limit: 16)])
+    }
+
+    @Test func aHostWithFewerCoresThanTheMinimumStillParses() {
+        let (draft, _) = makeVMDraft(capacity: FakeHostCapacity(coreCount: 0, physicalMemoryGB: 2, freeDisk: nil))
+
+        draft.vmCPU = "1"
+        draft.vmMemory = "4"
+
+        #expect(draft.resourceIssue(for: .cpu) == nil)
+        #expect(draft.resourceIssue(for: .memory) == nil)
+    }
 }

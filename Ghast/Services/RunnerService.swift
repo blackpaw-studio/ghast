@@ -451,6 +451,12 @@ class RunnerService {
         }
     }
     
+    /// Sets the size and network settings of the VMs a VM runner boots next.
+    func updateVMResources(id: String, resources: VMResources) {
+        guard case .tart? = runner(id: id)?.backend else { return }
+        updateRunner(id: id) { $0.vmResources = resources }
+    }
+
     /// Hides the "labels no longer apply" note for good.
     func dismissOnDemandNote(id: String) {
         updateRunner(id: id) { $0.showsOnDemandNote = false }
