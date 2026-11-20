@@ -294,6 +294,8 @@ final class TartBackend: RunnerBackend {
         try await cli.clone(image, vm.clone)
         vm.isCloned = true
         try checkStop(entry)
+        try await applyResources(runner.vmResources, to: vm, cli: cli, runner: runner)
+        try checkStop(entry)
         let jobFolder = try writeJobFiles(for: runner, vm: vm)
         log("Booting VM…", runner: runner, vm: vm)
         vm.vmProcess = try cli.run(
@@ -302,7 +304,7 @@ final class TartBackend: RunnerBackend {
                 TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true),
                 TartShare(name: VMJobFiles.shareName, path: jobFolder, isReadOnly: true),
             ],
-            isNetworkIsolated: false,
+            isNetworkIsolated: runner.vmResources.isNetworkIsolated,
             log: logFile(for: runner),
             linePrefix: vm.logPrefix,
             onExit: { [weak self, weak vm] _ in
@@ -485,6 +487,21 @@ final class TartBackend: RunnerBackend {
 
     private static func jobFolder(for runner: LocalRunner, vm: VMRun) -> URL {
         URL(fileURLWithPath: runner.path).appendingPathComponent(jobFoldersName).appendingPathComponent(vm.id)
+    }
+
+    /// Sizes the fresh clone with the settings that are set. A disk only grows: one no larger
+    /// than the clone's is left out (and logged), and `set` is skipped when nothing remains.
+    private func applyResources(_ resources: VMResources, to vm: VMRun, cli: any TartCLI, runner: LocalRunner) async throws {
+        var sizes = resources
+        if let wanted = resources.diskGB {
+            let current = try await cli.diskSizeGB(of: vm.clone)
+            if wanted <= current {
+                sizes.diskGB = nil
+                log("Disk stays at \(current) GB: the image is already that size or larger", runner: runner, vm: vm)
+            }
+        }
+        guard sizes.hasSizeSettings else { return }
+        try await cli.set(vm.clone, resources: sizes)
     }
 
     private func waitForGuest(_ cli: any TartCLI, vm: VMRun, entry: OnDemandEntry) async throws {

@@ -94,12 +94,14 @@ final class TartHarness {
         image: String = TartHarness.image,
         labels: [String] = ["self-hosted"],
         group: String? = nil,
-        queueRole: QueueRole = .primary
+        queueRole: QueueRole = .primary,
+        resources: VMResources = .empty
     ) -> LocalRunner {
         var runner = LocalRunner(name: "vm-1", scope: scope, path: makeTemporaryDirectory().path, labels: labels)
         runner.backend = .tart(image: image)
         runner.runnerGroup = group
         runner.queueRole = queueRole
+        runner.vmResources = resources
         service.addLocalRunner(runner)
         return runner
     }

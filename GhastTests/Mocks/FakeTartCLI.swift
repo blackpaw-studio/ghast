@@ -36,6 +36,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var probeGate: HoldGate?
     /// While set, `stop` waits here (cancellable) after recording the call.
     var stopGate: HoldGate?
+    /// While set, `run` ends the VM process at once with this status, as a failed softnet does.
+    var runExitCode: Int32?
     /// `exec pkill` ends the running job, as SIGTERM does to a real listener.
     var pkillEndsJob = true
 
@@ -115,6 +117,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
             vmExits[vm] = onExit
             setRunning(vm, true)
         }
+        if let runExitCode { onExit(runExitCode) }
         return Handle(label: "vm \(vm)", owner: self)
     }
 
