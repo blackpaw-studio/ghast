@@ -51,7 +51,7 @@ to the current size, leave the disk out of `tart set` and log one line
 
 **Disk expansion fails** (non-zero exit, or an image with a recovery
 partition): log one line (`Couldn't expand the disk inside the VM; the job
-runs with N GB free`) and continue the job. Never fail the job for this.
+runs on the image's N GB disk`) and continue the job. Never fail the job for this.
 
 **Network isolation fails closed.** If `--net-softnet` can't start (for
 example, softnet isn't set up), the boot fails with Tart's error, shown in the
