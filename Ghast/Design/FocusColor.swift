@@ -12,4 +12,6 @@ enum FocusColor {
     static let tertiary = Color(nsColor: .tertiaryLabelColor)
     /// `--group`: grouped form boxes.
     static let group = Color(nsColor: .quaternarySystemFill)
+    /// Advisory warnings that never block (oversubscribed VM resources).
+    static let warning = Color(nsColor: .systemOrange)
 }

@@ -16,13 +16,13 @@ struct RunnerConfigurationForm: View {
     @State private var selectedVariable: EnvironmentVariableDraft.ID?
     @FocusState private var focusedVariable: EnvironmentVariableDraft.ID?
 
-    init(item: RunnerItem, runner: LocalRunner, isRunning: Bool, runnerService: RunnerService, actions: RunnerActions, sleeper: @escaping Sleeper) {
+    init(item: RunnerItem, runner: LocalRunner, isRunning: Bool, runnerService: RunnerService, actions: RunnerActions, sleeper: @escaping Sleeper, hostCapacity: any HostCapacity) {
         self.item = item
         self.runner = runner
         self.isRunning = isRunning
         self.runnerService = runnerService
         self.actions = actions
-        _draft = State(initialValue: RunnerConfigurationDraft(runnerService: runnerService, sleeper: sleeper))
+        _draft = State(initialValue: RunnerConfigurationDraft(runnerService: runnerService, sleeper: sleeper, hostCapacity: hostCapacity))
     }
 
     var body: some View {
@@ -139,8 +139,87 @@ struct RunnerConfigurationForm: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, FocusMetrics.formRowInset)
                 .padding(.top, FocusMetrics.formHelpTop)
+            resourcesSection
+                .padding(.top, FocusMetrics.formSectionGap)
         }
     }
+
+    // MARK: Resources
+
+    /// CPU, memory and disk for each new VM (blank is the image's value) and network isolation.
+    private var resourcesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FocusFormSection(caption: "Resources") {
+                resourceField("CPU cores", field: .cpu, text: $draft.vmCPU)
+                FocusFormDivider()
+                resourceField("Memory (GB)", field: .memory, text: $draft.vmMemory)
+                FocusFormDivider()
+                resourceField("Disk (GB)", field: .disk, text: $draft.vmDisk)
+                FocusFormDivider()
+                FocusFormRow(label: "Isolate network", height: FocusMetrics.formToggleRowHeight) {
+                    Toggle("Isolate network", isOn: $draft.vmIsolated)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                        .onChange(of: draft.vmIsolated) {
+                            draft.saveSoon()
+                            draft.flush()
+                        }
+                }
+            }
+            ForEach(ResourceField.allCases, id: \.self) { field in
+                if let issue = draft.resourceIssue(for: field) {
+                    Text(issue)
+                        .font(FocusType.subheadline)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, FocusMetrics.formRowInset)
+                        .padding(.top, FocusMetrics.formHelpTop)
+                }
+            }
+            if !draft.overages.isEmpty { oversubscriptionWarning }
+            Text(Self.resourcesHelp)
+                .font(FocusType.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+                .padding(.top, FocusMetrics.formHelpTop)
+        }
+    }
+
+    private typealias ResourceField = RunnerConfigurationDraft.ResourceField
+
+    private func resourceField(_ label: String, field: ResourceField, text: Binding<String>) -> some View {
+        let hasIssue = draft.resourceIssue(for: field) != nil
+        return vmField(label, prompt: "Image default", text: text)
+            .overlay(alignment: .trailing) {
+                if hasIssue {
+                    RoundedRectangle(cornerRadius: FocusMetrics.fieldRadius)
+                        .stroke(Color.red, lineWidth: 1)
+                        .padding(.horizontal, FocusMetrics.formRowInset - FocusMetrics.invalidFieldOutset)
+                        .padding(.vertical, FocusMetrics.invalidFieldOutset)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private var oversubscriptionWarning: some View {
+        VStack(alignment: .leading, spacing: FocusMetrics.formHelpTop) {
+            ForEach(draft.overages, id: \.message) { overage in
+                Label {
+                    Text(overage.message)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+                .font(FocusType.subheadline)
+                .foregroundStyle(FocusColor.warning)
+            }
+        }
+        .padding(.horizontal, FocusMetrics.formRowInset)
+        .padding(.top, FocusMetrics.formHelpTop)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The resources help line: sizes apply to the next VM, and isolation fails closed.
+    static let resourcesHelp = "A disk only grows, never shrinks. Isolating the network blocks this Mac's local network from the VM and keeps the internet; it needs a one-time softnet setup on this Mac (setuid root or a sudoers entry), and without it VMs fail to boot instead of running unisolated."
 
     /// The queue role's help line; the queue role changes apply at once.
     static let queueRoleHelp = "Use Standby on an always-on Mac that should take jobs only when your primary Mac is asleep or off. Set exactly one Mac to Primary."
