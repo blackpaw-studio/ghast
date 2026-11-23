@@ -36,6 +36,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var probeGate: HoldGate?
     /// While set, `stop` waits here (cancellable) after recording the call.
     var stopGate: HoldGate?
+    /// While set, `run` ends the VM process at once with this status, as a failed softnet does.
+    var runExitCode: Int32?
     /// `exec pkill` ends the running job, as SIGTERM does to a real listener.
     var pkillEndsJob = true
 
@@ -81,6 +83,19 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         lock.withLock { table.append(TartVMEntry(name: name, source: "local", isRunning: false)) }
     }
 
+    /// The disk size `diskSizeGB(of:)` reports per VM; others read as 50.
+    var diskSizeByVM: [String: Int] = [:]
+
+    func diskSizeGB(of vm: String) async throws -> Int {
+        log.append("disk \(vm)")
+        return diskSizeByVM[vm] ?? 50
+    }
+
+    func set(_ vm: String, resources: VMResources) async throws {
+        guard let arguments = TartArguments.set(vm, resources: resources) else { return }
+        log.append("set \(vm) \(arguments.dropFirst(2).joined(separator: " "))")
+    }
+
     /// The shares each VM was last booted with.
     func shares(of vm: String) -> [TartShare] { lock.withLock { bootShares[vm] ?? [] } }
     private var bootShares: [String: [TartShare]] = [:]
@@ -92,16 +107,23 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var linePrefixes: [String] { lock.withLock { prefixes } }
     private var prefixes: [String] = []
 
-    func run(_ vm: String, shares: [TartShare], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    /// The network of every `run`, in order.
+    var networks: [TartNetwork] { lock.withLock { recordedNetworks } }
+    var lastNetwork: TartNetwork? { networks.last }
+    private var recordedNetworks: [TartNetwork] = []
+
+    func run(_ vm: String, shares: [TartShare], network: TartNetwork, log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
         lock.withLock {
             prefixes.append(linePrefix)
+            recordedNetworks.append(network)
             bootShares[vm] = shares
         }
-        log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))")
+        log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))\(network == .shared ? "" : " softnet")")
         lock.withLock {
             vmExits[vm] = onExit
             setRunning(vm, true)
         }
+        if let runExitCode { onExit(runExitCode) }
         return Handle(label: "vm \(vm)", owner: self)
     }
 

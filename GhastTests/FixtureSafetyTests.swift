@@ -54,6 +54,23 @@ struct FixtureSafetyTests {
         #expect(fixture.appDependencies.runnerService.localRunners.map(\.name) == FixtureWorld.localRunners.map(\.name))
     }
 
+    @Test("fixture mode never runs a privileged script")
+    func privilegedScriptsNeverRun() async {
+        let fixture = makeFixture()
+        defer { fixture.tearDown() }
+        let helper = fixture.appDependencies.softnetHelper
+        await helper.refresh()
+        let before = helper.status
+
+        await helper.setUp()
+        await helper.remove()
+
+        // The inert runner answers every prompt with Cancel: nothing changes, nothing fails.
+        #expect(helper.status == before)
+        #expect(helper.errorMessage == nil)
+        #expect(!helper.isWorking)
+    }
+
     @Test("stores the token in memory, never the Keychain")
     func tokenStoreIsInMemory() throws {
         let fixture = makeFixture()

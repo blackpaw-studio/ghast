@@ -16,12 +16,33 @@ struct FocusMainSnapshotTests {
         /// A VM runner in each on-demand phase, and its Configuration tab. `vmWaitingForJobs`
         /// is a runner saved before on-demand VMs, so it shows the one-time note.
         case vmBooting, vmPulling, vmConfiguration
+        /// The Configuration tab of a VM runner whose sizes are over what two VMs can have.
+        case vmResourcesWarning
         case vmWaitingForJobs, vmTwoJobs, vmWaitingForSlot
         /// A standby Mac: one that waits behind another Mac's job queue, and one that holds it.
         case vmStandingBy, vmHoldingStandby
+        /// The Configuration tab of an isolating VM runner whose softnet helper isn't installed,
+        /// isn't safe, or is older than the installed softnet.
+        case vmIsolationSetup, vmIsolationUnsafe, vmIsolationOutdated
 
         var isVM: Bool {
-            [.vmBooting, .vmPulling, .vmConfiguration, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby].contains(self)
+            [.vmBooting, .vmPulling, .vmConfiguration, .vmResourcesWarning, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby,
+             .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated].contains(self)
+        }
+
+        /// A VM Configuration tab: it loads its draft (and its image list) in tasks.
+        var isVMConfiguration: Bool {
+            [.vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated].contains(self)
+        }
+
+        /// What the softnet helper says on this screen; ready everywhere a row would be noise.
+        var helperStatus: SoftnetHelperStatus {
+            switch self {
+            case .vmIsolationSetup: .notInstalled
+            case .vmIsolationUnsafe: .unsafe(.unsafeFolder("/usr/local/libexec"))
+            case .vmIsolationOutdated: .outdated(installed: "softnet 0.25.0", available: "softnet 0.26.0")
+            default: .ready(version: "softnet 0.26.0")
+            }
         }
     }
 
@@ -34,10 +55,14 @@ struct FocusMainSnapshotTests {
         defer { fixture.tearDown() }
         await fixture.seedProcessStates()
 
+        let softnetHelper = SoftnetHelperModel.fixture(state.helperStatus)
+        await softnetHelper.refresh()
         let draftLoaded = AsyncStream.makeStream(of: String.self)
         let versionsLoaded = AsyncStream.makeStream(of: TartMacOS.self)
         let view = try content(for: state, fixture: fixture)
             .environment(\.focusContext, fixture.appDependencies.focusContext)
+            .environment(softnetHelper)
+            .environment(\.runnerFlowServices, flowServices(fixture))
             .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
             .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
             .environment(\.colorScheme, isDark ? .dark : .light)
@@ -49,10 +74,10 @@ struct FocusMainSnapshotTests {
         host.view.layoutSubtreeIfNeeded()
         // The Configuration tab loads its saved settings in a task; the other states draw
         // synchronously.
-        if state == .configuration || state == .vmConfiguration {
+        if state == .configuration || state.isVMConfiguration {
             for await _ in draftLoaded.stream { break }
             // A VM runner's image picker loads its Xcode versions in its own task.
-            if state == .vmConfiguration { for await _ in versionsLoaded.stream { break } }
+            if state.isVM { for await _ in versionsLoaded.stream { break } }
             for _ in 0..<20 { await Task.yield() }
             host.view.layoutSubtreeIfNeeded()
         }
@@ -61,6 +86,14 @@ struct FocusMainSnapshotTests {
         withSnapshotTesting(record: record) {
             assertSnapshot(of: host, as: .image, named: "\(state.rawValue)-\(isDark ? "dark" : "light")")
         }
+    }
+
+    /// The fixture's flow services with the offline image list, so the image row renders as it
+    /// did before the form read flow services, and the fixture's fixed host capacity.
+    private func flowServices(_ fixture: FixtureDependencies) -> RunnerFlowServices {
+        var services = fixture.appDependencies.flowServices
+        services.xcodeVersions = FallbackXcodeVersionProvider()
+        return services
     }
 
     // MARK: Building each state from the fixture world
@@ -80,7 +113,8 @@ struct FocusMainSnapshotTests {
             let (runnerName, tab): (String, DetailTab) = switch state {
             case .running: ("dionysus-xcode", .output)
             case .configuration: ("dionysus-xcode", .configuration)
-            case .vmConfiguration: ("dionysus-arm64", .configuration)
+            case .vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated:
+                ("dionysus-arm64", .configuration)
             case .error: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
             }
@@ -140,10 +174,16 @@ struct FocusMainSnapshotTests {
         copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
         copy.showsOnDemandNote = state == .vmWaitingForJobs
         if state == .vmStandingBy || state == .vmHoldingStandby { copy.queueRole = .standby }
-        if state == .vmConfiguration {
+        if state == .vmResourcesWarning {
+            copy.vmResources = VMResources(cpuCount: 12, memoryGB: 48, diskGB: 200)
+        }
+        if state.isVMConfiguration {
             // Scripts and variables ride into each VM, so its Configuration tab shows them.
             copy.environmentVariables = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer", "FASTLANE_SKIP_UPDATE_CHECK": "1"]
             copy.preJobScript = "xcodebuild -runFirstLaunch"
+        }
+        if state == .vmConfiguration || state == .vmIsolationSetup || state == .vmIsolationUnsafe || state == .vmIsolationOutdated {
+            copy.vmResources = VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150, isNetworkIsolated: true)
         }
         return copy
     }

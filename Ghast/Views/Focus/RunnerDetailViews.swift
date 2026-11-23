@@ -12,6 +12,7 @@ struct LocalRunnerDetail: View {
     let clearOutput: () -> Void
     let runnerService: RunnerService
     @Environment(\.focusContext) private var context
+    @Environment(\.runnerFlowServices) private var flowServices
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: FocusMetrics.headerRefreshInterval)) { _ in
@@ -47,7 +48,8 @@ struct LocalRunnerDetail: View {
                     isRunning: actions.isRunning(runner.id),
                     runnerService: runnerService,
                     actions: actions,
-                    sleeper: context.sleeper
+                    sleeper: context.sleeper,
+                    hostCapacity: flowServices?.hostCapacity ?? SystemHostCapacity()
                 )
             }
         }

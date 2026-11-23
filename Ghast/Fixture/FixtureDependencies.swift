@@ -143,6 +143,8 @@ struct FixtureDependencies {
             scriptRunner: FixtureScriptRunner(),
             tartLocator: TartLocator(environment: FixtureTartEnvironment(.installed)),
             xcodeVersions: FixtureXcodeVersions(),
+            hostCapacity: FixtureHostCapacity(),
+            softnetHelper: .fixture(),
             loginItemService: InertLoginItemService(status: .enabled)
         )
         // Settings.png: open at login is on and the last check found nothing new.
@@ -225,3 +227,11 @@ struct FixtureDependencies {
     }
 }
 #endif
+
+/// A 16-core, 64 GB Mac with 300 GB free, so the oversubscription warning renders the same on
+/// every machine.
+struct FixtureHostCapacity: HostCapacity {
+    let coreCount = 16
+    let physicalMemoryGB = 64
+    func freeDiskGB() -> Int? { 300 }
+}

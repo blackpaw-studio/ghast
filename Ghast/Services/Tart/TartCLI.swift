@@ -22,11 +22,16 @@ protocol TartCLI: Sendable {
     /// every other output line is appended to `log` (the percentage lines are not).
     func pull(_ image: String, log: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws
     func clone(_ source: String, _ name: String) async throws
+    /// The VM's disk size in whole GB.
+    func diskSizeGB(of vm: String) async throws -> Int
+    /// Applies the size settings that are set; does nothing when none is.
+    func set(_ vm: String, resources: VMResources) async throws
     /// Boots a VM headless. The process lives as long as the VM; `onExit` fires when it ends.
     /// Its output goes to `log`, each line marked with `linePrefix`.
     func run(
         _ vm: String,
         shares: [TartShare],
+        network: TartNetwork,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
@@ -53,13 +58,21 @@ struct ProcessTartCLI: TartCLI {
     let launcher: any RunnerProcessLauncher
     private let workingDirectory: URL
     private let logAppender: any RunnerLogAppending
+    private let baseEnvironment: [String: String]
+
+    /// The folders an isolated boot searches after the helper's. The inherited `PATH` is never
+    /// used: if the helper vanished after its check, Tart must not find a user-writable softnet
+    /// (Homebrew's) and run it as root.
+    private static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 
     init(
         executable: URL,
         launcher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
         workingDirectory: URL = FileManager.default.temporaryDirectory,
-        logAppender: any RunnerLogAppending = FileRunnerLogAppender()
+        logAppender: any RunnerLogAppending = FileRunnerLogAppender(),
+        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        self.baseEnvironment = baseEnvironment
         self.logAppender = logAppender
         self.executable = executable
         self.launcher = launcher
@@ -97,14 +110,27 @@ struct ProcessTartCLI: TartCLI {
         try await checked(TartArguments.clone(source, name))
     }
 
+    func diskSizeGB(of vm: String) async throws -> Int {
+        try TartJSON.decodeDiskSize(Data(try await checked(TartArguments.get(vm)).output.utf8))
+    }
+
+    func set(_ vm: String, resources: VMResources) async throws {
+        guard let arguments = TartArguments.set(vm, resources: resources) else { return }
+        try await checked(arguments)
+    }
+
     func run(
         _ vm: String,
         shares: [TartShare],
+        network: TartNetwork,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        try launchPrefixed(TartArguments.run(vm, shares: shares), log: log, linePrefix: linePrefix, onExit: onExit)
+        let arguments = TartArguments.run(vm, shares: shares, network: network)
+        return try launchPrefixed(
+            arguments, environment: environment(for: network), log: log, linePrefix: linePrefix, onExit: onExit
+        )
     }
 
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
@@ -125,13 +151,14 @@ struct ProcessTartCLI: TartCLI {
     /// log file, so lines from two VMs sharing one log stay whole and marked.
     private func launchPrefixed(
         _ arguments: [String],
+        environment: [String: String]? = nil,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
         let sink = PrefixedLogSink(file: log, prefix: linePrefix)
         return try launcher.launchStreaming(
-            launchSpec(arguments, log: log),
+            launchSpec(arguments, log: log, environment: environment),
             onOutput: { sink.receive($0) },
             onTermination: { code in
                 sink.finish()
@@ -148,8 +175,21 @@ struct ProcessTartCLI: TartCLI {
         try await checked(TartArguments.delete(vm))
     }
 
-    private func launchSpec(_ arguments: [String], log: URL) -> RunnerLaunchSpec {
-        RunnerLaunchSpec(executable: executable, arguments: arguments, currentDirectory: workingDirectory, appendOutputTo: log)
+    private func launchSpec(_ arguments: [String], log: URL, environment: [String: String]? = nil) -> RunnerLaunchSpec {
+        RunnerLaunchSpec(
+            executable: executable,
+            arguments: arguments,
+            currentDirectory: workingDirectory,
+            appendOutputTo: log,
+            environment: environment
+        )
+    }
+
+    /// Tart finds softnet only through `PATH`, so an isolated boot gets the helper folder and the
+    /// system folders, nothing inherited. A shared boot inherits the environment unchanged (nil).
+    private func environment(for network: TartNetwork) -> [String: String]? {
+        guard case let .softnet(helperDirectory) = network else { return nil }
+        return baseEnvironment.merging(["PATH": helperDirectory + ":" + Self.systemPath]) { _, new in new }
     }
 
     @discardableResult

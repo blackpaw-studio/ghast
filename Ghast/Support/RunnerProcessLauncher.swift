@@ -8,12 +8,21 @@ struct RunnerLaunchSpec: Sendable, Equatable {
     /// When set, stdout and stderr are appended to this file (created if missing) instead of
     /// being discarded.
     let appendOutputTo: URL?
+    /// The child's whole environment; nil inherits this process's.
+    let environment: [String: String]?
 
-    init(executable: URL, arguments: [String], currentDirectory: URL, appendOutputTo: URL? = nil) {
+    init(
+        executable: URL,
+        arguments: [String],
+        currentDirectory: URL,
+        appendOutputTo: URL? = nil,
+        environment: [String: String]? = nil
+    ) {
         self.executable = executable
         self.arguments = arguments
         self.currentDirectory = currentDirectory
         self.appendOutputTo = appendOutputTo
+        self.environment = environment
     }
 }
 
@@ -79,6 +88,7 @@ struct ProcessRunnerLauncher: RunnerProcessLauncher {
         process.executableURL = spec.executable
         process.arguments = spec.arguments
         process.currentDirectoryURL = spec.currentDirectory
+        if let environment = spec.environment { process.environment = environment }
         let pipe = onOutput == nil ? nil : Pipe()
         let output = try pipe == nil
             ? (spec.appendOutputTo.map(FileAppending.openHandle) ?? FileHandle.nullDevice)

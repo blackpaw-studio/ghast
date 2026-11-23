@@ -45,13 +45,16 @@ enum QueueNote: Sendable, Equatable {
     case noQueue
 }
 
-/// What a started on-demand VM runner is doing, by priority: running jobs, then booting,
-/// then waiting for the VM budget, then who holds the job queue.
+/// What a started on-demand VM runner is doing, by priority: running jobs, then a missing
+/// isolation setup (ahead of booting, so a re-check doesn't flicker), then booting, then
+/// waiting for the VM budget, then who holds the job queue.
 enum OnDemandPhase: Sendable, Equatable {
     case waitingForJobs(QueueNote)
     case booting
     case running(Int)
     case waitingForSlot
+    /// Network isolation is on but the softnet helper isn't ready, so no VM boots.
+    case needsIsolationSetup
     /// Another Mac holds the job queue; this one retries.
     case standingBy
     /// A standby gave the queue up so the primary Mac can take it.
@@ -62,6 +65,8 @@ enum OnDemandPhase: Sendable, Equatable {
     init(_ state: OnDemandState) {
         if state.running > 0 {
             self = .running(state.running)
+        } else if state.needsIsolationSetup {
+            self = .needsIsolationSetup
         } else if state.booting > 0 {
             self = .booting
         } else if state.isWaitingForSlot {
@@ -83,6 +88,7 @@ enum OnDemandPhase: Sendable, Equatable {
         case .booting: "Booting for a queued job"
         case let .running(count): count == 1 ? "1 job running" : "\(count) jobs running"
         case .waitingForSlot: "Waiting for a free VM slot"
+        case .needsIsolationSetup: "Network isolation isn't set up"
         case .standingBy: "Standing by"
         case .handingOff: "Handing off the queue…"
         case .connecting: "Connecting…"
@@ -223,6 +229,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "Each job runs in its own VM, deleted when the job ends"
         case .onDemand(.waitingForSlot):
             return "macOS runs at most 2 VMs at once; the job waits on GitHub"
+        case .onDemand(.needsIsolationSetup):
+            return "Open Configuration to set up network isolation · no VM boots until then"
         }
     }
 
@@ -244,7 +252,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .onDemand(phase):
             switch phase {
             case .waitingForJobs, .standingBy: return "\(phase.title) · \(detail)"
-            case .booting, .running, .waitingForSlot, .handingOff, .connecting: return phase.title
+            case .booting, .running, .waitingForSlot, .needsIsolationSetup, .handingOff, .connecting: return phase.title
             }
         }
     }

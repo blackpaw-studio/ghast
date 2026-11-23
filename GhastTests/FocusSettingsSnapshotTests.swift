@@ -23,6 +23,7 @@ struct FocusSettingsSnapshotTests {
         await dependencies.remoteStore.refresh(.launch)
         let authService = pane == .accountNotGranted ? await withoutOrganizationScope() : dependencies.authService
         if pane != .accountNotGranted { await authService.checkExistingAuth() }
+        await dependencies.softnetHelper.refresh()
 
         let view = content(for: pane)
             .frame(width: FocusMetrics.settingsWidth)
@@ -32,6 +33,7 @@ struct FocusSettingsSnapshotTests {
             .environment(dependencies.updateStatus)
             .environment(dependencies.runnerService)
             .environment(dependencies.remoteStore)
+            .environment(dependencies.softnetHelper)
             .environment(authService)
             .environment(\.focusContext, dependencies.focusContext)
             .environment(\.appWindowRouter, dependencies.router)

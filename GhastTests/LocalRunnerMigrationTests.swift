@@ -89,6 +89,24 @@ struct LocalRunnerMigrationTests {
         #expect(try decode(JSONEncoder().encode(runner)).queueRole == .standby)
     }
 
+    @Test("a record without vmResources decodes with the image's values")
+    func legacyVMResourcesAreEmpty() throws {
+        let runner = try decode(legacyJSON(status: "stopped"))
+
+        #expect(runner.vmResources == .empty)
+        #expect(!runner.vmResources.hasSizeSettings)
+    }
+
+    @Test("vm resources round-trip")
+    func vmResourcesRoundTrip() throws {
+        var runner = LocalRunner(name: "n", scope: .organization(login: "acme"), path: "/tmp/x")
+        runner.vmResources = VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150, isNetworkIsolated: true)
+
+        let decoded = try decode(JSONEncoder().encode(runner))
+
+        #expect(decoded.vmResources == VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150, isNetworkIsolated: true))
+    }
+
     @Test("a Tart backend round-trips with its image", arguments: [
         "ghcr.io/cirruslabs/macos-tahoe-base:latest", "my-local-vm",
     ])

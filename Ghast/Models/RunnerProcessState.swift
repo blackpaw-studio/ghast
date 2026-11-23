@@ -45,4 +45,6 @@ struct OnDemandState: Sendable, Equatable {
     var liveVMs: [String] = []
     /// Whether this Mac holds the scale set's job queue (its one message session).
     var queue: JobQueueStatus = .connecting
+    /// A wanted VM wasn't booted because network isolation is on but the helper isn't ready.
+    var needsIsolationSetup = false
 }

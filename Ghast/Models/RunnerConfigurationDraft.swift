@@ -18,16 +18,23 @@ final class RunnerConfigurationDraft {
     /// Which Mac wins the job queue when two Macs run this runner. Applies at once: the
     /// backend reads it live.
     var queueRole = QueueRole.primary
+    /// The VM size settings as typed; blank means the image's value.
+    var vmCPU = ""
+    var vmMemory = ""
+    var vmDisk = ""
+    var vmIsolated = false
     /// Set by a saved edit: it applies the next time the runner starts.
     var needsRestart = false
     private(set) var runnerID: String?
 
     @ObservationIgnored private let runnerService: RunnerService
+    @ObservationIgnored private let hostCapacity: any HostCapacity
     /// One for the draft's lifetime: a pending save always belongs to the runner it captured.
     @ObservationIgnored private let debouncer: SaveDebouncer
 
-    init(runnerService: RunnerService, sleeper: @escaping Sleeper) {
+    init(runnerService: RunnerService, sleeper: @escaping Sleeper, hostCapacity: any HostCapacity = SystemHostCapacity()) {
         self.runnerService = runnerService
+        self.hostCapacity = hostCapacity
         debouncer = SaveDebouncer(sleeper: sleeper)
     }
 
@@ -44,6 +51,10 @@ final class RunnerConfigurationDraft {
             tartGroup = runner.runnerGroup ?? ""
             tartLabels = runner.labels.joined(separator: ", ")
             queueRole = runner.queueRole
+            vmCPU = runner.vmResources.cpuCount.map(String.init) ?? ""
+            vmMemory = runner.vmResources.memoryGB.map(String.init) ?? ""
+            vmDisk = runner.vmResources.diskGB.map(String.init) ?? ""
+            vmIsolated = runner.vmResources.isNetworkIsolated
         }
         needsRestart = false
     }
@@ -59,6 +70,91 @@ final class RunnerConfigurationDraft {
         return labels.isEmpty ? nil : labels
     }
 
+    // MARK: - VM resources
+
+    enum ResourceField: CaseIterable, Sendable { case cpu, memory, disk }
+
+    enum ResourceInput: Equatable, Sendable {
+        case blank
+        case value(Int)
+        case invalid
+    }
+
+    /// A size typed as whole numbers: blank is the image's value, anything outside `range`
+    /// or not a number is invalid.
+    static func parseResource(_ text: String, range: ClosedRange<Int>) -> ResourceInput {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .blank }
+        guard let number = Int(trimmed), range.contains(number) else { return .invalid }
+        return .value(number)
+    }
+
+    private static func range(_ lower: Int, upTo upper: Int) -> ClosedRange<Int> {
+        lower ... max(lower, upper)
+    }
+
+    private func range(for field: ResourceField) -> ClosedRange<Int> {
+        switch field {
+        case .cpu: Self.range(1, upTo: hostCapacity.coreCount)
+        case .memory: Self.range(VMResources.minMemoryGB, upTo: hostCapacity.physicalMemoryGB)
+        case .disk: VMResources.diskRange
+        }
+    }
+
+    private func text(for field: ResourceField) -> String {
+        switch field {
+        case .cpu: vmCPU
+        case .memory: vmMemory
+        case .disk: vmDisk
+        }
+    }
+
+    private func input(for field: ResourceField) -> ResourceInput {
+        Self.parseResource(text(for: field), range: range(for: field))
+    }
+
+    /// Why the typed value isn't saved; nil when it is blank or valid.
+    func resourceIssue(for field: ResourceField) -> String? {
+        guard input(for: field) == .invalid else { return nil }
+        let range = range(for: field)
+        let unit = switch field {
+        case .cpu: "cores"
+        case .memory, .disk: "GB"
+        }
+        return "Enter \(range.lowerBound) to \(range.upperBound) \(unit), or leave blank for the image's value."
+    }
+
+    /// The valid typed sizes (blank and invalid read as unset), for the warning.
+    private var typedSizes: VMResources {
+        func value(_ field: ResourceField) -> Int? {
+            if case let .value(number) = input(for: field) { return number }
+            return nil
+        }
+        return VMResources(cpuCount: value(.cpu), memoryGB: value(.memory), diskGB: value(.disk))
+    }
+
+    /// Typed sizes two VMs couldn't both have on this Mac.
+    var overages: [VMResourcesWarning.Overage] {
+        VMResourcesWarning.overages(typedSizes, capacity: hostCapacity)
+    }
+
+    /// Blank clears a size, a valid value sets it, an invalid one keeps what was saved.
+    private static func resolve(_ typed: [ResourceField: ResourceInput], isolated: Bool, saved: VMResources) -> VMResources {
+        func resolved(_ field: ResourceField, _ savedValue: Int?) -> Int? {
+            switch typed[field] ?? .blank {
+            case .blank: nil
+            case let .value(number): number
+            case .invalid: savedValue
+            }
+        }
+        return VMResources(
+            cpuCount: resolved(.cpu, saved.cpuCount),
+            memoryGB: resolved(.memory, saved.memoryGB),
+            diskGB: resolved(.disk, saved.diskGB),
+            isNetworkIsolated: isolated
+        )
+    }
+
     /// Saves the current edits once typing has been quiet for the debounce delay.
     func saveSoon() {
         guard let id = runnerID else { return }
@@ -66,6 +162,8 @@ final class RunnerConfigurationDraft {
         let pre = preScript.savedScript
         let post = postScript.savedScript
         let tart = (image: tartImage.trimmingCharacters(in: .whitespacesAndNewlines), group: tartGroup, labels: Self.parseLabels(tartLabels), role: queueRole)
+        let typedResources = Dictionary(uniqueKeysWithValues: ResourceField.allCases.map { ($0, input(for: $0)) })
+        let isolated = vmIsolated
         debouncer.schedule { [weak self, runnerService] in
             guard let current = runnerService.localRunners.first(where: { $0.id == id }) else { return }
             if case let .tart(savedImage) = current.backend {
@@ -77,6 +175,10 @@ final class RunnerConfigurationDraft {
                 let group = tart.group.trimmingCharacters(in: .whitespacesAndNewlines)
                 if image != savedImage || labels != current.labels || (group.isEmpty ? nil : group) != current.runnerGroup {
                     runnerService.updateTartSettings(id: id, labels: labels, runnerGroup: group, image: image)
+                }
+                let resources = Self.resolve(typedResources, isolated: isolated, saved: current.vmResources)
+                if current.vmResources != resources {
+                    runnerService.updateVMResources(id: id, resources: resources)
                 }
                 if current.queueRole != tart.role {
                     runnerService.updateRunner(id: id) { $0.queueRole = tart.role }
