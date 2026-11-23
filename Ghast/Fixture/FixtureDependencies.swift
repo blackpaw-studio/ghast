@@ -144,6 +144,7 @@ struct FixtureDependencies {
             tartLocator: TartLocator(environment: FixtureTartEnvironment(.installed)),
             xcodeVersions: FixtureXcodeVersions(),
             hostCapacity: FixtureHostCapacity(),
+            softnetHelper: .fixture(),
             loginItemService: InertLoginItemService(status: .enabled)
         )
         // Settings.png: open at login is on and the last check found nothing new.

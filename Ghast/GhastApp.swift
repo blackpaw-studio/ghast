@@ -54,6 +54,8 @@ struct AppDependencies {
     let openAtLogin: OpenAtLoginModel
     /// Settings › Updates.
     let updateStatus: UpdateStatusModel
+    /// The network isolation helper: its status row and the setup, update and removal actions.
+    let softnetHelper: SoftnetHelperModel
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -80,6 +82,7 @@ struct AppDependencies {
         xcodeVersions: any TartXcodeVersionProviding = GHCRXcodeVersionProvider(),
         hostCapacity: any HostCapacity = SystemHostCapacity(),
         demandSources: (any JobDemandSourceMaking)? = nil,
+        softnetHelper: SoftnetHelperModel? = nil,
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
         router: AppWindowRouter = AppWindowRouter(),
         loginItemService: any LoginItemService = InertLoginItemService(),
@@ -126,6 +129,9 @@ struct AppDependencies {
         )
         openAtLogin = OpenAtLoginModel(service: loginItemService)
         updateStatus = UpdateStatusModel(updater: updater)
+        self.softnetHelper = softnetHelper ?? SoftnetHelperModel(
+            checker: NoSoftnetHelper(), runner: InertPrivilegedRunner(), installScript: nil
+        )
     }
 
 
@@ -215,11 +221,12 @@ struct AppDependencies {
             sleeper: sleeper,
             ownerName: SystemHostInfo().computerName
         )
+        let softnetChecker = SoftnetHelperChecker()
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
             demandSources: demandSources,
-            softnet: SoftnetHelperChecker(),
+            softnet: softnetChecker,
             leases: TartLeaseStore(defaults: .standard),
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
@@ -234,6 +241,12 @@ struct AppDependencies {
             processLauncher: launcher,
             settings: AppSettings(defaults: .standard),
             demandSources: demandSources,
+            softnetHelper: SoftnetHelperModel(
+                checker: softnetChecker,
+                runner: AppleScriptPrivilegedRunner(),
+                installScript: try? SoftnetHelperScripts.installScript(),
+                onStatusChange: { [weak tartBackend] in tartBackend?.softnetStatusChanged() }
+            ),
             notificationCenter: SystemNotificationCenter(),
             loginItemService: MainAppLoginItemService(),
             updater: updater
@@ -264,6 +277,7 @@ struct GhastApp: App {
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.runnerFlowServices, dependencies.flowServices)
                     .environment(dependencies.flowCoordinator)
+                    .environment(dependencies.softnetHelper)
                     .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
                     .environment(\.appWindowRouter, dependencies.router)
                     .installsWindowRouter(dependencies.router)
@@ -296,6 +310,7 @@ struct GhastApp: App {
                     .environment(dependencies.runnerService)
                     .environment(dependencies.remoteStore)
                     .environment(dependencies.authService)
+                    .environment(dependencies.softnetHelper)
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.appWindowRouter, dependencies.router)
                     .environment(\.settingsTabPreset, appDelegate.settingsTabPreset)

@@ -14,6 +14,14 @@ protocol PrivilegedScriptRunning: Sendable {
     func run(script: String, arguments: [String]) async throws(PrivilegedScriptError)
 }
 
+/// For a build with no prompt to show (tests, the design fixture): every call is a cancelled
+/// prompt, so nothing runs and nothing changes.
+struct InertPrivilegedRunner: PrivilegedScriptRunning {
+    func run(script: String, arguments: [String]) async throws(PrivilegedScriptError) {
+        throw .cancelled
+    }
+}
+
 /// `do shell script … with administrator privileges` through `NSAppleScript`, which shows the
 /// system password prompt. The AppleScript source is one constant handler: the script text and
 /// each argument travel as handler parameters and are quoted by AppleScript, never spliced
