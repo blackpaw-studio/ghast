@@ -31,7 +31,7 @@ protocol TartCLI: Sendable {
     func run(
         _ vm: String,
         shares: [TartShare],
-        isNetworkIsolated: Bool,
+        network: TartNetwork,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
@@ -58,13 +58,19 @@ struct ProcessTartCLI: TartCLI {
     let launcher: any RunnerProcessLauncher
     private let workingDirectory: URL
     private let logAppender: any RunnerLogAppending
+    private let baseEnvironment: [String: String]
+
+    /// What an isolated boot searches for tools when the inherited environment has no `PATH`.
+    private static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 
     init(
         executable: URL,
         launcher: any RunnerProcessLauncher = ProcessRunnerLauncher(),
         workingDirectory: URL = FileManager.default.temporaryDirectory,
-        logAppender: any RunnerLogAppending = FileRunnerLogAppender()
+        logAppender: any RunnerLogAppending = FileRunnerLogAppender(),
+        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        self.baseEnvironment = baseEnvironment
         self.logAppender = logAppender
         self.executable = executable
         self.launcher = launcher
@@ -114,13 +120,15 @@ struct ProcessTartCLI: TartCLI {
     func run(
         _ vm: String,
         shares: [TartShare],
-        isNetworkIsolated: Bool,
+        network: TartNetwork,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        let arguments = TartArguments.run(vm, shares: shares, isNetworkIsolated: isNetworkIsolated)
-        return try launchPrefixed(arguments, log: log, linePrefix: linePrefix, onExit: onExit)
+        let arguments = TartArguments.run(vm, shares: shares, network: network)
+        return try launchPrefixed(
+            arguments, environment: environment(for: network), log: log, linePrefix: linePrefix, onExit: onExit
+        )
     }
 
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
@@ -141,13 +149,14 @@ struct ProcessTartCLI: TartCLI {
     /// log file, so lines from two VMs sharing one log stay whole and marked.
     private func launchPrefixed(
         _ arguments: [String],
+        environment: [String: String]? = nil,
         log: URL,
         linePrefix: String,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
         let sink = PrefixedLogSink(file: log, prefix: linePrefix)
         return try launcher.launchStreaming(
-            launchSpec(arguments, log: log),
+            launchSpec(arguments, log: log, environment: environment),
             onOutput: { sink.receive($0) },
             onTermination: { code in
                 sink.finish()
@@ -164,8 +173,22 @@ struct ProcessTartCLI: TartCLI {
         try await checked(TartArguments.delete(vm))
     }
 
-    private func launchSpec(_ arguments: [String], log: URL) -> RunnerLaunchSpec {
-        RunnerLaunchSpec(executable: executable, arguments: arguments, currentDirectory: workingDirectory, appendOutputTo: log)
+    private func launchSpec(_ arguments: [String], log: URL, environment: [String: String]? = nil) -> RunnerLaunchSpec {
+        RunnerLaunchSpec(
+            executable: executable,
+            arguments: arguments,
+            currentDirectory: workingDirectory,
+            appendOutputTo: log,
+            environment: environment
+        )
+    }
+
+    /// Tart finds softnet only through `PATH`, so an isolated boot puts the helper folder first.
+    /// A shared boot inherits the environment unchanged (nil).
+    private func environment(for network: TartNetwork) -> [String: String]? {
+        guard case let .softnet(helperDirectory) = network else { return nil }
+        let inherited = baseEnvironment["PATH"] ?? Self.systemPath
+        return baseEnvironment.merging(["PATH": helperDirectory + ":" + inherited]) { _, new in new }
     }
 
     @discardableResult

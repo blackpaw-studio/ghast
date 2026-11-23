@@ -107,12 +107,18 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var linePrefixes: [String] { lock.withLock { prefixes } }
     private var prefixes: [String] = []
 
-    func run(_ vm: String, shares: [TartShare], isNetworkIsolated: Bool, log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    /// The network of every `run`, in order.
+    var networks: [TartNetwork] { lock.withLock { recordedNetworks } }
+    var lastNetwork: TartNetwork? { networks.last }
+    private var recordedNetworks: [TartNetwork] = []
+
+    func run(_ vm: String, shares: [TartShare], network: TartNetwork, log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
         lock.withLock {
             prefixes.append(linePrefix)
+            recordedNetworks.append(network)
             bootShares[vm] = shares
         }
-        log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))\(isNetworkIsolated ? " softnet" : "")")
+        log.append("run \(vm) \(shares.map { "\($0.name)\($0.isReadOnly ? ":ro" : "")" }.joined(separator: ","))\(network == .shared ? "" : " softnet")")
         lock.withLock {
             vmExits[vm] = onExit
             setRunning(vm, true)

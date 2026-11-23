@@ -62,7 +62,7 @@ struct TartCLIParsingTests {
             TartShare(name: "out", path: URL(fileURLWithPath: "/tmp/out"), isReadOnly: false),
         ]
 
-        #expect(TartArguments.run("vm1", shares: shares, isNetworkIsolated: false) == [
+        #expect(TartArguments.run("vm1", shares: shares, network: .shared) == [
             "run", "--no-graphics",
             "--dir=ghast:/Users/x/.ghast/tart-cache:ro",
             "--dir=out:/tmp/out",
@@ -74,10 +74,10 @@ struct TartCLIParsingTests {
     func runSoftnetArguments() {
         let share = TartShare(name: "ghast", path: URL(fileURLWithPath: "/x"), isReadOnly: true)
 
-        #expect(TartArguments.run("vm1", shares: [share], isNetworkIsolated: false) == [
+        #expect(TartArguments.run("vm1", shares: [share], network: .shared) == [
             "run", "--no-graphics", "--dir=ghast:/x:ro", "vm1",
         ])
-        #expect(TartArguments.run("vm1", shares: [share], isNetworkIsolated: true) == [
+        #expect(TartArguments.run("vm1", shares: [share], network: .softnet(helperDirectory: "/usr/local/libexec/ghast")) == [
             "run", "--no-graphics", "--net-softnet", "--dir=ghast:/x:ro", "vm1",
         ])
     }

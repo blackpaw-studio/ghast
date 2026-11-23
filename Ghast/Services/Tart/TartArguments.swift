@@ -8,6 +8,13 @@ struct TartShare: Equatable, Sendable {
     let isReadOnly: Bool
 }
 
+/// How a VM is networked. An isolated boot can't be built without the folder that holds the
+/// softnet helper, because Tart only finds softnet through `PATH`.
+enum TartNetwork: Equatable, Sendable {
+    case shared
+    case softnet(helperDirectory: String)
+}
+
 /// The argv of every `tart` call Ghast makes (without the executable itself).
 enum TartArguments {
     static let list = ["list", "--format", "json"]
@@ -19,10 +26,14 @@ enum TartArguments {
     static func delete(_ vm: String) -> [String] { ["delete", vm] }
 
     /// Headless boot; the process lives as long as the VM does. `--net-softnet` isolates the
-    /// guest from the local network; Tart fails the boot when softnet isn't set up.
-    static func run(_ vm: String, shares: [TartShare], isNetworkIsolated: Bool) -> [String] {
+    /// guest from the local network.
+    static func run(_ vm: String, shares: [TartShare], network: TartNetwork) -> [String] {
         let dirs = shares.map { "--dir=\($0.name):\($0.path.path)\($0.isReadOnly ? ":ro" : "")" }
-        return ["run", "--no-graphics"] + (isNetworkIsolated ? ["--net-softnet"] : []) + dirs + [vm]
+        let isolation: [String] = switch network {
+        case .shared: []
+        case .softnet: ["--net-softnet"]
+        }
+        return ["run", "--no-graphics"] + isolation + dirs + [vm]
     }
 
     private static let megabytesPerGB = 1024

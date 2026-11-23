@@ -304,7 +304,7 @@ final class TartBackend: RunnerBackend {
                 TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true),
                 TartShare(name: VMJobFiles.shareName, path: jobFolder, isReadOnly: true),
             ],
-            isNetworkIsolated: runner.vmResources.isNetworkIsolated,
+            network: runner.vmResources.isNetworkIsolated ? .softnet(helperDirectory: SoftnetHelperScripts.helperDirectory) : .shared,
             log: logFile(for: runner),
             linePrefix: vm.logPrefix,
             onExit: { [weak self, weak vm] _ in

@@ -98,7 +98,7 @@ struct ProcessTartCLITests {
         _ = try ProcessTartCLI(executable: tart, launcher: launcher).run(
             "vm1",
             shares: [TartShare(name: "ghast", path: URL(fileURLWithPath: "/cache"), isReadOnly: true)],
-            isNetworkIsolated: false,
+            network: .shared,
             log: file,
             linePrefix: "[vm a1b2c3] ",
             onExit: { exits.record($0) }
@@ -109,6 +109,43 @@ struct ProcessTartCLITests {
         #expect(exits.codes == [9])
         // The partial last line is written before the exit is reported.
         #expect(try String(contentsOf: file, encoding: .utf8) == "[vm a1b2c3] booted\n[vm a1b2c3] last\n")
+    }
+
+    private func runSpec(network: TartNetwork, base: [String: String]) throws -> RunnerLaunchSpec {
+        let launcher = RecordingLauncher()
+        _ = try ProcessTartCLI(executable: tart, launcher: launcher, baseEnvironment: base).run(
+            "vm1",
+            shares: [],
+            network: network,
+            log: makeTemporaryDirectory().appendingPathComponent("runner.log"),
+            linePrefix: "",
+            onExit: { _ in }
+        )
+        return try #require(launcher.specs.first)
+    }
+
+    @Test("an isolated run puts the helper folder first on PATH")
+    func isolatedRunPath() throws {
+        let spec = try runSpec(
+            network: .softnet(helperDirectory: "/usr/local/libexec/ghast"),
+            base: ["PATH": "/usr/bin:/bin", "HOME": "/Users/x"]
+        )
+        #expect(spec.environment?["PATH"] == "/usr/local/libexec/ghast:/usr/bin:/bin")
+        #expect(spec.environment?["HOME"] == "/Users/x")
+        #expect(spec.arguments.contains("--net-softnet"))
+    }
+
+    @Test("an isolated run with no inherited PATH still gets a system PATH after the helper folder")
+    func isolatedRunWithoutPath() throws {
+        let spec = try runSpec(network: .softnet(helperDirectory: "/h"), base: [:])
+        #expect(spec.environment?["PATH"] == "/h:/usr/bin:/bin:/usr/sbin:/sbin")
+    }
+
+    @Test("a shared run inherits the environment unchanged")
+    func sharedRunEnvironment() throws {
+        let spec = try runSpec(network: .shared, base: ["PATH": "/usr/bin"])
+        #expect(spec.environment == nil)
+        #expect(!spec.arguments.contains("--net-softnet"))
     }
 
     @Test("execStreaming runs the guest command and logs its output, each line marked with the VM")
