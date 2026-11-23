@@ -33,18 +33,36 @@ if [ ! -f "$real" ] || [ ! -x "$real" ]; then
   exit 66
 fi
 
+# is_safe_folder PATH: a real directory (not a symlink), owned by root, with no group/other write bit.
+is_safe_folder() {
+  p="$1"
+  [ ! -L "$p" ] && [ -d "$p" ] || return 1
+  [ "$(/usr/bin/stat -f '%u' "$p")" = "0" ] || return 1
+  mode=$(/usr/bin/stat -f '%Lp' "$p")
+  [ $((0$mode & 022)) -eq 0 ]
+}
+
+# Check parents that already exist before touching anything. A missing parent is fine:
+# mkdir -p creates it as root under umask 022.
+for p in /usr/local/libexec /usr/local /usr /; do
+  if [ -e "$p" ] || [ -L "$p" ]; then
+    is_safe_folder "$p" || { echo "unsafe folder: $p" >&2; exit 73; }
+  fi
+done
+
+# A pre-planted symlink or file at the target would make chown/chmod hit something else.
+if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
+  echo "unsafe folder: $dir" >&2
+  exit 73
+fi
+
 /bin/mkdir -p "$dir"
-/usr/sbin/chown root:wheel "$dir"
+/usr/sbin/chown -h root:wheel "$dir"
 /bin/chmod 0755 "$dir"
 
+# Final check over every folder on the path.
 for p in /usr/local/libexec/ghast /usr/local/libexec /usr/local /usr /; do
-  mode=$(/usr/bin/stat -f '%Lp' "$p")
-  if [ -L "$p" ] || [ ! -d "$p" ] \
-    || [ "$(/usr/bin/stat -f '%u' "$p")" != "0" ] \
-    || [ $((0$mode & 022)) -ne 0 ]; then
-    echo "unsafe folder: $p" >&2
-    exit 73
-  fi
+  is_safe_folder "$p" || { echo "unsafe folder: $p" >&2; exit 73; }
 done
 
 tmp=$(/usr/bin/mktemp "$dir/.softnet.XXXXXX")
