@@ -73,3 +73,25 @@ final class FakeSoftnetChecker: SoftnetHelperChecking, @unchecked Sendable {
 
     func locateSource() -> URL? { source }
 }
+
+/// Records every privileged call and answers with a scripted result; `onRun` lets a test
+/// change what the checker says afterwards, as a real install would.
+final class FakePrivilegedRunner: PrivilegedScriptRunning, @unchecked Sendable {
+    struct Call: Equatable {
+        let script: String
+        let arguments: [String]
+    }
+
+    private let lock = NSLock()
+    private var recorded: [Call] = []
+    var result: Result<Void, PrivilegedScriptError> = .success(())
+    var onRun: (@Sendable () -> Void)?
+
+    var calls: [Call] { lock.withLock { recorded } }
+
+    func run(script: String, arguments: [String]) async throws(PrivilegedScriptError) {
+        lock.withLock { recorded.append(Call(script: script, arguments: arguments)) }
+        onRun?()
+        try result.get()
+    }
+}
