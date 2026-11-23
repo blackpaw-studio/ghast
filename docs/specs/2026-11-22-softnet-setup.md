@@ -40,9 +40,12 @@ inspector and process runner):
   parent folder is writable by someone other than root. Ghast treats this as not
   set up and names the reason.
 - `outdated(installed, available)`: the helper's `softnet --version` differs
-  from the softnet on the inherited `PATH`.
+  from the source softnet. The source is found the way Ghast finds `tart`:
+  `/opt/homebrew/bin`, `/usr/local/bin`, then the inherited `PATH`, always
+  skipping the helper folder. A GUI app's inherited `PATH` never includes
+  Homebrew.
 - `ready(version)`.
-- `softnetMissing`: there is no softnet on the inherited `PATH` and no helper.
+- `softnetMissing`: there is no source softnet and no helper.
   Show "Install Tart with Homebrew" (softnet comes with the `tart` formula).
 
 The check runs when the Configuration tab opens, after setup, and right before
@@ -51,8 +54,7 @@ every isolated boot.
 **Setup and update** (one action, `Set Up…` or `Update…`). Ghast runs one
 privileged shell script through `NSAppleScript`
 `do shell script … with administrator privileges`, which shows the system
-password prompt. The script copies the softnet resolved from the inherited
-`PATH` (following symlinks) into a temp file inside the target folder, sets
+password prompt. The script copies the source softnet (following symlinks) into a temp file inside the target folder, sets
 owner and mode, and renames it into place atomically. It also creates the
 folder (`root:wheel`, `0755`) if it's missing. The paths are passed as quoted
 arguments, never put into the script text. After the script, the readiness
