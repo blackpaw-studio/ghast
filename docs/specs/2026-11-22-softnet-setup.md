@@ -1,6 +1,6 @@
 # Network isolation setup (softnet helper)
 
-Date: 2026-11-22 · Status: draft · Extends `2026-11-19-tart-vm-resources.md`
+Date: 2026-11-22 · Status: implemented · Extends `2026-11-19-tart-vm-resources.md`
 
 ## Problem
 
