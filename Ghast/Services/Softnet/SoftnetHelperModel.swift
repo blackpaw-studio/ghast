@@ -15,18 +15,19 @@ final class SoftnetHelperModel {
     private let checker: any SoftnetHelperChecking
     private let runner: any PrivilegedScriptRunning
     private let installScript: String?
-    private let removeScript: String
+    private let removeScript: String?
     private let onStatusChange: @MainActor () -> Void
 
     /// - Parameters:
     ///   - installScript: The bundled install script's text; nil when the bundle lacks it.
+    ///   - removeScript: The bundled removal script's text; nil when the bundle lacks it.
     ///   - onStatusChange: Called whenever a check finds a different status, so a runner
     ///     blocked on isolation can try again.
     init(
         checker: any SoftnetHelperChecking,
         runner: any PrivilegedScriptRunning,
         installScript: String?,
-        removeScript: String = SoftnetHelperScripts.removeScript,
+        removeScript: String?,
         onStatusChange: @escaping @MainActor () -> Void = {}
     ) {
         self.checker = checker
@@ -35,6 +36,8 @@ final class SoftnetHelperModel {
         self.removeScript = removeScript
         self.onStatusChange = onStatusChange
     }
+
+    private static let missingScriptMessage = "A helper script is missing from this copy of Ghast."
 
     func refresh() async {
         apply(await checker.status())
@@ -48,7 +51,7 @@ final class SoftnetHelperModel {
                 return nil
             }
             guard let installScript else {
-                errorMessage = "The setup script is missing from this copy of Ghast."
+                errorMessage = Self.missingScriptMessage
                 return nil
             }
             return (installScript, [source.path, SoftnetHelperScripts.helperDirectory])
@@ -56,7 +59,13 @@ final class SoftnetHelperModel {
     }
 
     func remove() async {
-        await perform { [removeScript] in (removeScript, []) }
+        await perform { [self] in
+            guard let removeScript else {
+                errorMessage = Self.missingScriptMessage
+                return nil
+            }
+            return (removeScript, [])
+        }
     }
 
     /// Runs what `plan` returns (nil means there is nothing to run), then checks again.

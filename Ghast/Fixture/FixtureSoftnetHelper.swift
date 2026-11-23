@@ -16,7 +16,8 @@ extension SoftnetHelperModel {
         SoftnetHelperModel(
             checker: FixtureSoftnetChecker(fixedStatus: status),
             runner: InertPrivilegedRunner(),
-            installScript: "fixture: never run"
+            installScript: "fixture: never run",
+            removeScript: "fixture: never run"
         )
     }
 }

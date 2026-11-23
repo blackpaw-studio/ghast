@@ -130,7 +130,7 @@ struct AppDependencies {
         openAtLogin = OpenAtLoginModel(service: loginItemService)
         updateStatus = UpdateStatusModel(updater: updater)
         self.softnetHelper = softnetHelper ?? SoftnetHelperModel(
-            checker: NoSoftnetHelper(), runner: InertPrivilegedRunner(), installScript: nil
+            checker: NoSoftnetHelper(), runner: InertPrivilegedRunner(), installScript: nil, removeScript: nil
         )
     }
 
@@ -245,6 +245,7 @@ struct AppDependencies {
                 checker: softnetChecker,
                 runner: AppleScriptPrivilegedRunner(),
                 installScript: try? SoftnetHelperScripts.installScript(),
+                removeScript: try? SoftnetHelperScripts.removeScript(),
                 onStatusChange: { [weak tartBackend] in tartBackend?.softnetStatusChanged() }
             ),
             notificationCenter: SystemNotificationCenter(),

@@ -18,7 +18,11 @@ struct SoftnetHelperSetupTests {
         let changes = ChangeCounter()
         let model: SoftnetHelperModel
 
-        init(_ status: SoftnetHelperStatus = .notInstalled, installScript: String? = "INSTALL SCRIPT '$1'") {
+        init(
+            _ status: SoftnetHelperStatus = .notInstalled,
+            installScript: String? = "INSTALL SCRIPT '$1'",
+            removeScript: String? = "REMOVE SCRIPT"
+        ) {
             let checker = FakeSoftnetChecker(status)
             let changes = changes
             self.checker = checker
@@ -26,6 +30,7 @@ struct SoftnetHelperSetupTests {
                 checker: checker,
                 runner: runner,
                 installScript: installScript,
+                removeScript: removeScript,
                 onStatusChange: { changes.bump() }
             )
         }
@@ -116,7 +121,31 @@ struct SoftnetHelperSetupTests {
         #expect(rig.model.errorMessage != nil)
     }
 
-    @Test("removal runs the fixed rm script with no arguments")
+    @Test("a refused removal shows the script's message and re-checks")
+    func removalRefused() async {
+        let rig = Rig(.ready(version: "0.26.0"))
+        await rig.model.refresh()
+        let checks = rig.checker.checks
+        rig.runner.result = .failure(.failed("unsafe folder: /usr/local/libexec"))
+
+        await rig.model.remove()
+
+        #expect(rig.model.errorMessage == "unsafe folder: /usr/local/libexec")
+        #expect(rig.checker.checks == checks + 1)
+        #expect(rig.model.status == .ready(version: "0.26.0"))
+    }
+
+    @Test("with no removal script in the bundle, removal shows an error and runs nothing")
+    func noRemoveScript() async {
+        let rig = Rig(removeScript: nil)
+
+        await rig.model.remove()
+
+        #expect(rig.runner.calls.isEmpty)
+        #expect(rig.model.errorMessage != nil)
+    }
+
+    @Test("removal runs the bundled script with no arguments")
     func removal() async {
         let rig = Rig(.ready(version: "0.26.0"))
         await rig.model.refresh()
@@ -125,7 +154,7 @@ struct SoftnetHelperSetupTests {
 
         await rig.model.remove()
 
-        #expect(rig.runner.calls == [.init(script: SoftnetHelperScripts.removeScript, arguments: [])])
+        #expect(rig.runner.calls == [.init(script: "REMOVE SCRIPT", arguments: [])])
         #expect(rig.model.status == .notInstalled)
     }
 
