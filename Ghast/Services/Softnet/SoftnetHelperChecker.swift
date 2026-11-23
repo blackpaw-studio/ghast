@@ -60,14 +60,15 @@ struct SoftnetHelperChecker: SoftnetHelperChecking {
         if entry.kind != .file { return .notRegularFile }
         if entry.ownerID != 0 { return .notOwnedByRoot }
         if entry.mode & Self.setuidBit == 0 { return .notSetuid }
-        if entry.mode & Self.groupOtherWriteBits != 0 { return .writableByOthers }
+        if entry.mode & Self.groupOtherWriteBits != 0 || entry.hasWriteACL { return .writableByOthers }
         return nil
     }
 
     private func folderProblem() -> UnsafeReason? {
         Self.guardedFolders.first { path in
             guard let entry = inspector.entry(atPath: path) else { return true }
-            return entry.kind != .directory || entry.ownerID != 0 || entry.mode & Self.groupOtherWriteBits != 0
+            return entry.kind != .directory || entry.ownerID != 0
+                || entry.mode & Self.groupOtherWriteBits != 0 || entry.hasWriteACL
         }.map(UnsafeReason.unsafeFolder)
     }
 }

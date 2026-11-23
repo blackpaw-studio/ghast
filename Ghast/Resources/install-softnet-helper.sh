@@ -33,14 +33,32 @@ if [ ! -f "$real" ] || [ ! -x "$real" ]; then
   exit 66
 fi
 
-# is_safe_folder PATH: a real directory (not a symlink), owned by root, with no group/other write bit.
+# BEGIN shared folder checks (identical in install-softnet-helper.sh and remove-softnet-helper.sh)
+# has_write_acl PATH: an ACL entry that allows anyone to write, add files or folders, delete,
+# or change attributes, security or owner. Deny entries (macOS puts `deny delete` on some
+# folders) and read-only allow entries are fine.
+has_write_acl() {
+  /bin/ls -led "$1" | /usr/bin/awk '
+    NR > 1 && NF >= 3 && $(NF - 1) == "allow" {
+      n = split($NF, perms, ",")
+      for (i = 1; i <= n; i++)
+        if (perms[i] ~ /^(write|append|delete|delete_child|add_file|add_subdirectory|writeattr|writeextattr|writesecurity|chown)$/) found = 1
+    }
+    END { exit found ? 0 : 1 }'
+}
+
+# is_safe_folder PATH: a real directory (not a symlink), owned by root, with no group/other
+# write bit and no ACL that grants write.
 is_safe_folder() {
   p="$1"
   [ ! -L "$p" ] && [ -d "$p" ] || return 1
   [ "$(/usr/bin/stat -f '%u' "$p")" = "0" ] || return 1
   mode=$(/usr/bin/stat -f '%Lp' "$p")
-  [ $((0$mode & 022)) -eq 0 ]
+  [ $((0$mode & 022)) -eq 0 ] || return 1
+  if has_write_acl "$p"; then return 1; fi
+  return 0
 }
+# END shared folder checks
 
 # Check parents that already exist before touching anything. A missing parent is fine:
 # mkdir -p creates it as root under umask 022.
@@ -59,6 +77,8 @@ fi
 /bin/mkdir -p "$dir"
 /usr/sbin/chown -h root:wheel "$dir"
 /bin/chmod 0755 "$dir"
+# chmod keeps ACLs: clear any the folder already had before anything is written into it.
+/bin/chmod -N "$dir"
 
 # Final check over every folder on the path.
 for p in /usr/local/libexec/ghast /usr/local/libexec /usr/local /usr /; do
@@ -70,6 +90,7 @@ trap '/bin/rm -f "$tmp"' EXIT
 /bin/cp "$real" "$tmp"
 /usr/sbin/chown root:wheel "$tmp"
 /bin/chmod 4755 "$tmp"
+/bin/chmod -N "$tmp"
 /bin/mv -f "$tmp" "$dir/softnet"
 trap - EXIT
 echo "installed $dir/softnet"

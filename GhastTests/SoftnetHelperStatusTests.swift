@@ -79,6 +79,31 @@ struct SoftnetHelperStatusTests {
         #expect(await checker(linked).0.status() == .unsafe(.unsafeFolder("/usr/local/libexec/ghast")))
     }
 
+    @Test("a parent with a write ACL is unsafe even with clean mode bits")
+    func aclOnParent() async {
+        let files = FakeFileInspector.safeTree()
+        files.set("/usr/local/libexec", FileEntry(kind: .directory, ownerID: 0, mode: 0o755, hasWriteACL: true))
+        let (checker, _) = checker(files, versions: [helper: "0.26.0"])
+        #expect(await checker.status() == .unsafe(.unsafeFolder("/usr/local/libexec")))
+    }
+
+    @Test("a helper with a write ACL is writable by others")
+    func aclOnHelper() async {
+        let files = FakeFileInspector.safeTree()
+        files.set(helper, FileEntry(kind: .file, ownerID: 0, mode: 0o4755, hasWriteACL: true))
+        let (checker, _) = checker(files)
+        #expect(await checker.status() == .unsafe(.writableByOthers))
+    }
+
+    @Test("a root folder with only a deny ACL is safe")
+    func denyOnlyRoot() async {
+        // A deny entry or a read-only allow reports no write ACL, as the system inspector does.
+        let files = FakeFileInspector.safeTree()
+        files.set("/", FileEntry(kind: .directory, ownerID: 0, mode: 0o755, hasWriteACL: false))
+        let (checker, _) = checker(files, versions: [helper: "0.26.0", source: "0.26.0"])
+        #expect(await checker.status() == .ready(version: "0.26.0"))
+    }
+
     @Test("versions differ")
     func outdated() async {
         let (checker, _) = checker(.safeTree(), versions: [helper: "0.25.0", source: "0.26.0"])
@@ -165,5 +190,45 @@ struct SoftnetHelperStatusTests {
         #expect(inspector.entry(atPath: target.path)?.kind == .file)
         #expect(inspector.entry(atPath: folder.path)?.kind == .directory)
         #expect(inspector.entry(atPath: folder.appending(path: "missing").path) == nil)
+    }
+
+    private func chmod(_ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        process.arguments = arguments
+        try process.run()
+        process.waitUntilExit()
+        try #require(process.terminationStatus == 0)
+    }
+
+    @Test(
+        "the system inspector sees only write-type allow entries in a folder's ACL",
+        arguments: [
+            ("everyone allow add_file", true),
+            ("everyone allow add_subdirectory", true),
+            ("everyone allow delete_child", true),
+            ("everyone allow write", true),
+            ("everyone allow list,search,readattr", false),
+            ("everyone deny delete", false),
+            ("everyone deny add_file,write", false),
+        ]
+    )
+    func systemInspectorACL(entry: String, grantsWrite: Bool) throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "softnet-acl-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let inspector = SystemFileInspector()
+        #expect(inspector.entry(atPath: folder.path)?.hasWriteACL == false)
+
+        try chmod(["+a", entry, folder.path])
+
+        #expect(inspector.entry(atPath: folder.path)?.hasWriteACL == grantsWrite)
+    }
+
+    @Test("the real root and /usr have no write ACL")
+    func realRootHasNoWriteACL() {
+        let inspector = SystemFileInspector()
+        #expect(inspector.entry(atPath: "/")?.hasWriteACL == false)
+        #expect(inspector.entry(atPath: "/usr")?.hasWriteACL == false)
     }
 }
