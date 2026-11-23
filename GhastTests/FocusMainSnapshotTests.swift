@@ -21,9 +21,28 @@ struct FocusMainSnapshotTests {
         case vmWaitingForJobs, vmTwoJobs, vmWaitingForSlot
         /// A standby Mac: one that waits behind another Mac's job queue, and one that holds it.
         case vmStandingBy, vmHoldingStandby
+        /// The Configuration tab of an isolating VM runner whose softnet helper isn't installed,
+        /// isn't safe, or is older than the installed softnet.
+        case vmIsolationSetup, vmIsolationUnsafe, vmIsolationOutdated
 
         var isVM: Bool {
-            [.vmBooting, .vmPulling, .vmConfiguration, .vmResourcesWarning, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby].contains(self)
+            [.vmBooting, .vmPulling, .vmConfiguration, .vmResourcesWarning, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby,
+             .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated].contains(self)
+        }
+
+        /// A VM Configuration tab: it loads its draft (and its image list) in tasks.
+        var isVMConfiguration: Bool {
+            [.vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated].contains(self)
+        }
+
+        /// What the softnet helper says on this screen; ready everywhere a row would be noise.
+        var helperStatus: SoftnetHelperStatus {
+            switch self {
+            case .vmIsolationSetup: .notInstalled
+            case .vmIsolationUnsafe: .unsafe(.unsafeFolder("/usr/local/libexec"))
+            case .vmIsolationOutdated: .outdated(installed: "softnet 0.25.0", available: "softnet 0.26.0")
+            default: .ready(version: "softnet 0.26.0")
+            }
         }
     }
 
@@ -36,10 +55,13 @@ struct FocusMainSnapshotTests {
         defer { fixture.tearDown() }
         await fixture.seedProcessStates()
 
+        let softnetHelper = SoftnetHelperModel.fixture(state.helperStatus)
+        await softnetHelper.refresh()
         let draftLoaded = AsyncStream.makeStream(of: String.self)
         let versionsLoaded = AsyncStream.makeStream(of: TartMacOS.self)
         let view = try content(for: state, fixture: fixture)
             .environment(\.focusContext, fixture.appDependencies.focusContext)
+            .environment(softnetHelper)
             .environment(\.runnerFlowServices, flowServices(fixture))
             .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
             .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
@@ -52,7 +74,7 @@ struct FocusMainSnapshotTests {
         host.view.layoutSubtreeIfNeeded()
         // The Configuration tab loads its saved settings in a task; the other states draw
         // synchronously.
-        if state == .configuration || state == .vmConfiguration || state == .vmResourcesWarning {
+        if state == .configuration || state.isVMConfiguration {
             for await _ in draftLoaded.stream { break }
             // A VM runner's image picker loads its Xcode versions in its own task.
             if state.isVM { for await _ in versionsLoaded.stream { break } }
@@ -91,7 +113,8 @@ struct FocusMainSnapshotTests {
             let (runnerName, tab): (String, DetailTab) = switch state {
             case .running: ("dionysus-xcode", .output)
             case .configuration: ("dionysus-xcode", .configuration)
-            case .vmConfiguration, .vmResourcesWarning: ("dionysus-arm64", .configuration)
+            case .vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated:
+                ("dionysus-arm64", .configuration)
             case .error: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
             }
@@ -154,12 +177,12 @@ struct FocusMainSnapshotTests {
         if state == .vmResourcesWarning {
             copy.vmResources = VMResources(cpuCount: 12, memoryGB: 48, diskGB: 200)
         }
-        if state == .vmConfiguration || state == .vmResourcesWarning {
+        if state.isVMConfiguration {
             // Scripts and variables ride into each VM, so its Configuration tab shows them.
             copy.environmentVariables = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer", "FASTLANE_SKIP_UPDATE_CHECK": "1"]
             copy.preJobScript = "xcodebuild -runFirstLaunch"
         }
-        if state == .vmConfiguration {
+        if state == .vmConfiguration || state == .vmIsolationSetup || state == .vmIsolationUnsafe || state == .vmIsolationOutdated {
             copy.vmResources = VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150, isNetworkIsolated: true)
         }
         return copy
