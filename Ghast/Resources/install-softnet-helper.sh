@@ -24,7 +24,7 @@ if [ "$(/usr/bin/id -u)" != "0" ]; then
   exit 77
 fi
 
-real=$(/usr/bin/realpath "$SOURCE" 2>/dev/null) || {
+real=$(/bin/realpath "$SOURCE") || {
   echo "source not found: $SOURCE" >&2
   exit 66
 }
