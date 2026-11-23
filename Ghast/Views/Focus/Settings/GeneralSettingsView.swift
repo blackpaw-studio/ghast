@@ -8,9 +8,12 @@ struct GeneralSettingsView: View {
     @Environment(NotificationService.self) private var notifications
     @Environment(UpdateStatusModel.self) private var updates
     @Environment(RunnerService.self) private var runnerService
+    @Environment(SoftnetHelperModel.self) private var softnetHelper
     @Environment(\.focusContext) private var context
     @Environment(\.openURL) private var openURL
     @Environment(\.appVersion) private var appVersion
+
+    @State private var isConfirmingHelperRemoval = false
 
     private static let notificationSettingsURL = URL(
         string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier ?? "net.evancoleman.ghast")"
@@ -53,6 +56,24 @@ struct GeneralSettingsView: View {
                 versionRow
             }
 
+            FocusFormSection(caption: "VM Network Isolation") {
+                FocusFormRow(label: "Isolation helper") {
+                    Text(softnetHelper.status?.settingsText ?? "Checking…")
+                        .font(FocusType.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if softnetHelper.status?.hasHelperFile == true {
+                        Button("Remove Helper…") { isConfirmingHelperRemoval = true }
+                            .disabled(softnetHelper.isWorking)
+                    }
+                }
+            }
+            if let message = softnetHelper.errorMessage {
+                SettingsHelp(text: message)
+            }
+            SettingsHelp(text: "Runners with Isolate network on boot their VMs through a root-owned copy of softnet kept in /usr/local/libexec/ghast.")
+
             FocusFormSection(caption: "Runners") {
                 FocusFormRow(label: "Runners folder") {
                     Text(context.displayPath(runnerService.runnersDirectory.path))
@@ -65,9 +86,15 @@ struct GeneralSettingsView: View {
             SettingsHelp(text: "Each runner keeps its work files and logs in its own folder here.")
         }
         .controlSize(.large)
+        .confirmationDialog("Remove the network isolation helper?", isPresented: $isConfirmingHelperRemoval) {
+            Button("Remove Helper", role: .destructive) { Task { await softnetHelper.remove() } }
+        } message: {
+            Text("Runners with Isolate network on can't start VMs until you set it up again.")
+        }
         .task {
             openAtLogin.refresh()
             await notifications.refreshAuthorization()
+            await softnetHelper.refresh()
         }
     }
 

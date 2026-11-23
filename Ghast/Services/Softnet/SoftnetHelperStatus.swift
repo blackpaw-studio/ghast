@@ -72,13 +72,19 @@ enum SoftnetHelperStatus: Equatable, Sendable {
         }
     }
 
+    /// `softnet 0.26.0-816f07a` reads as `0.26.0-816f07a`.
+    private static func shortVersion(_ version: String) -> String {
+        version.hasPrefix("softnet ") ? String(version.dropFirst("softnet ".count)) : version
+    }
+
     /// The Settings › General row.
     var settingsText: String {
         switch self {
-        case let .ready(version): "Ready (\(version))"
+        case let .ready(version): "Ready (\(Self.shortVersion(version)))"
         case .notInstalled: "Not set up"
         case let .unsafe(reason): "Unsafe: \(reason.message)"
-        case let .outdated(installed, available): "Update available (\(installed) to \(available))"
+        case let .outdated(installed, available):
+            "Update available (\(Self.shortVersion(installed)) to \(Self.shortVersion(available)))"
         case .softnetMissing: "Softnet isn't installed. Install Tart with Homebrew."
         }
     }

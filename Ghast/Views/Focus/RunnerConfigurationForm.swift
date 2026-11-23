@@ -11,6 +11,7 @@ struct RunnerConfigurationForm: View {
     @Environment(\.focusContext) private var context
     @Environment(\.runnerFlowServices) private var flowServices
     @Environment(\.onConfigurationDraftLoaded) private var onDraftLoaded
+    @Environment(SoftnetHelperModel.self) private var softnetHelper
 
     @State private var draft: RunnerConfigurationDraft
     @State private var selectedVariable: EnvironmentVariableDraft.ID?
@@ -164,8 +165,21 @@ struct RunnerConfigurationForm: View {
                         .onChange(of: draft.vmIsolated) {
                             draft.saveSoon()
                             draft.flush()
+                            if draft.vmIsolated { Task { await softnetHelper.refresh() } }
                         }
                 }
+                if draft.vmIsolated, let row = softnetHelper.status?.setupRow {
+                    FocusFormDivider()
+                    isolationSetupRow(row)
+                }
+            }
+            if draft.vmIsolated, let message = softnetHelper.errorMessage {
+                Text(message)
+                    .font(FocusType.subheadline)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, FocusMetrics.formRowInset)
+                    .padding(.top, FocusMetrics.formHelpTop)
             }
             ForEach(ResourceField.allCases, id: \.self) { field in
                 if let issue = draft.resourceIssue(for: field) {
@@ -183,6 +197,30 @@ struct RunnerConfigurationForm: View {
                 .padding(.horizontal, FocusMetrics.formRowInset)
                 .padding(.top, FocusMetrics.formHelpTop)
         }
+        .task { await softnetHelper.refresh() }
+    }
+
+    /// What is wrong with network isolation on this Mac, with the button that fixes it.
+    private func isolationSetupRow(_ row: (text: String, action: SetupAction?)) -> some View {
+        HStack(spacing: FocusMetrics.formRowInset) {
+            Label {
+                Text(row.text).fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle")
+            }
+            .font(FocusType.subheadline)
+            .foregroundStyle(FocusColor.warning)
+            Spacer(minLength: 0)
+            if let action = row.action {
+                Button(action.title) { Task { await softnetHelper.setUp() } }
+                    .controlSize(.small)
+                    .disabled(softnetHelper.isWorking)
+            }
+        }
+        .padding(.horizontal, FocusMetrics.formRowInset)
+        .padding(.vertical, FocusMetrics.formHelpTop)
+        .frame(minHeight: FocusMetrics.formRowHeight)
+        .accessibilityElement(children: .combine)
     }
 
     private typealias ResourceField = RunnerConfigurationDraft.ResourceField
@@ -218,8 +256,8 @@ struct RunnerConfigurationForm: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// The resources help line: sizes apply to the next VM, and isolation fails closed.
-    static let resourcesHelp = "A disk only grows, never shrinks. Isolating the network blocks this Mac's local network from the VM and keeps the internet; it needs a one-time softnet setup on this Mac (setuid root or a sudoers entry), and without it VMs fail to boot instead of running unisolated."
+    /// The resources help line: sizes apply to the next VM, and isolation needs a one-time setup.
+    static let resourcesHelp = "A disk only grows, never shrinks. Isolating the network blocks this Mac's local network from VMs and keeps internet access; setup asks once for an administrator password."
 
     /// The queue role's help line; the queue role changes apply at once.
     static let queueRoleHelp = "Use Standby on an always-on Mac that should take jobs only when your primary Mac is asleep or off. Set exactly one Mac to Primary."

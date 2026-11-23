@@ -142,7 +142,10 @@ struct SoftnetHelperStatusTests {
 
     @Test("the Settings text names each status")
     func settingsText() {
-        #expect(SoftnetHelperStatus.ready(version: "softnet 0.26.0").settingsText == "Ready (softnet 0.26.0)")
+        #expect(SoftnetHelperStatus.ready(version: "softnet 0.26.0-816f07a").settingsText == "Ready (0.26.0-816f07a)")
+        #expect(SoftnetHelperStatus.ready(version: "0.26.0").settingsText == "Ready (0.26.0)")
+        #expect(SoftnetHelperStatus.outdated(installed: "softnet 0.25.0", available: "softnet 0.26.0").settingsText
+            == "Update available (0.25.0 to 0.26.0)")
         #expect(SoftnetHelperStatus.notInstalled.settingsText == "Not set up")
         #expect(SoftnetHelperStatus.unsafe(.symlink).settingsText == "Unsafe: the helper is a symbolic link")
     }
