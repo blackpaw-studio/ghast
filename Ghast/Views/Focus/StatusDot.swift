@@ -20,7 +20,7 @@ struct StatusDot: View {
                             .fill(Color.orange.opacity(FocusMetrics.runningHaloOpacity))
                             .padding(-FocusMetrics.runningHaloWidth)
                     )
-            case .error:
+            case .error, .onDemand(.needsIsolationSetup):
                 Circle().fill(Color.red)
             case .onDemand(.standingBy), .onDemand(.handingOff):
                 Circle().strokeBorder(Color(nsColor: .secondaryLabelColor), style: StrokeStyle(lineWidth: Self.ringWidth, dash: [2, 1.5]))

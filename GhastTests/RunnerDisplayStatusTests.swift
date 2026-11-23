@@ -324,6 +324,10 @@ struct RunnerDisplayStatusTests {
         #expect(status(OnDemandState(since: since, running: 2, queue: .heldElsewhere)) == .onDemand(.running(2)))
         #expect(status(OnDemandState(since: since, isWaitingForSlot: true, queue: .holding)) == .onDemand(.waitingForSlot))
         #expect(status(OnDemandState(since: since, booting: 1, isWaitingForSlot: true, queue: .heldElsewhere)) == .onDemand(.booting))
+        #expect(status(OnDemandState(since: since, queue: .holding, needsIsolationSetup: true)) == .onDemand(.needsIsolationSetup))
+        // A re-check boots a VM without hiding the problem; a running job still wins.
+        #expect(status(OnDemandState(since: since, booting: 1, queue: .holding, needsIsolationSetup: true)) == .onDemand(.needsIsolationSetup))
+        #expect(status(OnDemandState(since: since, running: 1, queue: .holding, needsIsolationSetup: true)) == .onDemand(.running(1)))
     }
 
     @Test("on-demand phases: title, secondary line, sidebar subtitle and spinner", arguments: [
@@ -336,6 +340,7 @@ struct RunnerDisplayStatusTests {
         (.running(1), "1 job running", "Each job runs in its own VM, deleted when the job ends", "1 job running", false),
         (.running(2), "2 jobs running", "Each job runs in its own VM, deleted when the job ends", "2 jobs running", false),
         (.waitingForSlot, "Waiting for a free VM slot", "macOS runs at most 2 VMs at once; the job waits on GitHub", "Waiting for a free VM slot", false),
+        (.needsIsolationSetup, "Network isolation isn't set up", "Open Configuration to set up network isolation · no VM boots until then", "Network isolation isn't set up", false),
     ])
     func onDemandWords(phase: OnDemandPhase, title: String, secondary: String, sidebar: String, spinner: Bool) {
         let status = RunnerDisplayStatus.onDemand(phase)

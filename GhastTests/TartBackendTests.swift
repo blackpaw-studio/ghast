@@ -42,8 +42,14 @@ final class TartHarness {
     let demand: FakeDemandSources
     let service: RunnerService
     let backend: TartBackend
+    let softnet: FakeSoftnetChecker
 
-    init(entries: [TartVMEntry]? = nil, timing: TartBackend.Timing = .standard, initialDemand: Int? = 1) {
+    init(
+        entries: [TartVMEntry]? = nil,
+        timing: TartBackend.Timing = .standard,
+        initialDemand: Int? = 1,
+        softnet: FakeSoftnetChecker = FakeSoftnetChecker()
+    ) {
         let cli = FakeTartCLI(log: log, entries: entries ?? [TartVMEntry(name: Self.image, source: "OCI", isRunning: false)])
         let api = FlowGitHubAPI(log: log)
         let leases = TartLeaseStore(defaults: isolated.defaults)
@@ -59,6 +65,7 @@ final class TartHarness {
             cliProvider: { cli },
             api: api,
             demandSources: demand,
+            softnet: softnet,
             tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: fetcher),
             leases: leases,
             logAppender: lines,
@@ -78,6 +85,7 @@ final class TartHarness {
         self.leases = leases
         self.demand = demand
         self.backend = backend
+        self.softnet = softnet
         service = RunnerService(
             defaults: isolated.defaults,
             runnersDirectory: makeTemporaryDirectory(),

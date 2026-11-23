@@ -219,6 +219,7 @@ struct AppDependencies {
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
             demandSources: demandSources,
+            softnet: SoftnetHelperChecker(),
             leases: TartLeaseStore(defaults: .standard),
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,

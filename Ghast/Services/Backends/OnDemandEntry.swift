@@ -35,6 +35,14 @@ final class OnDemandEntry {
     var sleepRelease: Task<Void, Never>?
     /// Consecutive VM runs that failed with a transient error; sets the backoff.
     var vmFailures = 0
+    /// A boot was refused because isolation is on and the helper isn't ready. Stays set (with
+    /// its log line and error state) until a boot passes the gate.
+    var isolationNotReady = false
+    /// A refused runner boots nothing until something may have changed: a new demand report or
+    /// a status change. Cleared again when a boot is refused.
+    var mayRecheckIsolation = true
+    /// The outdated-helper line is logged once per started runner.
+    var hasLoggedOutdatedHelper = false
     var waiters: [CheckedContinuation<Void, Never>] = []
 
     init(runnerID: String, since: Date, source: any JobDemandSource) {
@@ -50,9 +58,13 @@ final class OnDemandEntry {
             running: vms.count { $0.phase == .running },
             isWaitingForSlot: isWaitingForSlot,
             liveVMs: vms.filter(\.isReachable).map(\.clone),
-            queue: queue
+            queue: queue,
+            needsIsolationSetup: isolationNotReady
         )
     }
+
+    /// No VM boots until the isolation gate may be tried again.
+    var isBlockedOnIsolation: Bool { isolationNotReady && !mayRecheckIsolation }
 }
 
 /// One VM for one job: from the boot decision to the VM's deletion.

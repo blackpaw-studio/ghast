@@ -39,6 +39,7 @@ struct FlowHarness {
             cliProvider: { tart },
             api: api,
             demandSources: demand,
+            softnet: FakeSoftnetChecker(),
             tarballs: RunnerTarballCache(directory: makeTemporaryDirectory(), fetcher: FakeArchiveFetcher()),
             leases: TartLeaseStore(defaults: defaults),
             logAppender: RecordingLogAppender(),

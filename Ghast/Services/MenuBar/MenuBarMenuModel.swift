@@ -94,7 +94,7 @@ enum MenuBarMenuModel {
         switch status {
         case .idle, .onDemand(.waitingForJobs): return .idle
         case .runningJob, .remoteBusy, .onDemand(.running): return .running
-        case .error: return .error
+        case .error, .onDemand(.needsIsolationSetup): return .error
         case .onDemand(.standingBy), .onDemand(.handingOff): return .standby
         case .starting, .pulling, .booting, .cleaningUp, .stopping, .stopped, .offline, .onDemand: return .hollow
         }
@@ -117,6 +117,7 @@ enum MenuBarMenuModel {
         case .onDemand(.booting): return "Booting"
         case .onDemand(.running): return "Running"
         case .onDemand(.waitingForSlot): return "No VM slot"
+        case .onDemand(.needsIsolationSetup): return "Needs setup"
         case .onDemand(.standingBy): return "Standing by"
         case .onDemand(.handingOff): return "Handing off"
         case .onDemand(.connecting): return "Connecting"

@@ -71,3 +71,9 @@ struct SoftnetHelperChecker: SoftnetHelperChecking {
         }.map(UnsafeReason.unsafeFolder)
     }
 }
+
+/// For a backend built without isolation support (tests, the design fixture): never ready.
+struct NoSoftnetHelper: SoftnetHelperChecking {
+    func status() async -> SoftnetHelperStatus { .notInstalled }
+    func locateSource() -> URL? { nil }
+}

@@ -40,6 +40,7 @@ final class TartBackend: RunnerBackend {
     private let cliProvider: @Sendable () async throws -> any TartCLI
     private let api: any GitHubAPIServiceProtocol
     private let demandSources: any JobDemandSourceMaking
+    private let softnet: any SoftnetHelperChecking
     private let tarballs: RunnerTarballCache
     private let leases: TartLeaseStore
     private let logAppender: any RunnerLogAppending
@@ -54,12 +55,14 @@ final class TartBackend: RunnerBackend {
     /// - Parameters:
     ///   - cliProvider: Finds Tart and returns a CLI for it; throws when Tart is unusable.
     ///   - demandSources: Builds each started runner's demand source.
+    ///   - softnet: Says whether the isolation helper may be used; checked before every isolated boot.
     ///   - makeID: A short unique id (6 hex digits) for a clone and its JIT runner name.
     ///   - power: Sleep and wake: a sleeping Mac gives up its job queue so another Mac can use it.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
         demandSources: any JobDemandSourceMaking,
+        softnet: any SoftnetHelperChecking,
         tarballs: RunnerTarballCache = RunnerTarballCache(),
         leases: TartLeaseStore,
         logAppender: any RunnerLogAppending,
@@ -72,6 +75,7 @@ final class TartBackend: RunnerBackend {
         self.cliProvider = cliProvider
         self.api = api
         self.demandSources = demandSources
+        self.softnet = softnet
         self.tarballs = tarballs
         self.leases = leases
         self.logAppender = logAppender
@@ -192,7 +196,17 @@ final class TartBackend: RunnerBackend {
     private func demandChanged(_ entry: OnDemandEntry, to demand: Int) {
         guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep else { return }
         entry.demand = max(0, demand)
+        entry.mayRecheckIsolation = true
         reconcile(entry)
+    }
+
+    /// The helper's status changed (setup, update or removal): every runner blocked on
+    /// isolation tries again now.
+    func softnetStatusChanged() {
+        for entry in entries.values where !entry.isShuttingDown {
+            entry.mayRecheckIsolation = true
+            reconcile(entry)
+        }
     }
 
     /// Shows who holds the job queue, and logs each change once.
@@ -245,7 +259,7 @@ final class TartBackend: RunnerBackend {
         else { return }
         // A sleeping Mac boots nothing; a VM that ends meanwhile is not replaced.
         let wanted = entry.isAsleep ? 0 : min(entry.demand, Self.maxVMsPerRunner)
-        while entry.vms.count < wanted, !entry.isWaitingForSlot {
+        while entry.vms.count < wanted, !entry.isWaitingForSlot, !entry.isBlockedOnIsolation {
             launchVM(entry, runner: runner, image: image)
         }
         refreshIdle(entry)
@@ -263,6 +277,8 @@ final class TartBackend: RunnerBackend {
 
     private enum VMOutcome {
         case noSlot
+        /// Isolation is on and the softnet helper isn't ready: nothing was pulled or cloned.
+        case isolationNotReady
         /// Its job went away while it booted; nothing was registered.
         case abandoned
         case exited(Int32)
@@ -283,6 +299,7 @@ final class TartBackend: RunnerBackend {
     private func bootAndRun(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner, image: String) async throws -> VMOutcome {
         let cli = try await cliProvider()
         vm.cli = cli
+        guard let network = try await passIsolationGate(entry, runner: runner) else { return .isolationNotReady }
         let tarball = try await prepare(entry, runner: runner, image: image, cli: cli)
         try checkStop(entry)
         guard try await reserveSlot(vm, cli: cli) else { return .noSlot }
@@ -304,7 +321,7 @@ final class TartBackend: RunnerBackend {
                 TartShare(name: TartGuestScript.shareName, path: tarballs.directory, isReadOnly: true),
                 TartShare(name: VMJobFiles.shareName, path: jobFolder, isReadOnly: true),
             ],
-            network: runner.vmResources.isNetworkIsolated ? .softnet(helperDirectory: SoftnetHelperScripts.helperDirectory) : .shared,
+            network: network,
             log: logFile(for: runner),
             linePrefix: vm.logPrefix,
             onExit: { [weak self, weak vm] _ in
@@ -347,6 +364,17 @@ final class TartBackend: RunnerBackend {
     private func finished(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner, outcome: VMOutcome) async {
         var failure: (any Error)?
         switch outcome {
+        case .isolationNotReady:
+            remove(vm, from: entry)
+            if !entry.isStopRequested {
+                if !entry.isolationNotReady {
+                    log("Network isolation isn't set up on this Mac; open Configuration to set it up", runner: runner)
+                }
+                entry.isolationNotReady = true
+                entry.mayRecheckIsolation = false
+            }
+            publish(entry)
+            return
         case .noSlot:
             remove(vm, from: entry)
             if !entry.isStopRequested {
@@ -387,6 +415,30 @@ final class TartBackend: RunnerBackend {
     }
 
     // MARK: - The VM budget
+
+    /// The network a boot uses, or nil when isolation is on and the helper isn't ready. A boot
+    /// that passes clears an earlier refusal; an outdated helper still boots, with one note.
+    private func passIsolationGate(_ entry: OnDemandEntry, runner: LocalRunner) async throws -> TartNetwork? {
+        guard runner.vmResources.isNetworkIsolated else {
+            clearIsolationRefusal(entry)
+            return .shared
+        }
+        let status = await softnet.status()
+        try checkStop(entry)
+        guard status.canBoot else { return nil }
+        if case .outdated = status, !entry.hasLoggedOutdatedHelper {
+            entry.hasLoggedOutdatedHelper = true
+            log("Softnet was updated; open Configuration and choose Update… to refresh the isolation helper", runner: runner)
+        }
+        clearIsolationRefusal(entry)
+        return .softnet(helperDirectory: SoftnetHelperScripts.helperDirectory)
+    }
+
+    private func clearIsolationRefusal(_ entry: OnDemandEntry) {
+        guard entry.isolationNotReady else { return }
+        entry.isolationNotReady = false
+        publish(entry)
+    }
 
     /// Takes a slot of the host's 2-VM budget for `vm`, or returns false when it is full.
     /// One reservation at a time, so two boots cannot both see one free slot.
@@ -881,6 +933,7 @@ extension TartBackend {
             demandSources: DemandSourceFactory(
                 api: api, transport: UnreachableTransport(), clock: clock, sleeper: sleeper, ownerName: "ghast"
             ),
+            softnet: NoSoftnetHelper(),
             leases: TartLeaseStore(defaults: defaults),
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
