@@ -124,18 +124,18 @@ struct ProcessTartCLITests {
         return try #require(launcher.specs.first)
     }
 
-    @Test("an isolated run puts the helper folder first on PATH")
+    @Test("an isolated run gets exactly the helper folder and the system folders as PATH, whatever was inherited")
     func isolatedRunPath() throws {
         let spec = try runSpec(
             network: .softnet(helperDirectory: "/usr/local/libexec/ghast"),
-            base: ["PATH": "/usr/bin:/bin", "HOME": "/Users/x"]
+            base: ["PATH": "/opt/homebrew/bin:/Users/x/bin:/usr/bin", "HOME": "/Users/x"]
         )
-        #expect(spec.environment?["PATH"] == "/usr/local/libexec/ghast:/usr/bin:/bin")
+        #expect(spec.environment?["PATH"] == "/usr/local/libexec/ghast:/usr/bin:/bin:/usr/sbin:/sbin")
         #expect(spec.environment?["HOME"] == "/Users/x")
         #expect(spec.arguments.contains("--net-softnet"))
     }
 
-    @Test("an isolated run with no inherited PATH still gets a system PATH after the helper folder")
+    @Test("an isolated run with no inherited PATH gets the same fixed PATH")
     func isolatedRunWithoutPath() throws {
         let spec = try runSpec(network: .softnet(helperDirectory: "/h"), base: [:])
         #expect(spec.environment?["PATH"] == "/h:/usr/bin:/bin:/usr/sbin:/sbin")

@@ -60,7 +60,9 @@ struct ProcessTartCLI: TartCLI {
     private let logAppender: any RunnerLogAppending
     private let baseEnvironment: [String: String]
 
-    /// What an isolated boot searches for tools when the inherited environment has no `PATH`.
+    /// The folders an isolated boot searches after the helper's. The inherited `PATH` is never
+    /// used: if the helper vanished after its check, Tart must not find a user-writable softnet
+    /// (Homebrew's) and run it as root.
     private static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 
     init(
@@ -183,12 +185,11 @@ struct ProcessTartCLI: TartCLI {
         )
     }
 
-    /// Tart finds softnet only through `PATH`, so an isolated boot puts the helper folder first.
-    /// A shared boot inherits the environment unchanged (nil).
+    /// Tart finds softnet only through `PATH`, so an isolated boot gets the helper folder and the
+    /// system folders, nothing inherited. A shared boot inherits the environment unchanged (nil).
     private func environment(for network: TartNetwork) -> [String: String]? {
         guard case let .softnet(helperDirectory) = network else { return nil }
-        let inherited = baseEnvironment["PATH"] ?? Self.systemPath
-        return baseEnvironment.merging(["PATH": helperDirectory + ":" + inherited]) { _, new in new }
+        return baseEnvironment.merging(["PATH": helperDirectory + ":" + Self.systemPath]) { _, new in new }
     }
 
     @discardableResult
