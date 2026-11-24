@@ -283,6 +283,7 @@ Stop if: `iss` is not `https://token.actions.githubusercontent.com`, the JWKS do
 - `AppDependencies` builds the `CacheStore` (root `~/.ghast/cache`, owner-only), the verifier, `CacheServer` and the sweeper. It runs evict and sweep at launch, and the server starts lazily.
 - `RunnerFlowServices` gains `cacheStats: any CacheStatsProviding` (usage, cap, clear) for the Settings view, with a fixture fake.
 - `applicationShouldTerminate` stops the server after the runners.
+- `applicationShouldTerminate` also calls `CacheStore.flush()`, so restore recency (`lastUsedAt`, otherwise saved with the next index write or the hourly sweep) survives a quit (concurrency review, accepted risk).
 - Failing tests:
   - `AppSettingsTests` (default and clamp);
   - `FixtureSafetyTests`: fixture mode creates no cache folder and no server;
