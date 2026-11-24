@@ -45,18 +45,22 @@ struct SettingsWindow: View {
     }
 }
 
-/// A tab's content: the kit's padding, pinned to the top, at least the mockup's height.
+/// A tab's content: the kit's padding, pinned to the top, at least the mockup's height. It
+/// opens at its full height and scrolls when the screen is shorter than that.
 struct SettingsPane<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FocusMetrics.settingsSectionGap) {
-            content()
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: FocusMetrics.settingsSectionGap) {
+                content()
+            }
+            .padding(.horizontal, FocusMetrics.settingsPadding.width)
+            .padding(.vertical, FocusMetrics.settingsPadding.height)
+            .frame(width: FocusMetrics.settingsWidth, alignment: .topLeading)
+            .frame(minHeight: FocusMetrics.settingsContentMinHeight, alignment: .top)
         }
-        .padding(.horizontal, FocusMetrics.settingsPadding.width)
-        .padding(.vertical, FocusMetrics.settingsPadding.height)
-        .frame(width: FocusMetrics.settingsWidth, alignment: .topLeading)
-        .frame(minHeight: FocusMetrics.settingsContentMinHeight, alignment: .top)
+        .scrollBounceBehavior(.basedOnSize)
         .environment(\.focusFormBoxRadius, FocusMetrics.settingsBoxRadius)
     }
 }
