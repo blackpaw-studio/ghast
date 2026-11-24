@@ -10,6 +10,7 @@ final class FakeLocalCache: LocalCacheServing {
     private(set) var gateways: [String] = []
     private(set) var registered: [String] = []
     private(set) var unregistered: [String] = []
+    private(set) var isStopped = false
     private var continuations: [String: AsyncStream<CacheEvent>.Continuation] = [:]
 
     func endpoint(forGateway gateway: String) async -> Result<CacheEndpoint, CacheUnavailable> {
@@ -29,6 +30,10 @@ final class FakeLocalCache: LocalCacheServing {
     func unregisterVM(_ token: String) {
         unregistered.append(token)
         continuations.removeValue(forKey: token)?.finish()
+    }
+
+    func stop() async {
+        isStopped = true
     }
 
     func emit(_ event: CacheEvent, for token: String) {

@@ -8,6 +8,8 @@ protocol LocalCacheServing: AnyObject {
     func endpoint(forGateway gateway: String) async -> Result<CacheEndpoint, CacheUnavailable>
     func registerVM() -> CacheVMRegistration
     func unregisterVM(_ token: String)
+    /// Closes every listener; called once, at quit.
+    func stop() async
 }
 
 extension CacheServer: LocalCacheServing {}

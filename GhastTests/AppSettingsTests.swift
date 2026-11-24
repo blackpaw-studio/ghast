@@ -37,6 +37,22 @@ struct AppSettingsTests {
         #expect(reloaded.notificationPermissionRequested)
     }
 
+    @Test("the cache size cap defaults to 50 GB, is never under 1 GB and persists")
+    func cacheSizeCap() {
+        let isolated = makeIsolatedDefaults()
+        defer { isolated.cleanup() }
+        let settings = AppSettings(defaults: isolated.defaults)
+        #expect(settings.cacheSizeCapGB == 50)
+
+        settings.cacheSizeCapGB = 0
+        #expect(settings.cacheSizeCapGB == 1)
+        settings.cacheSizeCapGB = 120
+        #expect(AppSettings(defaults: isolated.defaults).cacheSizeCapGB == 120)
+
+        isolated.defaults.set(-5, forKey: AppSettings.Key.cacheSizeCapGB)
+        #expect(AppSettings(defaults: isolated.defaults).cacheSizeCapGB == 1)
+    }
+
     @Test("an explicit false for a default-true setting is honoured, not treated as unset")
     func explicitFalse() {
         let isolated = makeIsolatedDefaults()

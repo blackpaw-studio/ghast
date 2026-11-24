@@ -12,7 +12,11 @@ final class AppSettings {
         static let notifyUnexpectedStop = "settings.notifyUnexpectedStop"
         static let notifyJobFailure = "settings.notifyJobFailure"
         static let notificationPermissionRequested = "settings.notificationPermissionRequested"
+        static let cacheSizeCapGB = "settings.cacheSizeCapGB"
     }
+
+    static let defaultCacheSizeCapGB = 50
+    static let minimumCacheSizeCapGB = 1
 
     var restartRunnersAtLaunch: Bool { didSet { store(restartRunnersAtLaunch, Key.restartRunnersAtLaunch) } }
     var showMenuBarExtra: Bool { didSet { store(showMenuBarExtra, Key.showMenuBarExtra) } }
@@ -21,6 +25,15 @@ final class AppSettings {
     /// Whether the system notification prompt has been shown, so it is asked for only once.
     var notificationPermissionRequested: Bool {
         didSet { store(notificationPermissionRequested, Key.notificationPermissionRequested) }
+    }
+
+    /// The local Actions cache's size cap in GB, never under `minimumCacheSizeCapGB`.
+    var cacheSizeCapGB: Int {
+        didSet {
+            let clamped = max(Self.minimumCacheSizeCapGB, cacheSizeCapGB)
+            guard clamped == cacheSizeCapGB else { cacheSizeCapGB = clamped; return }
+            defaults.set(cacheSizeCapGB, forKey: Key.cacheSizeCapGB)
+        }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -32,6 +45,8 @@ final class AppSettings {
         notifyUnexpectedStop = Self.read(defaults, Key.notifyUnexpectedStop, default: true)
         notifyJobFailure = Self.read(defaults, Key.notifyJobFailure, default: false)
         notificationPermissionRequested = Self.read(defaults, Key.notificationPermissionRequested, default: false)
+        let storedCap = defaults.object(forKey: Key.cacheSizeCapGB) as? Int ?? Self.defaultCacheSizeCapGB
+        cacheSizeCapGB = max(Self.minimumCacheSizeCapGB, storedCap)
     }
 
     private func store(_ value: Bool, _ key: String) {
