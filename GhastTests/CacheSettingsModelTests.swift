@@ -32,12 +32,27 @@ struct CacheSettingsModelTests {
         #expect(stats.calls.isEmpty)
 
         model.requestClear()
-        #expect(model.isConfirmingClear)
+        #expect(model.isShowingClearConfirmation)
+        // SwiftUI dismisses the dialog before the button's action runs.
+        model.isShowingClearConfirmation = false
         await model.confirmClear()
 
         #expect(stats.calls == ["clear"])
-        #expect(!model.isConfirmingClear)
         #expect(model.usageText == "Empty")
+        await model.confirmClear()
+        #expect(stats.calls == ["clear"])
+    }
+
+    @Test("cancelling the confirmation clears nothing")
+    func cancelClear() async {
+        let (model, _, stats) = make()
+
+        model.requestClear()
+        model.isShowingClearConfirmation = false
+        model.cancelClear()
+        await model.confirmClear()
+
+        #expect(stats.calls.isEmpty)
     }
 
     @Test("space used reads as size and count, singular for one, and Checking before the first read",

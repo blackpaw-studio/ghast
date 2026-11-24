@@ -90,8 +90,9 @@ struct GeneralSettingsView: View {
             SettingsHelp(text: "Each runner keeps its work files and logs in its own folder here.")
         }
         .controlSize(.large)
-        .confirmationDialog("Clear the local cache?", isPresented: Bindable(cache).isConfirmingClear) {
+        .confirmationDialog("Clear the local cache?", isPresented: Bindable(cache).isShowingClearConfirmation) {
             Button("Clear Cache", role: .destructive) { Task { await cache.confirmClear() } }
+            Button("Cancel", role: .cancel, action: cache.cancelClear)
         } message: {
             Text("Every saved cache is deleted and saves in progress are dropped. Jobs miss until they save again.")
         }

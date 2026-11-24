@@ -7,8 +7,11 @@ import Observation
 final class CacheSettingsModel {
     private(set) var usage: CacheUsage?
     private(set) var errorMessage: String?
-    /// Shows the Clear Cache confirmation; clearing happens only while it is up.
-    var isConfirmingClear = false
+    /// Whether the Clear Cache confirmation is presented. SwiftUI clears it when the dialog
+    /// closes, before the chosen button's action runs, so clearing doesn't read it.
+    var isShowingClearConfirmation = false
+    /// Set when the confirmation is asked for; the Clear action consumes it, Cancel drops it.
+    @ObservationIgnored private var isClearRequested = false
 
     @ObservationIgnored private let stats: any CacheStatsProviding
     @ObservationIgnored private let settings: AppSettings
@@ -32,13 +35,19 @@ final class CacheSettingsModel {
     }
 
     func requestClear() {
-        isConfirmingClear = true
+        isClearRequested = true
+        isShowingClearConfirmation = true
     }
 
-    /// Clears the cache if the confirmation is up; otherwise does nothing.
+    func cancelClear() {
+        isClearRequested = false
+    }
+
+    /// Clears the cache once per confirmation asked for; otherwise does nothing.
     func confirmClear() async {
-        guard isConfirmingClear else { return }
-        isConfirmingClear = false
+        guard isClearRequested else { return }
+        isClearRequested = false
+        isShowingClearConfirmation = false
         await perform("clear the cache") { try await stats.clear() }
     }
 
