@@ -82,6 +82,39 @@ import Foundation
         #expect(draft.queueRole == .standby)
     }
 
+    @Test func vmLocalCacheSwitchLoadsAndSavesWithoutAskingForARestart() {
+        var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm")
+        vm.backend = .tart(image: "my-vm")
+        let service = makeTestRunnerService(runners: [vm])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper)
+        draft.load(vm)
+        #expect(draft.usesLocalCache)
+
+        draft.usesLocalCache = false
+        draft.saveSoon()
+        draft.flush()
+
+        let saved = service.localRunners.first
+        #expect(saved?.usesLocalCache == false)
+        #expect(!draft.needsRestart)
+        draft.load(saved!)
+        #expect(!draft.usesLocalCache)
+    }
+
+    @Test func localCacheSwitchNeverChangesAHostRunner() {
+        let host = LocalRunner(name: "host", repository: "o/host", path: "/tmp/host")
+        let service = makeTestRunnerService(runners: [host])
+        let draft = RunnerConfigurationDraft(runnerService: service, sleeper: ManualSleeper().sleeper)
+        draft.load(host)
+
+        draft.usesLocalCache = false
+        draft.saveSoon()
+        draft.flush()
+
+        #expect(service.localRunners.first?.usesLocalCache == true)
+        #expect(!draft.needsRestart)
+    }
+
     @Test func blankVMFieldsKeepTheSavedImageAndLabels() {
         var vm = LocalRunner(name: "vm", repository: "o/vm", path: "/tmp/vm", labels: ["self-hosted"])
         vm.backend = .tart(image: "my-vm")

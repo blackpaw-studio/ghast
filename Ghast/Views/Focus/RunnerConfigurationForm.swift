@@ -142,8 +142,39 @@ struct RunnerConfigurationForm: View {
                 .padding(.top, FocusMetrics.formHelpTop)
             resourcesSection
                 .padding(.top, FocusMetrics.formSectionGap)
+            cacheSection
+                .padding(.top, FocusMetrics.formSectionGap)
         }
     }
+
+    // MARK: Cache
+
+    /// Whether this runner's jobs save and restore caches on this Mac. Applies to the next VM.
+    private var cacheSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FocusFormSection(caption: "Cache") {
+                FocusFormRow(label: "Use local cache", height: FocusMetrics.formToggleRowHeight) {
+                    Toggle("Use local cache", isOn: $draft.usesLocalCache)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                        .onChange(of: draft.usesLocalCache) {
+                            draft.saveSoon()
+                            draft.flush()
+                        }
+                }
+            }
+            Text(Self.cacheHelp)
+                .font(FocusType.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, FocusMetrics.formRowInset)
+                .padding(.top, FocusMetrics.formHelpTop)
+        }
+    }
+
+    /// The cache help line: no workflow changes, caches stay here, and shared networking's limit.
+    static let cacheHelp = "Workflows need no changes: actions/cache and setup actions save and restore here, and caches stay on this Mac. On shared networking, VMs aren't isolated from each other, so turn on Isolate network for untrusted jobs."
 
     // MARK: Resources
 
