@@ -1,6 +1,6 @@
 # Built-in Actions cache for VM runners
 
-Date: 2026-11-23 · Status: draft (Step 0 recorded; one decision open, see 0.3)
+Date: 2026-11-23 · Status: draft (Step 0 recorded; 0.3 decided 2026-11-23)
 
 ## Goal
 
@@ -97,10 +97,10 @@ Fixtures: `GhastTests/Fixtures/ActionsCache/`.
      block `@host`: 8765 reachable, 8766 blocked, DNS and internet work, LAN
      blocked.
    The port must be known at `tart run` time. `@host` means the gateway isn't
-   needed then. (b) control-fd was not needed and not tested. **Decision
-   needed:** blocking `@host` narrows today's isolation (isolated VMs
-   currently reach every host port on the bridge address). The alternative is
-   to add no rule and rely on the default policy.
+   needed then. (b) control-fd was not needed and not tested. **Decided
+   (Evan, 2026-11-23):** every isolated VM, cache on or off, blocks `@host`
+   and allows UDP 53 to it, plus the cache port when the cache is on (see VM
+   integration).
 4. **Pass.** The run used falcondev 10.0.2 behind a logging proxy;
    `actions/cache@v4` was `0057852`, with zstd. No endpoint outside the
    subset appeared. Findings that refine the design:
@@ -141,29 +141,41 @@ Fixtures: `GhastTests/Fixtures/ActionsCache/`.
 ### CacheServer
 Hummingbird 2 (SwiftNIO) HTTP/1.1 server inside Ghast.
 - Twirp JSON (snake_case): `CreateCacheEntry {key, version}` →
-  `{ok, signed_upload_url}`; `FinalizeCacheEntryUpload {key, version,
-  size_bytes}` → `{ok, entry_id}`; `GetCacheEntryDownloadURL {key,
-  restore_keys, version}` → `{ok, signed_download_url, matched_key}`. A miss is
-  `ok: false`, not an error. Errors are JSON `{code, msg}`.
-- Upload (Azure block blob subset): `PUT /upload/{id}?sig=…` single shot
-  (`x-ms-blob-type: BlockBlob`); `&comp=block&blockid=…` per block;
-  `&comp=blocklist` commits in the order the XML lists. 201 with
-  `x-ms-request-id`. Unknown id 404, bad `sig` 403.
-- Download: `GET`/`HEAD /download/{id}`, honouring `x-ms-range` then `Range`
-  (one range), 206 + `Content-Range`, 416 on bad range, `Accept-Ranges: bytes`.
+  `{ok, signed_upload_url, message}`; `FinalizeCacheEntryUpload {key, version,
+  size_bytes}` → `{ok, entry_id, message}`; `GetCacheEntryDownloadURL {key,
+  restore_keys, version}` → `{ok, signed_download_url, matched_key}`. int64
+  fields (`size_bytes`, `entry_id`) are JSON strings; `restore_keys` is omitted
+  when empty. A miss is `ok: false`, not an error. A second create for an
+  existing key+version in the same scope is also `ok: false` (the client treats
+  a failed reservation as non-fatal and skips the save). Errors are JSON
+  `{code, msg}`.
+- Upload (Azure block blob subset), at `PUT /devstoreaccount1/upload/{id}?sig=…`.
+  The account-style first segment is kept because the Azure SDK parses IP-host
+  URLs path-style. Single shot (`x-ms-blob-type: BlockBlob`, archives up to
+  128 MiB); `&comp=block&blockid=…` per block (64 MiB blocks, sent
+  concurrently, so they arrive in any order); `&comp=blocklist` with
+  `<BlockList><Latest>…</Latest>…</BlockList>` commits in the order the XML
+  lists. 201 with `x-ms-request-id`. Unknown id 404, bad `sig` 403.
+- Download: `GET`/`HEAD /download/{id}`. `actions/cache` sends one plain `GET`
+  with no range; ranges are still honoured for BuildKit `type=gha`:
+  `x-ms-range` then `Range` (one range), 206 + `Content-Range`, 416 on a bad or
+  multi-range request, `Accept-Ranges: bytes`.
 - Everything else is forwarded to `https://results-receiver.actions.githubusercontent.com`
   with method, path, query, body and headers (minus hop-by-hop headers and
-  `Host`), and the response streamed back.
+  `Host`), and the response streamed back. Observed: `ArtifactService` calls.
+  Logs and step summaries never reach it (the runner sends those itself).
 - Bodies stream to disk; nothing holds a whole archive in memory.
 
 ### CacheTokenVerifier
 - Verifies the bearer JWT (RS256) with keys from the issuer's OIDC discovery
-  document, cached and refreshed on an unknown `kid`. Checks `iss` and `exp`
-  (and `nbf` if present).
-- Repo is `repository_id`; scopes come from `ac` (read bit 1, write bit 2).
-  Save goes to the first write scope; restore searches the read scopes in the
-  order GitHub grants them. No valid token: 401, and the client treats it as a
-  miss.
+  document (`jwks_uri`), cached and refreshed on an unknown `kid`. Checks `iss`
+  (`https://token.actions.githubusercontent.com`) and `exp` (and `nbf` if
+  present).
+- Repo is `repository_id`, a JSON string. Scopes come from `ac`, a JSON
+  **string** holding an array (`[{"Scope":"refs/heads/main","Permission":3}]`),
+  so it is decoded twice; read bit 1, write bit 2. Save goes to the first write
+  scope; restore searches the read scopes in the order GitHub grants them. No
+  valid token: 401, and the client treats it as a miss.
 
 ### CacheStore
 - Index plus archive files in `~/.ghast/cache/`, keyed by repo, scope, key and
@@ -179,20 +191,33 @@ Hummingbird 2 (SwiftNIO) HTTP/1.1 server inside Ghast.
   per-upload `sig`.
 
 ### Listening
-- Binds only to the host's vmnet address (the address guests use as their
-  gateway), on a random port, never to LAN interfaces. Starts when the first
-  cache-enabled VM boots; restarts if the address changes.
-- If the server can't start, the VM boots without the cache and the runner log
-  says why.
+- One cache port per app run: a random high port chosen when the server is
+  created and kept until Ghast quits. It has to be known before boot, because
+  the isolation rule carries it on `tart run`'s argv, while the gateway address
+  is known only after boot.
+- Binds only to host vmnet bridge addresses (the address a guest uses as its
+  gateway), never to LAN interfaces. The bridge exists only while a VM runs and
+  softnet picks a new /29 on every boot, so the server binds the cache port on
+  each bridge address as it appears and drops listeners whose address is gone.
+  More than one address can be live when VMs run concurrently.
+- If the server can't start or can't bind the port on the guest's gateway, the
+  VM boots without the cache and the runner log says why.
 
 ### VM integration
 - `LocalRunner.usesLocalCache` (default true). Read at each boot.
+- After the guest is up, Ghast reads its gateway with
+  `tart exec <vm> /sbin/route -n get default` (bare `route` isn't on the exec
+  PATH), checks it is a host bridge address and binds the port there.
 - Guest script, after unpacking the runner: patch `Runner.Worker.dll`, check the
   patch applied, then set `ACTIONS_RESULTS_URL=http://<gateway>:<port>/v/<vmToken>/` (a random per-boot token that routes events to the right VM log and rejects unknown VMs) in the
   runner `.env`. If the string isn't found or the patch fails, skip the env
   line and log one line; the job uses GitHub's cache.
-- Isolated VMs get the softnet rule allowing TCP to the host on the cache port
-  only (per Step 0.3).
+- Isolated VMs (cache on or off) boot with `--net-softnet-block @host` and
+  `--net-softnet-allow out proto udp @host port 53` (softnet's DNS resolver is at
+  the gateway), plus `out proto tcp @host port <cachePort>` when the cache is
+  on. This also closes a 2.5.0 gap: isolated VMs could reach every host port on
+  the bridge address, because softnet's default policy allows all traffic to
+  the gateway.
 - Runner log lines (with the VM prefix): cache hit/miss with key and size, and
   saves with size. One line per call, no per-block noise.
 
@@ -215,16 +240,24 @@ during upload: abort that upload, return an error, log one line.
 - Unit: key and restore-key matching, scope isolation (repo A never sees repo
   B; a branch reads only its granted scopes), eviction order and expiry, token
   verification with a test signing key (bad signature, expired, wrong issuer,
-  missing claims), Twirp handlers, single-shot and block uploads replayed from
-  the Step 0.4 fixtures, range downloads, passthrough (fake upstream).
+  missing claims, `ac` as a string), Twirp handlers, single-shot and
+  out-of-order block uploads replayed from the Step 0.4 fixtures, range
+  downloads, passthrough (fake upstream).
+- Listening: the port is fixed for the server's life; a listener appears for
+  each new bridge address and goes when the address does; LAN addresses are
+  never bound.
+- Isolation: an isolated VM's `tart run` args carry exactly the block and allow
+  rules above, with the cache on and off; a shared-network VM carries none.
 - Guest script: patch step and env line, including the not-found fallback.
 - Snapshots: Configuration with the switch; Settings › General with Cache.
 - Live, before merge, in `blackpaw-studio/ghast-livecheck`: a workflow that
   saves with `actions/cache`, then a second run that restores (hit logged), on
   an isolated and a non-isolated VM runner; plus an artifact upload to prove
-  passthrough.
+  passthrough. On the isolated VM, a second host port and the LAN are
+  unreachable and DNS works, with the cache on and off.
 
 ## Not included
 
 Host runners; sharing between Macs; the v1 cache API; per-repo size limits;
-`ACTIONS_CACHE_MODE` handling beyond what the client does itself.
+`ACTIONS_CACHE_MODE` handling beyond what the client does itself; the softnet
+control channel (rules are fixed at `tart run`).
