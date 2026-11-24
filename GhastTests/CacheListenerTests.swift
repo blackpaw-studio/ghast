@@ -60,31 +60,35 @@ struct CacheListenerTests {
         await listener.close()
     }
 
-    @Test("one peer can't hold more than its share of connections, and the listener keeps serving")
+    @Test("one peer gets at most its share of connections, the rest are closed, and the listener keeps serving")
     func perPeerCap() async throws {
         defer { folder.cleanup() }
         var limits = CacheConnectionLimits()
-        limits.maximumPerPeer = 1
+        limits.headerTimeout = .seconds(60)  // admitted connections stay open for the whole test
+        let cap = limits.maximumPerPeer, extra = 4
         let (listener, port) = try await listen(limits: limits)
-        // Connections are accepted in order, so the first one holds the peer's only slot.
-        let held = try RawConnection.open(port: port)
-        let second = try RawConnection.open(port: port)
-        let refused = await RawConnection.exchange(second, send: Self.request, waitLimit: .seconds(5))
-        close(second)
-        close(held)
-        // The slot comes back once the server sees the close; retry until it has (bounded).
-        var served = RawConnection.Outcome(received: [], wasClosed: true)
-        for _ in 0 ..< 100 where served.received.isEmpty {
-            let fd = try RawConnection.open(port: port)
-            served = await RawConnection.exchange(fd, send: Array("GET /nothing HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".utf8),
-                                                  waitLimit: .seconds(5))
-            close(fd)
-        }
+        let connections = try (0 ..< cap + extra).map { _ in try RawConnection.open(port: port) }
 
-        #expect(refused.wasClosed && refused.received.isEmpty)
-        #expect(String(decoding: served.received, as: UTF8.self).hasPrefix("HTTP/1.1 404"))
+        // Whichever connections the server accepted last are refused, so count closes, not positions.
+        let refused = await RawConnection.closedCount(connections, reaching: extra)
+        let open = connections.filter { !RawConnection.isClosed($0) }
+        var served = 0
+        for fd in open {
+            let outcome = await RawConnection.exchange(fd, send: Self.closingRequest, waitLimit: .seconds(30))
+            if String(decoding: outcome.received, as: UTF8.self).hasPrefix("HTTP/1.1 404") { served += 1 }
+        }
+        // A slot is freed once both ends have closed.
+        connections.forEach { close($0) }
+        let later = await RawConnection.firstServed(port: port, request: Self.closingRequest)
+
+        #expect(refused == extra)
+        #expect(open.count == cap)
+        #expect(served == cap)
+        #expect(later)
         await listener.close()
     }
+
+    private static let closingRequest = Array("GET /nothing HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".utf8)
 
     @Test("a peer outside the bridge subnet is closed without a reply")
     func refusesOutsider() async throws {

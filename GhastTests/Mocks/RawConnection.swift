@@ -58,6 +58,39 @@ enum RawConnection {
         }.value
     }
 
+    /// Whether the server has closed `fd` (EOF or reset), without waiting.
+    static func isClosed(_ fd: Int32) -> Bool {
+        var byte: UInt8 = 0
+        let count = recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+        return count == 0 || (count < 0 && errno == ECONNRESET)
+    }
+
+    /// How many of `fds` the server has closed, once that reaches `target` (or the most it
+    /// reached if it never does within `attempts` short polls).
+    static func closedCount(_ fds: [Int32], reaching target: Int, attempts: Int = 2_000) async -> Int {
+        var closed = 0
+        for _ in 0 ..< attempts {
+            closed = fds.filter(isClosed).count
+            if closed >= target { return closed }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return closed
+    }
+
+    /// Opens new connections until one gets a reply to `request` (a freed slot is seen by the
+    /// server only after its close lands), within `attempts`.
+    static func firstServed(port: Int, request: [UInt8], attempts: Int = 2_000) async -> Bool {
+        for _ in 0 ..< attempts {
+            if let fd = try? open(port: port) {
+                let outcome = await exchange(fd, send: request, waitLimit: .seconds(5))
+                close(fd)
+                if !outcome.received.isEmpty { return true }
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return false
+    }
+
     private static func loopback(port: Int) -> sockaddr_in {
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
