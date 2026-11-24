@@ -1,0 +1,218 @@
+{
+  "captured": "2026-11-24, Ghast Step 0.4 spike",
+  "client": "actions/cache@v4 (0057852bfaa89a56745cba8c7296529d2fc39830), cache service v2, runner 2.338.2 osx-arm64, guest macOS (tahoe-xcode:26.5), zstd",
+  "server": "falcondev-oss/github-actions-cache-server 10.0.2 behind a logging proxy at ACTIONS_RESULTS_URL",
+  "notes": "Request records in order. sig and request ids redacted; signed URL hosts replaced with <host>; no Authorization headers, tokens or blob bytes. Block uploads run concurrently, so block PUTs arrive out of blockid order; the block list gives the commit order.",
+  "archive_bytes": 209722418,
+  "upload": "4 blocks of up to 64 MiB, concurrent, then block list",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry",
+      "query": [],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "110"
+      },
+      "body_length": 110,
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json",
+        "content-length": "154"
+      },
+      "response_length": 154,
+      "body": {
+        "key": "spike-large-45305005542",
+        "version": "d56890fb7bf68542696180ce9d623fdb47643c7c20abcc8e74242f135fb07434"
+      },
+      "response_body": {
+        "ok": true,
+        "signed_upload_url": "http://<host>/devstoreaccount1/upload/2127008668?sig=<redacted>",
+        "message": ""
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/devstoreaccount1/upload/2127008668",
+      "query": [
+        [
+          "sig",
+          "<redacted>"
+        ],
+        [
+          "comp",
+          "block"
+        ],
+        [
+          "blockid",
+          "YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAz"
+        ]
+      ],
+      "headers": {
+        "x-ms-version": "2021-12-02",
+        "content-length": "8395826",
+        "content-type": "application/octet-stream",
+        "accept": "application/xml",
+        "x-ms-client-request-id": "<uuid>"
+      },
+      "body_length": 8395826,
+      "status": 201,
+      "response_headers": {
+        "x-ms-request-id": "<uuid>",
+        "content-length": "0"
+      },
+      "response_length": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/devstoreaccount1/upload/2127008668",
+      "query": [
+        [
+          "sig",
+          "<redacted>"
+        ],
+        [
+          "comp",
+          "block"
+        ],
+        [
+          "blockid",
+          "YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAw"
+        ]
+      ],
+      "headers": {
+        "x-ms-version": "2021-12-02",
+        "content-length": "67108864",
+        "content-type": "application/octet-stream",
+        "accept": "application/xml",
+        "x-ms-client-request-id": "<uuid>"
+      },
+      "body_length": 67108864,
+      "status": 201,
+      "response_headers": {
+        "x-ms-request-id": "<uuid>",
+        "content-length": "0"
+      },
+      "response_length": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/devstoreaccount1/upload/2127008668",
+      "query": [
+        [
+          "sig",
+          "<redacted>"
+        ],
+        [
+          "comp",
+          "block"
+        ],
+        [
+          "blockid",
+          "YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAx"
+        ]
+      ],
+      "headers": {
+        "x-ms-version": "2021-12-02",
+        "content-length": "67108864",
+        "content-type": "application/octet-stream",
+        "accept": "application/xml",
+        "x-ms-client-request-id": "<uuid>"
+      },
+      "body_length": 67108864,
+      "status": 201,
+      "response_headers": {
+        "x-ms-request-id": "<uuid>",
+        "content-length": "0"
+      },
+      "response_length": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/devstoreaccount1/upload/2127008668",
+      "query": [
+        [
+          "sig",
+          "<redacted>"
+        ],
+        [
+          "comp",
+          "block"
+        ],
+        [
+          "blockid",
+          "YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAy"
+        ]
+      ],
+      "headers": {
+        "x-ms-version": "2021-12-02",
+        "content-length": "67108864",
+        "content-type": "application/octet-stream",
+        "accept": "application/xml",
+        "x-ms-client-request-id": "<uuid>"
+      },
+      "body_length": 67108864,
+      "status": 201,
+      "response_headers": {
+        "x-ms-request-id": "<uuid>",
+        "content-length": "0"
+      },
+      "response_length": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/devstoreaccount1/upload/2127008668",
+      "query": [
+        [
+          "sig",
+          "<redacted>"
+        ],
+        [
+          "comp",
+          "blocklist"
+        ]
+      ],
+      "headers": {
+        "content-type": "application/xml",
+        "accept": "application/xml",
+        "x-ms-version": "2021-12-02",
+        "x-ms-client-request-id": "<uuid>",
+        "content-length": "402"
+      },
+      "body_length": 402,
+      "status": 201,
+      "response_headers": {
+        "x-ms-request-id": "<uuid>",
+        "content-length": "0"
+      },
+      "response_length": 0,
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><BlockList><Latest>YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAw</Latest><Latest>YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAx</Latest><Latest>YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAy</Latest><Latest>YzgyNDA1ZTMtYjM0NC00NThhLTg4YTctZGFhNzczMmVkNDEyMDAwMDAwMDAwMDAz</Latest></BlockList>"
+    },
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload",
+      "query": [],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "135"
+      },
+      "body_length": 135,
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json",
+        "content-length": "48"
+      },
+      "response_length": 48,
+      "body": {
+        "key": "spike-large-45305005542",
+        "size_bytes": "209722418",
+        "version": "d56890fb7bf68542696180ce9d623fdb47643c7c20abcc8e74242f135fb07434"
+      },
+      "response_body": {
+        "ok": true,
+        "entry_id": "2127008668",
+        "message": ""
+      }
+    }
+  ]
+}

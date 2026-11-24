@@ -1,0 +1,46 @@
+{
+  "captured": "2026-11-24, Ghast Step 0.4 spike",
+  "client": "actions/cache@v4 (0057852bfaa89a56745cba8c7296529d2fc39830), cache service v2, runner 2.338.2 osx-arm64, guest macOS (tahoe-xcode:26.5), zstd",
+  "server": "falcondev-oss/github-actions-cache-server 10.0.2 behind a logging proxy at ACTIONS_RESULTS_URL",
+  "notes": "Request records in order. sig and request ids redacted; signed URL hosts replaced with <host>; no Authorization headers, tokens or blob bytes. Block uploads run concurrently, so block PUTs arrive out of blockid order; the block list gives the commit order.",
+  "archive_bytes": 209722418,
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL",
+      "query": [],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "110"
+      },
+      "body_length": 110,
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json",
+        "content-length": "146"
+      },
+      "response_length": 146,
+      "body": {
+        "key": "spike-large-45305005542",
+        "version": "d56890fb7bf68542696180ce9d623fdb47643c7c20abcc8e74242f135fb07434"
+      },
+      "response_body": {
+        "ok": true,
+        "signed_download_url": "http://<host>/download/d6b7b492-f772-4887-990e-5cd1030b96b1",
+        "matched_key": "spike-large-45305005542"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/download/d6b7b492-f772-4887-990e-5cd1030b96b1",
+      "query": [],
+      "headers": {},
+      "body_length": 0,
+      "status": 200,
+      "response_headers": {
+        "accept-ranges": "bytes"
+      },
+      "response_length": 209722418
+    }
+  ]
+}

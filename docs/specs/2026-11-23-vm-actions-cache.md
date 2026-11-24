@@ -1,6 +1,6 @@
 # Built-in Actions cache for VM runners
 
-Date: 2026-11-23 · Status: draft
+Date: 2026-11-23 · Status: draft (Step 0 recorded; one decision open, see 0.3)
 
 ## Goal
 
@@ -52,6 +52,89 @@ Run on Dionysus with a scratch VM; record results here before building.
 5. Confirm a job token's claims: `iss`, `repository_id`, `ac` (scopes with
    read/write bits), and that the JWKS at
    `https://token.actions.githubusercontent.com` verifies it.
+
+### Step 0 results (2026-11-23, Dionysus, Tart 2.42.0, softnet 0.26.0)
+
+Scratch VM `spike-cache-1` (clone of `macos-tahoe-xcode:26.5`), runner 2.338.2
+osx-arm64 (the tarball in `~/.ghast/tart-cache`), JIT runners on
+`blackpaw-studio/ghast-livecheck`. Passing run: actions/runs/45305005542.
+Fixtures: `GhastTests/Fixtures/ActionsCache/`.
+
+1. **Pass.** Exactly 1 UTF-16LE match in `bin/Runner.Worker.dll`, 0 in every
+   other `bin/*.dll`. The perl patch changes one byte (size unchanged); recount
+   gives 0 of `…_URL`, 1 of `…_ORL`. Patched in the guest with the system perl,
+   the runner ran 6 jobs; `ACTIONS_RESULTS_URL` from `.env` survived and every
+   cache call from `actions/cache` reached our URL. In a `run` step
+   `ACTIONS_RESULTS_ORL` was empty: the runner sets the results URL only for
+   action steps, which is where `@actions/cache` reads it. Job logs are intact
+   (fetched through the API). The artifact upload worked through passthrough
+   (`ArtifactService/CreateArtifact` + `FinalizeArtifact`, artifact listed at
+   1,049,023 bytes). No step-summary or log call reached the cache URL: the
+   runner uploads those on its own connection. The summary was not checked by
+   eye in the web UI.
+2. **Pass.** Shared network: the guest's gateway is `192.168.64.1`, the host's
+   `bridge100` (/24). A server bound to it is reachable from the guest.
+   `bridge100` exists only while at least one VM runs: it isn't there before
+   the first `tart run` and is gone after the last stop. It appears within
+   ~3 s of `tart run`, before the guest agent answers. Softnet: each boot got a
+   different /29 gateway (`10.14.32.249`, `192.168.99.121`, `192.168.51.57`),
+   also on `bridge100` when it is the only VM. So the gateway is known only
+   after boot, and concurrent VMs can mean more than one bridge address.
+   Softnet's default policy allows **all** traffic to the gateway (its README:
+   "send traffic to gateway IP of the vmnet bridge"). With plain
+   `--net-softnet`, both test ports 8765 and 8766 were reachable. `tart exec <vm> route …` fails
+   with exit 125 (`/sbin` isn't on the exec PATH), so use `/sbin/route`. Two
+   concurrent VMs were not tested.
+3. **Pass, via (a), with a shape change.** Tart's `Run.swift` passes
+   `--net-softnet-allow` through unparsed (`["--allow", value]`). Softnet
+   0.26.0 accepts `out proto tcp @host port N`. The allow rule alone does
+   nothing new, because the default already admits every host port. To limit
+   the guest to one port, the host must also be blocked:
+   - allow `out proto tcp @host port 8765` + `--net-softnet-block @host`:
+     8765 reachable, 8766 blocked, **but DNS breaks** (softnet's resolver is at
+     the gateway).
+   - allow `out proto tcp @host port 8765,out proto udp @host port 53` +
+     block `@host`: 8765 reachable, 8766 blocked, DNS and internet work, LAN
+     blocked.
+   The port must be known at `tart run` time. `@host` means the gateway isn't
+   needed then. (b) control-fd was not needed and not tested. **Decision
+   needed:** blocking `@host` narrows today's isolation (isolated VMs
+   currently reach every host port on the bridge address). The alternative is
+   to add no rule and rely on the default policy.
+4. **Pass.** The run used falcondev 10.0.2 behind a logging proxy;
+   `actions/cache@v4` was `0057852`, with zstd. No endpoint outside the
+   subset appeared. Findings that refine the design:
+   - Upload URLs are `…/devstoreaccount1/upload/{id}?sig=…`: falcondev keeps an
+     account-style first segment for the Azure SDK, which parses IP-host URLs
+     path-style. Mirror it, or prove a bare `/upload/{id}` with the SDK.
+   - 1 MiB: one `PUT` with `x-ms-blob-type: BlockBlob`. 200 MiB (209,722,418
+     bytes): 4 blocks (3 × 64 MiB plus the remainder) sent concurrently, so
+     they arrive out of order (the short last block came first). Then one
+     `comp=blocklist` PUT with `<BlockList><Latest>…</Latest>…</BlockList>`
+     (`application/xml`). Every upload request gets 201 with
+     `x-ms-request-id`. `x-ms-version: 2021-12-02`.
+   - Finalize sends `size_bytes` as a JSON string (int64). `restore_keys` is
+     omitted when empty. Responses carry `message: ""`.
+   - Restore is a single plain `GET /download/{id}` with no `Range` or `HEAD`,
+     even at 200 MiB (the toolkit uses its plain HTTP client for non-Azure
+     hosts). Ranges matter only for BuildKit `type=gha` (`x-ms-range`), which
+     was not captured.
+   - A prefix hit returns `matched_key` and the step reports `cache-hit=false`.
+   - falcondev answers a duplicate `CreateCacheEntry` with a Twirp
+     `already_exists` (409), citing GitHub's behaviour. This spec says
+     `ok: false`. Not exercised live; both make the client skip the save.
+   Files: `small-save`, `large-save`, `small-restore`, `large-restore`,
+   `prefix-restore` (added) and `passthrough` (added). Records only: no
+   tokens, no `sig`, no blobs.
+5. **Pass.** The token uses `alg` RS256 with a `kid`, and `iss` is
+   `https://token.actions.githubusercontent.com`. Discovery gives `jwks_uri`
+   `…/.well-known/jwks`, and the signature verified against the matching JWK.
+   `repository_id` is a JSON **string**. `ac` is a JSON **string** holding an
+   array, `[{"Scope":"refs/heads/main","Permission":3}]`, so it is parsed
+   twice. `nbf` is present, `exp` is about 6.25 h later, and `aud` is
+   `vso:<guid>`. The claim names are in `claims.json`. falcondev searches read
+   scopes by descending `Permission`, not grant order; this doesn't matter
+   with one scope.
 
 ## Design
 
