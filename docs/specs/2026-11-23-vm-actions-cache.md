@@ -105,7 +105,7 @@ Hummingbird 2 (SwiftNIO) HTTP/1.1 server inside Ghast.
 ### VM integration
 - `LocalRunner.usesLocalCache` (default true). Read at each boot.
 - Guest script, after unpacking the runner: patch `Runner.Worker.dll`, check the
-  patch applied, then set `ACTIONS_RESULTS_URL=http://<gateway>:<port>/` in the
+  patch applied, then set `ACTIONS_RESULTS_URL=http://<gateway>:<port>/v/<vmToken>/` (a random per-boot token that routes events to the right VM log and rejects unknown VMs) in the
   runner `.env`. If the string isn't found or the patch fails, skip the env
   line and log one line; the job uses GitHub's cache.
 - Isolated VMs get the softnet rule allowing TCP to the host on the cache port
