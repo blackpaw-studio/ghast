@@ -71,15 +71,20 @@ struct TartGuestScriptCacheTests {
         let status: Int32
         let dll: [UInt8]
         let env: String
+        /// What `bin/` holds afterwards: no temp copies left behind.
+        let binFiles: [String]
     }
 
     /// Writes `bin/Runner.Worker.dll` (when `dll` is non-nil) and a `.env`, runs the cache block.
-    private func run(dll: [UInt8]?, cacheURL: String) throws -> Run {
+    private func run(dll: [UInt8]?, cacheURL: String, envIsWritable: Bool = true) throws -> Run {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("guest-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("bin"), withIntermediateDirectories: true)
         if let dll { try Data(dll).write(to: folder.appendingPathComponent("bin/Runner.Worker.dll")) }
         try Data("EXISTING=1\n".utf8).write(to: folder.appendingPathComponent(".env"))
+        if !envIsWritable {
+            try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: folder.appendingPathComponent(".env").path)
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -93,7 +98,8 @@ struct TartGuestScriptCacheTests {
         process.waitUntilExit()
         let dllAfter = (try? Data(contentsOf: folder.appendingPathComponent("bin/Runner.Worker.dll"))).map { [UInt8]($0) } ?? []
         let env = (try? String(contentsOf: folder.appendingPathComponent(".env"), encoding: .utf8)) ?? ""
-        return Run(output: output, status: process.terminationStatus, dll: dllAfter, env: env)
+        let binFiles = (try? FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("bin").path)) ?? []
+        return Run(output: output, status: process.terminationStatus, dll: dllAfter, env: env, binFiles: binFiles.sorted())
     }
 
     private static func count(_ needle: [UInt8], in bytes: [UInt8]) -> Int {
@@ -113,6 +119,20 @@ struct TartGuestScriptCacheTests {
         #expect(result.dll.count == Self.dll.count)
         #expect(result.env == "EXISTING=1\nACTIONS_RESULTS_URL=\(Self.url)\n")
         #expect(result.output.isEmpty)
+        #expect(result.binFiles == ["Runner.Worker.dll"])
+    }
+
+    @Test("when .env can't be written the runner stays unpatched, with one log line")
+    func unwritableEnv() throws {
+        let result = try run(dll: Self.dll, cacheURL: Self.url, envIsWritable: false)
+
+        #expect(result.status == 0)
+        #expect(result.dll == Self.dll)
+        #expect(result.env == "EXISTING=1\n")
+        #expect(result.binFiles == ["Runner.Worker.dll"])
+        #expect(result.output.split(separator: "\n").count == 1)
+        #expect(result.output.hasPrefix("Local cache off: "))
+        #expect(result.output.hasSuffix("; this job uses GitHub's cache\n"))
     }
 
     @Test("no copy, two copies or no DLL leave everything as it was, with one log line", arguments: [
@@ -129,6 +149,7 @@ struct TartGuestScriptCacheTests {
         #expect(result.output.split(separator: "\n").count == 1)
         #expect(result.output.hasPrefix("Local cache off: "))
         #expect(result.output.hasSuffix("; this job uses GitHub's cache\n"))
+        #expect(result.binFiles == (dll == nil ? [] : ["Runner.Worker.dll"]))
     }
 
     @Test("with no cache URL nothing changes")

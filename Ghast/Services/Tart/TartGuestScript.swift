@@ -54,20 +54,29 @@ enum TartGuestScript {
     /// Points the runner at Ghast's cache when `$2` (the cache URL) is set. The runner
     /// overwrites `ACTIONS_RESULTS_URL` at every job, so its one UTF-16LE copy in
     /// `bin/Runner.Worker.dll` is renamed to `ACTIONS_RESULTS_ORL` (same length) and the URL
-    /// goes in `.env`. Anything unexpected (no copy, several, a patch that didn't take) leaves
-    /// the package alone with one log line, and the job uses GitHub's cache.
+    /// goes in `.env`. The patch is made on a copy, the URL written, and only then is the copy
+    /// moved over the DLL, so the two always change together. Anything unexpected (no copy,
+    /// several, a patch that didn't take, an unwritable `.env`) leaves the original DLL and
+    /// `.env` alone with one log line, and the job uses GitHub's cache.
     static let cacheBlock = #"""
     if [ -n "$2" ]; then
         DLL=bin/Runner.Worker.dll
-        ghast_count() { GHAST_NEEDLE="$1" perl -0777 -ne 'my $n = join("", map { $_ . "\0" } split(//, $ENV{GHAST_NEEDLE})); my $c = () = /\Q$n\E/g; print $c' "$DLL" 2>/dev/null; }
-        GHAST_FOUND=$(ghast_count ACTIONS_RESULTS_URL)
+        GHAST_PATCHED="$DLL.ghast-patch"
+        ghast_count() { GHAST_NEEDLE="$1" perl -0777 -ne 'my $n = join("", map { $_ . "\0" } split(//, $ENV{GHAST_NEEDLE})); my $c = () = /\Q$n\E/g; print $c' "$2" 2>/dev/null; }
+        ghast_off() { rm -f "$GHAST_PATCHED"; echo "Local cache off: $1; this job uses GitHub's cache"; }
+        GHAST_FOUND=$(ghast_count ACTIONS_RESULTS_URL "$DLL")
+        GHAST_ENV_SIZE=$(wc -c < .env 2>/dev/null || echo 0)
         if [ "$GHAST_FOUND" != "1" ]; then
-            echo "Local cache off: the runner has ${GHAST_FOUND:-0} copies of its results URL setting, not 1; this job uses GitHub's cache"
-        elif ! perl -0777 -pi -e 'my $f = join("", map { $_ . "\0" } split(//, "ACTIONS_RESULTS_URL")); my $t = join("", map { $_ . "\0" } split(//, "ACTIONS_RESULTS_ORL")); s/\Q$f\E/$t/' "$DLL" 2>/dev/null \
-            || [ "$(ghast_count ACTIONS_RESULTS_URL)" != "0" ]; then
-            echo "Local cache off: the runner patch didn't apply; this job uses GitHub's cache"
-        else
-            printf 'ACTIONS_RESULTS_URL=%s\n' "$2" >> .env
+            ghast_off "the runner has ${GHAST_FOUND:-0} copies of its results URL setting, not 1"
+        elif ! cp -p "$DLL" "$GHAST_PATCHED" 2>/dev/null \
+            || ! perl -0777 -pi -e 'my $f = join("", map { $_ . "\0" } split(//, "ACTIONS_RESULTS_URL")); my $t = join("", map { $_ . "\0" } split(//, "ACTIONS_RESULTS_ORL")); s/\Q$f\E/$t/' "$GHAST_PATCHED" 2>/dev/null \
+            || [ "$(ghast_count ACTIONS_RESULTS_URL "$GHAST_PATCHED")" != "0" ]; then
+            ghast_off "the runner patch didn't apply"
+        elif ! printf 'ACTIONS_RESULTS_URL=%s\n' "$2" 2>/dev/null >> .env; then
+            ghast_off "couldn't write the cache URL to .env"
+        elif ! mv -f "$GHAST_PATCHED" "$DLL" 2>/dev/null; then
+            perl -e 'truncate(".env", $ARGV[0])' "$GHAST_ENV_SIZE" 2>/dev/null
+            ghast_off "couldn't install the patched runner"
         fi
     fi
     """#
