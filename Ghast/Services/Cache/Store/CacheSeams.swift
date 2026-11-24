@@ -27,24 +27,50 @@ struct SystemCacheRandomness: CacheRandomness {
     }
 }
 
-/// Appends bytes to a file, creating it owner-only when missing. Injected so tests can fail a
-/// write (for example with `ENOSPC`).
+/// An open file that bytes are appended to. Closing twice is harmless.
+protocol CacheFileSink: AnyObject, Sendable {
+    func write(_ bytes: some Collection<UInt8>) throws
+    func close() throws
+}
+
+/// Creates archive files. Injected so tests can fail a write (for example with `ENOSPC`) or
+/// hold one.
 protocol CacheBlobWriting: Sendable {
-    func append(_ bytes: some Collection<UInt8>, to url: URL) throws
+    /// Creates `url` empty and owner-only (replacing any file there) and opens it for writing.
+    func create(_ url: URL) throws -> any CacheFileSink
 }
 
 struct FileBlobWriter: CacheBlobWriting {
-    func append(_ bytes: some Collection<UInt8>, to url: URL) throws {
+    func create(_ url: URL) throws -> any CacheFileSink {
         let manager = FileManager.default
-        if !manager.fileExists(atPath: url.path) {
-            guard manager.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
-                throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
-            }
+        try? manager.removeItem(at: url)
+        guard manager.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
         }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
+        return FileSink(handle: try FileHandle(forWritingTo: url))
+    }
+}
+
+/// One open `FileHandle`; writes from one part at a time, so the lock only guards close.
+final class FileSink: CacheFileSink, @unchecked Sendable {
+    private let lock = NSLock()
+    private var handle: FileHandle?
+
+    init(handle: FileHandle) { self.handle = handle }
+
+    deinit { try? handle?.close() }
+
+    func write(_ bytes: some Collection<UInt8>) throws {
+        guard let handle = lock.withLock({ self.handle }) else { throw CocoaError(.fileWriteUnknown) }
         try handle.write(contentsOf: Data(bytes))
+    }
+
+    func close() throws {
+        let open = lock.withLock { () -> FileHandle? in
+            defer { handle = nil }
+            return handle
+        }
+        try open?.close()
     }
 }
 

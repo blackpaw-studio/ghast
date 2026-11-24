@@ -21,7 +21,8 @@ struct CacheUsage: Equatable, Sendable {
 
 enum CacheStoreError: Error, Equatable {
     case unknownUpload
-    case partNotStarted
+    /// A block list is being committed for this upload.
+    case commitInProgress
     case missingBlock(id: String)
     case nothingUploaded
     case sizeMismatch(expected: Int64, actual: Int64)
@@ -40,8 +41,26 @@ struct PendingUpload: Sendable {
     let version: String
     let signature: String
     var lastActivityAt: Date
-    var startedBlocks: Set<String> = []
+    /// Blocks written in full and not yet committed.
+    var completedBlocks: Set<String> = []
+    /// The archive file is complete (a single-shot part or a committed block list).
     var hasWhole = false
+    /// Set while a block list is being concatenated.
+    var commitToken: Int?
+
+    mutating func markIncomplete(_ part: CacheUploadPart) {
+        switch part {
+        case .whole: hasWhole = false
+        case .block(let id): completedBlocks.remove(id)
+        }
+    }
+
+    mutating func markComplete(_ part: CacheUploadPart) {
+        switch part {
+        case .whole: hasWhole = true
+        case .block(let id): completedBlocks.insert(id)
+        }
+    }
 
     func isSlot(repo: CacheRepoID, scope: String, key: String, version: String) -> Bool {
         self.repo == repo && self.scope == scope && self.key == key && self.version == version

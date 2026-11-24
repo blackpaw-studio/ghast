@@ -14,16 +14,43 @@ final class SequentialCacheRandomness: CacheRandomness, @unchecked Sendable {
 /// Writes through to disk until `failAfterBytes` would be exceeded, then throws `ENOSPC`.
 final class FailingBlobWriter: CacheBlobWriting, @unchecked Sendable {
     private let lock = NSLock()
-    private let real = FileBlobWriter()
     private var written = 0
     var failAfterBytes = Int.max
 
-    func append(_ bytes: some Collection<UInt8>, to url: URL) throws {
-        try lock.withLock {
-            guard written + bytes.count <= failAfterBytes else { throw POSIXError(.ENOSPC) }
-            written += bytes.count
+    func create(_ url: URL) throws -> any CacheFileSink {
+        CheckedSink(real: try FileBlobWriter().create(url)) { [self] count in
+            try lock.withLock {
+                guard written + count <= failAfterBytes else { throw POSIXError(.ENOSPC) }
+                written += count
+            }
         }
-        try real.append(bytes, to: url)
+    }
+}
+
+/// A real sink that asks `check` (which may throw or block) before each non-empty write.
+final class CheckedSink: CacheFileSink, @unchecked Sendable {
+    private let real: any CacheFileSink
+    private let check: (Int) throws -> Void
+
+    init(real: any CacheFileSink, check: @escaping (Int) throws -> Void) {
+        self.real = real
+        self.check = check
+    }
+
+    func write(_ bytes: some Collection<UInt8>) throws {
+        if !bytes.isEmpty { try check(bytes.count) }
+        try real.write(bytes)
+    }
+
+    func close() throws { try real.close() }
+}
+
+extension CacheStore {
+    /// Writes one part in full: begin, write, finish.
+    func writePart(uploadID: String, part: CacheUploadPart, bytes: [UInt8]) throws {
+        let partWriter = try beginPart(uploadID: uploadID, part: part)
+        try partWriter.write(bytes)
+        try finishPart(partWriter)
     }
 }
 
@@ -62,4 +89,64 @@ final class FailingIndexWriter: CacheIndexWriting, @unchecked Sendable {
     }
 
     var callCount: Int { lock.withLock { calls } }
+}
+
+/// Holds one write until the test opens it, so a test can act while a write is in progress.
+/// The hold gives up after `limit` so a regression fails an expectation instead of hanging.
+final class WriteGate: @unchecked Sendable {
+    private let entered = DispatchSemaphore(value: 0)
+    private let released = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var hasPassed = false
+    private var gaveUp = false
+    private let limit: DispatchTimeInterval
+
+    init(limit: DispatchTimeInterval = .seconds(20)) { self.limit = limit }
+
+    /// Called by the writer: the first caller blocks until `open()` (or the limit).
+    func pass() {
+        let isFirst = lock.withLock { () -> Bool in
+            defer { hasPassed = true }
+            return !hasPassed
+        }
+        guard isFirst else { return }
+        entered.signal()
+        if released.wait(timeout: .now() + limit) == .timedOut {
+            lock.withLock { gaveUp = true }
+        }
+    }
+
+    func open() { released.signal() }
+
+    /// Whether the held write gave up waiting (the test didn't get to act during it).
+    var didGiveUp: Bool { lock.withLock { gaveUp } }
+
+    /// Waits, off the cooperative pool, until a write is being held.
+    func waitUntilHolding() async {
+        let entered = self.entered
+        let limit = self.limit
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                _ = entered.wait(timeout: .now() + limit)
+                done.resume()
+            }
+        }
+    }
+}
+
+/// A real writer whose first non-empty write to a file matching `holds` waits on `gate`.
+final class GatedBlobWriter: CacheBlobWriting, @unchecked Sendable {
+    let gate: WriteGate
+    let holds: @Sendable (URL) -> Bool
+
+    init(gate: WriteGate, holds: @escaping @Sendable (URL) -> Bool) {
+        self.gate = gate
+        self.holds = holds
+    }
+
+    func create(_ url: URL) throws -> any CacheFileSink {
+        let real = try FileBlobWriter().create(url)
+        guard holds(url) else { return real }
+        return CheckedSink(real: real) { [gate] _ in gate.pass() }
+    }
 }

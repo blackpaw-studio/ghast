@@ -26,6 +26,9 @@ actor CacheStore {
 
     private var index: CacheIndex
     private var uploads: [String: PendingUpload] = [:]
+    /// Part writers in use, per upload; cancelled when their upload is dropped.
+    private var activeWriters: [String: [CachePartWriter]] = [:]
+    private var nextCommitToken = 0
     /// `lastUsedAt` changes from restores, saved with the next index write.
     private var isIndexDirty = false
 
@@ -83,56 +86,128 @@ actor CacheStore {
     /// The pending upload `uploadID` names, if any.
     func pendingUpload(_ uploadID: String) -> PendingUpload? { uploads[uploadID] }
 
-    /// Starts (or restarts) one part of an upload with an empty file.
-    func beginPart(uploadID: String, part: CacheUploadPart) throws {
+    /// Starts (or restarts) one part with an empty file and returns its writer. The caller
+    /// writes the body through it, off this actor, then calls `finishPart` or `abandonPart`.
+    func beginPart(uploadID: String, part: CacheUploadPart) throws -> CachePartWriter {
         guard var upload = uploads[uploadID] else { throw CacheStoreError.unknownUpload }
-        let url = partURL(uploadID, part)
-        try? FileManager.default.removeItem(at: url)
+        guard upload.commitToken == nil else { throw CacheStoreError.commitInProgress }
+        let sink: any CacheFileSink
         do {
-            try writer.append(EmptyCollection<UInt8>(), to: url)
+            sink = try writer.create(partURL(uploadID, part))
         } catch {
             throw abort(uploadID, error)
         }
-        switch part {
-        case .whole: upload.hasWhole = true
-        case .block(let id): upload.startedBlocks.insert(id)
-        }
+        let partWriter = CachePartWriter(uploadID: uploadID, part: part, sink: sink, clock: clock)
+        activeWriters[uploadID, default: []].append(partWriter)
+        upload.markIncomplete(part)
         upload.lastActivityAt = clock.now()
         uploads[uploadID] = upload
+        return partWriter
     }
 
-    /// Appends bytes to a started part. A write error drops the whole upload, files included.
-    func appendPart(uploadID: String, part: CacheUploadPart, bytes: some Collection<UInt8> & Sendable) throws {
-        guard var upload = uploads[uploadID] else { throw CacheStoreError.unknownUpload }
-        guard Self.isStarted(part, in: upload) else { throw CacheStoreError.partNotStarted }
+    /// Ends a part whose body was written in full. A write error during it drops the upload.
+    func finishPart(_ partWriter: CachePartWriter) throws {
+        release(partWriter)
+        var closeError: String?
+        do { try partWriter.close() } catch { closeError = String(describing: error) }
+        guard var upload = uploads[partWriter.uploadID], !partWriter.wasCancelled else {
+            throw CacheStoreError.unknownUpload
+        }
+        if let failure = partWriter.writeFailure ?? closeError {
+            discard(partWriter.uploadID)
+            throw CacheStoreError.writeFailed(failure)
+        }
+        upload.markComplete(partWriter.part)
+        upload.lastActivityAt = clock.now()
+        uploads[partWriter.uploadID] = upload
+    }
+
+    /// Ends a part whose request stopped early; the part stays incomplete and can be retried.
+    func abandonPart(_ partWriter: CachePartWriter) {
+        release(partWriter)
+        try? partWriter.close()
+    }
+
+    /// Builds the archive from blocks in the order given; every block must be complete. The
+    /// copy runs off this actor; if the upload was dropped meanwhile (clear, sweep) the result
+    /// is discarded. Block files are deleted once the archive is built, and kept until then so
+    /// a failed commit can be retried.
+    func commitBlocks(uploadID: String, order: [String]) async throws {
+        let job = try beginCommit(uploadID: uploadID, order: order)
+        let outcome: Result<Void, Error>
         do {
-            try writer.append(bytes, to: partURL(uploadID, part))
+            try await Self.concatenate(job.sources, into: job.sink)
+            outcome = .success(())
         } catch {
-            throw abort(uploadID, error)
+            outcome = .failure(error)
         }
-        upload.lastActivityAt = clock.now()
-        uploads[uploadID] = upload
+        try endCommit(job, outcome: outcome)
     }
 
-    /// Builds the archive from blocks in the order given. Every block must have been uploaded.
-    func commitBlocks(uploadID: String, order: [String]) throws {
+    private struct CommitJob: Sendable {
+        let uploadID: String
+        let token: Int
+        let sources: [URL]
+        let sink: any CacheFileSink
+    }
+
+    private func beginCommit(uploadID: String, order: [String]) throws -> CommitJob {
         guard var upload = uploads[uploadID] else { throw CacheStoreError.unknownUpload }
-        if let missing = order.first(where: { !upload.startedBlocks.contains($0) }) {
+        guard upload.commitToken == nil else { throw CacheStoreError.commitInProgress }
+        if let missing = order.first(where: { !upload.completedBlocks.contains($0) }) {
             throw CacheStoreError.missingBlock(id: missing)
         }
-        let whole = partURL(uploadID, .whole)
-        try? FileManager.default.removeItem(at: whole)
+        let sink: any CacheFileSink
         do {
-            try writer.append(EmptyCollection<UInt8>(), to: whole)
-            for block in order {
-                try copy(partURL(uploadID, .block(id: block)), appendingTo: whole)
-            }
+            sink = try writer.create(partURL(uploadID, .whole))
         } catch {
             throw abort(uploadID, error)
         }
-        upload.hasWhole = true
+        nextCommitToken += 1
+        upload.commitToken = nextCommitToken
+        upload.hasWhole = false
         upload.lastActivityAt = clock.now()
         uploads[uploadID] = upload
+        return CommitJob(uploadID: uploadID, token: nextCommitToken,
+                         sources: order.map { partURL(uploadID, .block(id: $0)) }, sink: sink)
+    }
+
+    private func endCommit(_ job: CommitJob, outcome: Result<Void, Error>) throws {
+        guard var upload = uploads[job.uploadID], upload.commitToken == job.token else {
+            throw CacheStoreError.unknownUpload
+        }
+        if case .failure(let error) = outcome {
+            throw abort(job.uploadID, error)
+        }
+        for block in upload.completedBlocks {
+            try? FileManager.default.removeItem(at: partURL(job.uploadID, .block(id: block)))
+        }
+        upload.completedBlocks = []
+        upload.commitToken = nil
+        upload.hasWhole = true
+        upload.lastActivityAt = clock.now()
+        uploads[job.uploadID] = upload
+    }
+
+    private static let copyChunkSize = 8 << 20
+
+    /// Appends each source to `sink` in large chunks, then closes it. Runs off the actor.
+    @concurrent
+    private nonisolated static func concatenate(_ sources: [URL], into sink: any CacheFileSink) async throws {
+        defer { try? sink.close() }
+        for source in sources {
+            let handle = try FileHandle(forReadingFrom: source)
+            defer { try? handle.close() }
+            while let chunk = try handle.read(upToCount: copyChunkSize), !chunk.isEmpty {
+                try sink.write(chunk)
+            }
+        }
+        try sink.close()
+    }
+
+    private func release(_ partWriter: CachePartWriter) {
+        activeWriters[partWriter.uploadID]?.removeAll { $0 === partWriter }
+        if activeWriters[partWriter.uploadID]?.isEmpty == true { activeWriters[partWriter.uploadID] = nil }
     }
 
     /// Makes the upload for this slot an entry. The archive must be exactly `sizeBytes`;
@@ -217,6 +292,8 @@ actor CacheStore {
             (index, uploads) = (savedIndex, savedUploads)
             throw error
         }
+        activeWriters.values.joined().forEach { $0.cancel() }
+        activeWriters = [:]
         try Self.emptyFolder(blobsURL)
         try Self.emptyFolder(uploadsURL)
     }
@@ -251,7 +328,7 @@ actor CacheStore {
         let now = clock.now()
         let expired = index.entries.filter { now.timeIntervalSince($0.lastUsedAt) > timing.entryExpiry }
         try remove(entryIDs: Set(expired.map(\.id)))
-        for (uploadID, upload) in uploads where now.timeIntervalSince(upload.lastActivityAt) > timing.uploadIdle {
+        for (uploadID, upload) in uploads where now.timeIntervalSince(lastActivity(uploadID, upload)) > timing.uploadIdle {
             discard(uploadID)
         }
         try flush()
@@ -294,7 +371,13 @@ actor CacheStore {
         return CacheStoreError.writeFailed(String(describing: error))
     }
 
+    /// The later of the upload's own activity and its writers' last writes.
+    private func lastActivity(_ uploadID: String, _ upload: PendingUpload) -> Date {
+        ((activeWriters[uploadID] ?? []).map(\.lastActivity) + [upload.lastActivityAt]).max() ?? upload.lastActivityAt
+    }
+
     private func discard(_ uploadID: String) {
+        activeWriters.removeValue(forKey: uploadID)?.forEach { $0.cancel() }
         uploads[uploadID] = nil
         try? FileManager.default.removeItem(at: uploadFolder(uploadID))
     }
@@ -314,22 +397,7 @@ actor CacheStore {
         }
     }
 
-    private static func isStarted(_ part: CacheUploadPart, in upload: PendingUpload) -> Bool {
-        switch part {
-        case .whole: upload.hasWhole
-        case .block(let id): upload.startedBlocks.contains(id)
-        }
-    }
 
-    private static let copyChunkSize = 1 << 20
-
-    private func copy(_ source: URL, appendingTo destination: URL) throws {
-        let handle = try FileHandle(forReadingFrom: source)
-        defer { try? handle.close() }
-        while let chunk = try handle.read(upToCount: Self.copyChunkSize), !chunk.isEmpty {
-            try writer.append(chunk, to: destination)
-        }
-    }
 
     private static func fileSize(_ url: URL) -> Int64 {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value

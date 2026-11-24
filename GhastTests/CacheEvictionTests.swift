@@ -20,8 +20,7 @@ struct CacheEvictionTests {
     private func save(_ store: CacheStore, key: String, size: Int = 5) async throws -> CacheEntry {
         let bytes = [UInt8](repeating: 7, count: size)
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: key, version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .whole)
-        try await store.appendPart(uploadID: id, part: .whole, bytes: bytes)
+        try await store.writePart(uploadID: id, part: .whole, bytes: bytes)
         return try await store.finalize(repo: repo, scope: main, key: key, version: "v1", sizeBytes: Int64(size))
     }
 
@@ -83,8 +82,7 @@ struct CacheEvictionTests {
         let store = try makeStore(capBytes: 10)
         try await save(store, key: "small")
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "big", version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .whole)
-        try await store.appendPart(uploadID: id, part: .whole, bytes: [UInt8](repeating: 1, count: 11))
+        try await store.writePart(uploadID: id, part: .whole, bytes: [UInt8](repeating: 1, count: 11))
 
         await #expect(throws: CacheStoreError.tooLarge(sizeBytes: 11, capBytes: 10)) {
             try await store.finalize(repo: repo, scope: main, key: "big", version: "v1", sizeBytes: 11)
@@ -130,7 +128,7 @@ struct CacheEvictionTests {
         defer { folder.cleanup() }
         let store = try makeStore()
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "a", version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .whole)
+        let partWriter = try await store.beginPart(uploadID: id, part: .whole)
 
         clock.advance(by: 10 * 60)
         try await store.sweep()
@@ -140,9 +138,7 @@ struct CacheEvictionTests {
         try await store.sweep()
         #expect(await store.usage().pendingUploads == 0)
         #expect(folder.files().allSatisfy { !$0.hasPrefix("uploads/") })
-        await #expect(throws: CacheStoreError.unknownUpload) {
-            try await store.appendPart(uploadID: id, part: .whole, bytes: [1])
-        }
+        #expect(throws: CacheStoreError.unknownUpload) { try partWriter.write([1]) }
     }
 
     @Test("the sweep removes files no entry or upload names (left by a crash)")

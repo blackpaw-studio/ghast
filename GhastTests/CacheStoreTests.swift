@@ -20,8 +20,7 @@ struct CacheStoreTests {
     @discardableResult
     private func save(_ store: CacheStore, key: String, bytes: [UInt8] = Array("hello".utf8)) async throws -> CacheEntry {
         let reservation = try #require(try await store.reserve(repo: repo, scope: main, key: key, version: "v1"))
-        try await store.beginPart(uploadID: reservation.uploadID, part: .whole)
-        try await store.appendPart(uploadID: reservation.uploadID, part: .whole, bytes: bytes)
+        try await store.writePart(uploadID: reservation.uploadID, part: .whole, bytes: bytes)
         return try await store.finalize(repo: repo, scope: main, key: key, version: "v1", sizeBytes: Int64(bytes.count))
     }
 
@@ -34,8 +33,7 @@ struct CacheStoreTests {
         defer { folder.cleanup() }
         let store = try makeStore()
         let reservation = try #require(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1"))
-        try await store.beginPart(uploadID: reservation.uploadID, part: .whole)
-        try await store.appendPart(uploadID: reservation.uploadID, part: .whole, bytes: Array("abc".utf8))
+        try await store.writePart(uploadID: reservation.uploadID, part: .whole, bytes: Array("abc".utf8))
         #expect(await lookup(store, "deps") == nil)
 
         _ = try await store.finalize(repo: repo, scope: main, key: "deps", version: "v1", sizeBytes: 3)
@@ -54,7 +52,7 @@ struct CacheStoreTests {
         #expect(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1") == nil)
         #expect(try await store.reserve(repo: repo, scope: "refs/heads/other", key: "deps", version: "v1") != nil)
 
-        try await store.beginPart(uploadID: try #require(first).uploadID, part: .whole)
+        try await store.writePart(uploadID: try #require(first).uploadID, part: .whole, bytes: [])
         _ = try await store.finalize(repo: repo, scope: main, key: "deps", version: "v1", sizeBytes: 0)
         #expect(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1") == nil)
     }
@@ -64,8 +62,7 @@ struct CacheStoreTests {
         defer { folder.cleanup() }
         let store = try makeStore()
         let reservation = try #require(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1"))
-        try await store.beginPart(uploadID: reservation.uploadID, part: .whole)
-        try await store.appendPart(uploadID: reservation.uploadID, part: .whole, bytes: Array("abc".utf8))
+        try await store.writePart(uploadID: reservation.uploadID, part: .whole, bytes: Array("abc".utf8))
 
         await #expect(throws: CacheStoreError.sizeMismatch(expected: 4, actual: 3)) {
             try await store.finalize(repo: repo, scope: main, key: "deps", version: "v1", sizeBytes: 4)
@@ -80,8 +77,7 @@ struct CacheStoreTests {
         let store = try makeStore()
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1")).uploadID
         for (block, text) in [("Yg==", "second"), ("YQ==", "first-")] {
-            try await store.beginPart(uploadID: id, part: .block(id: block))
-            try await store.appendPart(uploadID: id, part: .block(id: block), bytes: Array(text.utf8))
+            try await store.writePart(uploadID: id, part: .block(id: block), bytes: Array(text.utf8))
         }
         try await store.commitBlocks(uploadID: id, order: ["YQ==", "Yg=="])
         let entry = try await store.finalize(repo: repo, scope: main, key: "deps", version: "v1", sizeBytes: 12)
@@ -95,7 +91,7 @@ struct CacheStoreTests {
         defer { folder.cleanup() }
         let store = try makeStore()
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .block(id: "YQ=="))
+        try await store.writePart(uploadID: id, part: .block(id: "YQ=="), bytes: [1])
         await #expect(throws: CacheStoreError.missingBlock(id: "Yg==")) {
             try await store.commitBlocks(uploadID: id, order: ["YQ==", "Yg=="])
         }
@@ -142,14 +138,15 @@ struct CacheStoreTests {
         let store = try makeStore()
         try await save(store, key: "old")
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "new", version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .whole)
+        let partWriter = try await store.beginPart(uploadID: id, part: .whole)
         indexWriter.failsAll = true
 
         await #expect(throws: CacheStoreError.self) { try await store.clear() }
 
         #expect(await store.usage() == CacheUsage(entryCount: 1, totalBytes: 5, pendingUploads: 1))
         #expect(await lookup(store, "old") != nil)
-        try await store.appendPart(uploadID: id, part: .whole, bytes: Array("x".utf8))
+        try partWriter.write(Array("x".utf8))
+        try await store.finishPart(partWriter)
     }
 
     @Test("a disk-full write aborts that upload, leaves no partial files and reports the error")
@@ -158,17 +155,17 @@ struct CacheStoreTests {
         let store = try makeStore()
         writer.failAfterBytes = 4
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .whole)
-
-        await #expect {
-            try await store.appendPart(uploadID: id, part: .whole, bytes: Array("too long".utf8))
-        } throws: { error in
+        let partWriter = try await store.beginPart(uploadID: id, part: .whole)
+        let isWriteFailure: (any Error) -> Bool = { error in
             guard case CacheStoreError.writeFailed = error else { return false }
             return true
         }
+
+        #expect(performing: { try partWriter.write(Array("too long".utf8)) }, throws: isWriteFailure)
+        await #expect(performing: { try await store.finishPart(partWriter) }, throws: isWriteFailure)
         #expect(folder.files().filter { !$0.hasSuffix(CacheStore.indexFileName) }.isEmpty)
         await #expect(throws: CacheStoreError.unknownUpload) {
-            try await store.appendPart(uploadID: id, part: .whole, bytes: Array("x".utf8))
+            try await store.beginPart(uploadID: id, part: .whole)
         }
         #expect(try await store.reserve(repo: repo, scope: main, key: "deps", version: "v1") != nil)
     }
@@ -179,13 +176,11 @@ struct CacheStoreTests {
         let store = try makeStore()
         try await save(store, key: "old")
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "new", version: "v1")).uploadID
-        try await store.beginPart(uploadID: id, part: .whole)
+        let partWriter = try await store.beginPart(uploadID: id, part: .whole)
 
         try await store.clear()
 
-        await #expect(throws: CacheStoreError.unknownUpload) {
-            try await store.appendPart(uploadID: id, part: .whole, bytes: Array("x".utf8))
-        }
+        #expect(throws: CacheStoreError.unknownUpload) { try partWriter.write(Array("x".utf8)) }
         #expect(await lookup(store, "old") == nil)
         #expect(await store.usage() == CacheUsage(entryCount: 0, totalBytes: 0, pendingUploads: 0))
         #expect(folder.files().filter { !$0.hasSuffix(CacheStore.indexFileName) }.isEmpty)
