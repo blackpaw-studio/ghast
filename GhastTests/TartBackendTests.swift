@@ -43,12 +43,15 @@ final class TartHarness {
     let service: RunnerService
     let backend: TartBackend
     let softnet: FakeSoftnetChecker
+    /// Holds the gateway lookup's deadline until a test opens it.
+    let gatewayDeadline = HoldGate()
 
     init(
         entries: [TartVMEntry]? = nil,
         timing: TartBackend.Timing = .standard,
         initialDemand: Int? = 1,
-        softnet: FakeSoftnetChecker = FakeSoftnetChecker()
+        softnet: FakeSoftnetChecker = FakeSoftnetChecker(),
+        cache: FakeLocalCache? = nil
     ) {
         let cli = FakeTartCLI(log: log, entries: entries ?? [TartVMEntry(name: Self.image, source: "OCI", isRunning: false)])
         let api = FlowGitHubAPI(log: log)
@@ -61,6 +64,7 @@ final class TartHarness {
         }
         let recheck = timing.slotRecheckInterval
         let power = power
+        let gatewayTimeout = timing.gatewayTimeout, gatewayDeadline = gatewayDeadline
         let backend = TartBackend(
             cliProvider: { cli },
             api: api,
@@ -72,12 +76,17 @@ final class TartHarness {
             clock: clock,
             sleeper: { duration in
                 sleeps.record(duration)
+                if duration == gatewayTimeout {
+                    try await gatewayDeadline.wait()
+                    return
+                }
                 if duration == recheck { try await HoldGate().wait() }
                 await Task.yield()
             },
             makeID: { ids.next() },
             timing: timing,
-            power: power
+            power: power,
+            cacheProvider: { cache }
         )
         self.clock = clock
         self.cli = cli

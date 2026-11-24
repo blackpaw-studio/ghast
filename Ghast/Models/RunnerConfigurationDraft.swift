@@ -23,6 +23,8 @@ final class RunnerConfigurationDraft {
     var vmMemory = ""
     var vmDisk = ""
     var vmIsolated = false
+    /// Whether this runner's jobs use Ghast's local Actions cache. Read at each boot.
+    var usesLocalCache = true
     /// Set by a saved edit: it applies the next time the runner starts.
     var needsRestart = false
     private(set) var runnerID: String?
@@ -55,6 +57,7 @@ final class RunnerConfigurationDraft {
             vmMemory = runner.vmResources.memoryGB.map(String.init) ?? ""
             vmDisk = runner.vmResources.diskGB.map(String.init) ?? ""
             vmIsolated = runner.vmResources.isNetworkIsolated
+            usesLocalCache = runner.usesLocalCache
         }
         needsRestart = false
     }
@@ -164,6 +167,7 @@ final class RunnerConfigurationDraft {
         let tart = (image: tartImage.trimmingCharacters(in: .whitespacesAndNewlines), group: tartGroup, labels: Self.parseLabels(tartLabels), role: queueRole)
         let typedResources = Dictionary(uniqueKeysWithValues: ResourceField.allCases.map { ($0, input(for: $0)) })
         let isolated = vmIsolated
+        let usesLocalCache = usesLocalCache
         debouncer.schedule { [weak self, runnerService] in
             guard let current = runnerService.localRunners.first(where: { $0.id == id }) else { return }
             if case let .tart(savedImage) = current.backend {
@@ -182,6 +186,9 @@ final class RunnerConfigurationDraft {
                 }
                 if current.queueRole != tart.role {
                     runnerService.updateRunner(id: id) { $0.queueRole = tart.role }
+                }
+                if current.usesLocalCache != usesLocalCache {
+                    runnerService.updateRunner(id: id) { $0.usesLocalCache = usesLocalCache }
                 }
                 if current.environmentVariables != variables || current.preJobScript != pre || current.postJobScript != post {
                     runnerService.updateRunner(id: id) {

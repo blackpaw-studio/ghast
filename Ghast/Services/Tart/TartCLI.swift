@@ -38,6 +38,8 @@ protocol TartCLI: Sendable {
     ) throws -> any RunnerProcessHandle
     /// Runs a guest command to completion and returns its exit status.
     func exec(_ vm: String, _ command: [String]) async throws -> Int32
+    /// Runs a guest command to completion and returns its status and output.
+    func execOutput(_ vm: String, _ command: [String]) async throws -> ScriptResult
     /// Starts a long-lived guest command, appending its output to `log` with each line marked
     /// with `linePrefix`; `onExit` receives its status once the last line is written.
     func execStreaming(
@@ -137,6 +139,10 @@ struct ProcessTartCLI: TartCLI {
         try await ProcessRun.run(executable: executable, arguments: TartArguments.exec(vm, command), in: workingDirectory).status
     }
 
+    func execOutput(_ vm: String, _ command: [String]) async throws -> ScriptResult {
+        try await ProcessRun.run(executable: executable, arguments: TartArguments.exec(vm, command), in: workingDirectory)
+    }
+
     func execStreaming(
         _ vm: String,
         _ command: [String],
@@ -188,7 +194,7 @@ struct ProcessTartCLI: TartCLI {
     /// Tart finds softnet only through `PATH`, so an isolated boot gets the helper folder and the
     /// system folders, nothing inherited. A shared boot inherits the environment unchanged (nil).
     private func environment(for network: TartNetwork) -> [String: String]? {
-        guard case let .softnet(helperDirectory) = network else { return nil }
+        guard case let .softnet(helperDirectory, _) = network else { return nil }
         return baseEnvironment.merging(["PATH": helperDirectory + ":" + Self.systemPath]) { _, new in new }
     }
 

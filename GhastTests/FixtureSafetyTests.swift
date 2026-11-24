@@ -71,6 +71,19 @@ struct FixtureSafetyTests {
         #expect(!helper.isWorking)
     }
 
+    @Test("has no local cache: no cache folder, no server")
+    func noLocalCache() async throws {
+        let fixture = makeFixture()
+        defer { fixture.tearDown() }
+        let dependencies = fixture.appDependencies
+
+        #expect(dependencies.localCache == nil)
+        #expect(!(dependencies.cacheStats is LocalCache))
+        try await dependencies.cacheStats.clear()
+        let files = try FileManager.default.subpathsOfDirectory(atPath: fixture.scratchDirectory.path)
+        #expect(!files.contains { ($0 as NSString).lastPathComponent == CacheStore.indexFileName })
+    }
+
     @Test("stores the token in memory, never the Keychain")
     func tokenStoreIsInMemory() throws {
         let fixture = makeFixture()

@@ -70,7 +70,7 @@ struct TartCLIParsingTests {
         ])
     }
 
-    @Test("run adds --net-softnet right after --no-graphics only when isolated")
+    @Test("an isolated run blocks the host except DNS, and the cache port when the cache is on; a shared run has no rules")
     func runSoftnetArguments() {
         let share = TartShare(name: "ghast", path: URL(fileURLWithPath: "/x"), isReadOnly: true)
 
@@ -78,7 +78,12 @@ struct TartCLIParsingTests {
             "run", "--no-graphics", "--dir=ghast:/x:ro", "vm1",
         ])
         #expect(TartArguments.run("vm1", shares: [share], network: .softnet(helperDirectory: "/usr/local/libexec/ghast")) == [
-            "run", "--no-graphics", "--net-softnet", "--dir=ghast:/x:ro", "vm1",
+            "run", "--no-graphics", "--net-softnet", "--net-softnet-block", "@host",
+            "--net-softnet-allow", "out proto udp @host port 53", "--dir=ghast:/x:ro", "vm1",
+        ])
+        #expect(TartArguments.run("vm1", shares: [share], network: .softnet(helperDirectory: "/h", cachePort: 50123)) == [
+            "run", "--no-graphics", "--net-softnet", "--net-softnet-block", "@host",
+            "--net-softnet-allow", "out proto udp @host port 53,out proto tcp @host port 50123", "--dir=ghast:/x:ro", "vm1",
         ])
     }
 

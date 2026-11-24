@@ -9,10 +9,11 @@ struct TartShare: Equatable, Sendable {
 }
 
 /// How a VM is networked. An isolated boot can't be built without the folder that holds the
-/// softnet helper, because Tart only finds softnet through `PATH`.
+/// softnet helper, because Tart only finds softnet through `PATH`. `cachePort` is the
+/// VM's own local-cache port when the VM uses the cache.
 enum TartNetwork: Equatable, Sendable {
     case shared
-    case softnet(helperDirectory: String)
+    case softnet(helperDirectory: String, cachePort: Int? = nil)
 }
 
 /// The argv of every `tart` call Ghast makes (without the executable itself).
@@ -26,15 +27,25 @@ enum TartArguments {
     static func delete(_ vm: String) -> [String] { ["delete", vm] }
 
     /// Headless boot; the process lives as long as the VM does. `--net-softnet` isolates the
-    /// guest from the local network.
+    /// guest from the local network. Softnet's default lets a guest reach every port on the
+    /// host's bridge address, so the host is blocked too, except DNS (softnet's resolver is at
+    /// the gateway) and, when set, the cache port.
     static func run(_ vm: String, shares: [TartShare], network: TartNetwork) -> [String] {
         let dirs = shares.map { "--dir=\($0.name):\($0.path.path)\($0.isReadOnly ? ":ro" : "")" }
         let isolation: [String] = switch network {
         case .shared: []
-        case .softnet: ["--net-softnet"]
+        case .softnet(_, let cachePort): ["--net-softnet"] + softnetHostRules(cachePort: cachePort)
         }
         return ["run", "--no-graphics"] + isolation + dirs + [vm]
     }
+
+    static func softnetHostRules(cachePort: Int?) -> [String] {
+        let allowed = ["out proto udp @host port 53"] + (cachePort.map { ["out proto tcp @host port \($0)"] } ?? [])
+        return ["--net-softnet-block", "@host", "--net-softnet-allow", allowed.joined(separator: ",")]
+    }
+
+    /// Asks the guest for its default route; the gateway is the host's bridge address.
+    static let guestRoute = ["/sbin/route", "-n", "get", "default"]
 
     private static let megabytesPerGB = 1024
 

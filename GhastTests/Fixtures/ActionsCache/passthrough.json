@@ -1,0 +1,23 @@
+{
+  "captured": "2026-11-24, Ghast Step 0.4 spike",
+  "client": "actions/cache@v4 (0057852bfaa89a56745cba8c7296529d2fc39830), cache service v2, runner 2.338.2 osx-arm64, guest macOS (tahoe-xcode:26.5), zstd",
+  "server": "falcondev-oss/github-actions-cache-server 10.0.2 behind a logging proxy at ACTIONS_RESULTS_URL",
+  "notes": "Request records in order. sig and request ids redacted; signed URL hosts replaced with <host>; no Authorization headers, tokens or blob bytes. Block uploads run concurrently, so block PUTs arrive out of blockid order; the block list gives the commit order.",
+  "note": "Non-cache calls the cache URL received (forwarded upstream). Bodies not logged: they carry signed storage URLs.",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact",
+      "status": 200,
+      "body_length": 171,
+      "response_length": 582
+    },
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact",
+      "status": 200,
+      "body_length": 257,
+      "response_length": 40
+    }
+  ]
+}

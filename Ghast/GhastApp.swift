@@ -56,6 +56,11 @@ struct AppDependencies {
     let updateStatus: UpdateStatusModel
     /// The network isolation helper: its status row and the setup, update and removal actions.
     let softnetHelper: SoftnetHelperModel
+    /// The local Actions cache; nil under test, in the design fixture, or when it couldn't open.
+    let localCache: LocalCache?
+    /// Settings › General › Cache.
+    let cacheStats: any CacheStatsProviding
+    let cacheSettings: CacheSettingsModel
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -86,8 +91,14 @@ struct AppDependencies {
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
         router: AppWindowRouter = AppWindowRouter(),
         loginItemService: any LoginItemService = InertLoginItemService(),
-        updater: any UpdaterDriving = InertUpdater()
+        updater: any UpdaterDriving = InertUpdater(),
+        localCache: LocalCache? = nil,
+        cacheStats: (any CacheStatsProviding)? = nil
     ) {
+        self.localCache = localCache
+        let resolvedCacheStats = cacheStats ?? localCache ?? NoLocalCache()
+        self.cacheStats = resolvedCacheStats
+        cacheSettings = CacheSettingsModel(stats: resolvedCacheStats, settings: settings)
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
             api: apiService,
@@ -163,6 +174,7 @@ struct AppDependencies {
         let processExits = runnerService.processExits
         Task { await notificationService.run(liveEvents: liveEvents, processExits: processExits) }
         await authService.checkStoredAuthentication()
+        await localCache?.start(capGigabytes: settings.cacheSizeCapGB)
     }
 
     /// The menu bar extra over `host`: this Mac's runners (never GitHub's), following the setting.
@@ -222,6 +234,7 @@ struct AppDependencies {
             ownerName: SystemHostInfo().computerName
         )
         let softnetChecker = SoftnetHelperChecker()
+        let localCache = LocalCache.live(clock: clock, sleeper: sleeper)
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
@@ -231,7 +244,8 @@ struct AppDependencies {
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
             sleeper: sleeper,
-            power: WorkspacePowerEvents()
+            power: WorkspacePowerEvents(),
+            cacheProvider: { [weak localCache] in localCache?.server() }
         )
         let dependencies = AppDependencies(
             runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend),
@@ -250,7 +264,8 @@ struct AppDependencies {
             ),
             notificationCenter: SystemNotificationCenter(),
             loginItemService: MainAppLoginItemService(),
-            updater: updater
+            updater: updater,
+            localCache: localCache
         )
         let updateStatus = dependencies.updateStatus
         updateEvents.onEvent = { updateStatus.handle($0) }
@@ -312,6 +327,7 @@ struct GhastApp: App {
                     .environment(dependencies.remoteStore)
                     .environment(dependencies.authService)
                     .environment(dependencies.softnetHelper)
+                    .environment(dependencies.cacheSettings)
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.appWindowRouter, dependencies.router)
                     .environment(\.settingsTabPreset, appDelegate.settingsTabPreset)
@@ -533,13 +549,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// session, and a quit that kills them first leaves a session behind. Covers a Sparkle
     /// relaunch too, which quits through `NSApp.terminate`. `stopAllRunners` is bounded, so a
     /// stuck runner delays the quit by at most the grace period.
+    /// The local cache stops after the runners, so a job's last save lands first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard shouldCleanUpRunners, builtDependencies?.runnerService.hasRunningProcesses == true else { return .terminateNow }
+        guard stopsRunnersOnQuit || builtDependencies?.localCache != nil else { return .terminateNow }
         Task { @MainActor in
-            await stopRunnersForQuit()
+            await prepareForQuit()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    private var stopsRunnersOnQuit: Bool {
+        shouldCleanUpRunners && builtDependencies?.runnerService.hasRunningProcesses == true
+    }
+
+    /// Stops the runners (when quitting cleans them up), then the local cache, which saves its index.
+    func prepareForQuit() async {
+        if stopsRunnersOnQuit { await stopRunnersForQuit() }
+        await builtDependencies?.localCache?.shutdown()
     }
     
     /// Stops every runner and returns once they have ended (bounded by the stop grace period).

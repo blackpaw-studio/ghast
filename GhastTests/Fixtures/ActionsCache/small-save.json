@@ -1,0 +1,86 @@
+{
+  "captured": "2026-11-24, Ghast Step 0.4 spike",
+  "client": "actions/cache@v4 (0057852bfaa89a56745cba8c7296529d2fc39830), cache service v2, runner 2.338.2 osx-arm64, guest macOS (tahoe-xcode:26.5), zstd",
+  "server": "falcondev-oss/github-actions-cache-server 10.0.2 behind a logging proxy at ACTIONS_RESULTS_URL",
+  "notes": "Request records in order. sig and request ids redacted; signed URL hosts replaced with <host>; no Authorization headers, tokens or blob bytes. Block uploads run concurrently, so block PUTs arrive out of blockid order; the block list gives the commit order.",
+  "archive_bytes": 1049129,
+  "upload": "single shot (archive under 128 MiB)",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry",
+      "query": [],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "110"
+      },
+      "body_length": 110,
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json",
+        "content-length": "154"
+      },
+      "response_length": 154,
+      "body": {
+        "key": "spike-small-45305005542",
+        "version": "03a1cc8d96e60eab2dc3e5a78264dcd25edf724d68d5bb3805c512e22226336c"
+      },
+      "response_body": {
+        "ok": true,
+        "signed_upload_url": "http://<host>/devstoreaccount1/upload/9634380598?sig=<redacted>",
+        "message": ""
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/devstoreaccount1/upload/9634380598",
+      "query": [
+        [
+          "sig",
+          "<redacted>"
+        ]
+      ],
+      "headers": {
+        "x-ms-version": "2021-12-02",
+        "content-length": "1049129",
+        "content-type": "application/octet-stream",
+        "accept": "application/xml",
+        "x-ms-blob-type": "BlockBlob",
+        "x-ms-client-request-id": "<uuid>"
+      },
+      "body_length": 1049129,
+      "status": 201,
+      "response_headers": {
+        "x-ms-request-id": "<uuid>",
+        "content-length": "0"
+      },
+      "response_length": 0
+    },
+    {
+      "method": "POST",
+      "path": "/twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload",
+      "query": [],
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "133"
+      },
+      "body_length": 133,
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json",
+        "content-length": "48"
+      },
+      "response_length": 48,
+      "body": {
+        "key": "spike-small-45305005542",
+        "size_bytes": "1049129",
+        "version": "03a1cc8d96e60eab2dc3e5a78264dcd25edf724d68d5bb3805c512e22226336c"
+      },
+      "response_body": {
+        "ok": true,
+        "entry_id": "9634380598",
+        "message": ""
+      }
+    }
+  ]
+}

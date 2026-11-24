@@ -24,15 +24,17 @@ struct FocusMainSnapshotTests {
         /// The Configuration tab of an isolating VM runner whose softnet helper isn't installed,
         /// isn't safe, or is older than the installed softnet.
         case vmIsolationSetup, vmIsolationUnsafe, vmIsolationOutdated
+        /// The Configuration tab of a VM runner on shared networking with the local cache off.
+        case vmCache
 
         var isVM: Bool {
             [.vmBooting, .vmPulling, .vmConfiguration, .vmResourcesWarning, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby,
-             .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated].contains(self)
+             .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache].contains(self)
         }
 
         /// A VM Configuration tab: it loads its draft (and its image list) in tasks.
         var isVMConfiguration: Bool {
-            [.vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated].contains(self)
+            [.vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache].contains(self)
         }
 
         /// What the softnet helper says on this screen; ready everywhere a row would be noise.
@@ -48,6 +50,10 @@ struct FocusMainSnapshotTests {
 
     /// The detail column of the 1440 × 900 kit window, beside the 264 pt sidebar.
     static let size = CGSize(width: 1440 - FocusMetrics.sidebarColumnWidth, height: 900)
+    /// Taller where the section under test sits below the kit window's fold.
+    private static func size(for state: State) -> CGSize {
+        state == .vmCache ? CGSize(width: size.width, height: 1100) : size
+    }
 
     @Test(arguments: State.allCases, [false, true])
     func detail(state: State, isDark: Bool) async throws {
@@ -66,11 +72,11 @@ struct FocusMainSnapshotTests {
             .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
             .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
             .environment(\.colorScheme, isDark ? .dark : .light)
-            .frame(width: Self.size.width, height: Self.size.height)
+            .frame(width: Self.size(for: state).width, height: Self.size(for: state).height)
             .background(Color(nsColor: .windowBackgroundColor))
         let host = NSHostingController(rootView: view)
         host.view.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
-        host.view.frame = CGRect(origin: .zero, size: Self.size)
+        host.view.frame = CGRect(origin: .zero, size: Self.size(for: state))
         host.view.layoutSubtreeIfNeeded()
         // The Configuration tab loads its saved settings in a task; the other states draw
         // synchronously.
@@ -113,7 +119,7 @@ struct FocusMainSnapshotTests {
             let (runnerName, tab): (String, DetailTab) = switch state {
             case .running: ("dionysus-xcode", .output)
             case .configuration: ("dionysus-xcode", .configuration)
-            case .vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated:
+            case .vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache:
                 ("dionysus-arm64", .configuration)
             case .error: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
@@ -174,6 +180,7 @@ struct FocusMainSnapshotTests {
         copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
         copy.showsOnDemandNote = state == .vmWaitingForJobs
         if state == .vmStandingBy || state == .vmHoldingStandby { copy.queueRole = .standby }
+        if state == .vmCache { copy.usesLocalCache = false }
         if state == .vmResourcesWarning {
             copy.vmResources = VMResources(cpuCount: 12, memoryGB: 48, diskGB: 200)
         }

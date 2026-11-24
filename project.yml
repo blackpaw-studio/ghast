@@ -61,6 +61,7 @@ targets:
           DEVELOPMENT_TEAM: 52M9C6892K
     dependencies:
       - package: Sparkle
+      - package: Hummingbird
 
   GhastTests:
     type: bundle.unit-test
@@ -92,6 +93,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.10.1"
+  Hummingbird:
+    url: https://github.com/hummingbird-project/hummingbird
+    exactVersion: "2.28.1"
 
 schemes:
   Ghast:

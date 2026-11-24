@@ -127,6 +127,27 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return Handle(label: "vm \(vm)", owner: self)
     }
 
+    /// What `/sbin/route -n get default` prints in the guest.
+    var routeOutput = "    gateway: 192.168.64.1\n"
+    /// When set, the guest's route lookup hangs on it until opened or cancelled.
+    var routeGate: HoldGate?
+    private var routeCancels = 0
+    /// Route lookups that were cancelled (the real CLI terminates the process then).
+    var cancelledRouteLookups: Int { lock.withLock { routeCancels } }
+
+    func execOutput(_ vm: String, _ command: [String]) async throws -> ScriptResult {
+        log.append("exec \(vm) \(command.joined(separator: " "))")
+        if command.first == "/sbin/route", let routeGate {
+            do {
+                try await routeGate.wait()
+            } catch {
+                lock.withLock { routeCancels += 1 }
+                throw error
+            }
+        }
+        return ScriptResult(status: 0, output: command.first == "/sbin/route" ? lock.withLock { routeOutput } : "")
+    }
+
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
         if command == ["/usr/bin/true"] {
             log.append("probe \(vm)")

@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Settings › General: startup, menu bar and notifications, updates, and the runners folder.
+/// Settings › General: startup, menu bar and notifications, updates, VM isolation, the local
+/// cache, and the runners folder.
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(OpenAtLoginModel.self) private var openAtLogin
@@ -9,6 +10,7 @@ struct GeneralSettingsView: View {
     @Environment(UpdateStatusModel.self) private var updates
     @Environment(RunnerService.self) private var runnerService
     @Environment(SoftnetHelperModel.self) private var softnetHelper
+    @Environment(CacheSettingsModel.self) private var cache
     @Environment(\.focusContext) private var context
     @Environment(\.openURL) private var openURL
     @Environment(\.appVersion) private var appVersion
@@ -74,6 +76,8 @@ struct GeneralSettingsView: View {
             }
             SettingsHelp(text: "Runners with Isolate network on boot their VMs through a root-owned copy of softnet kept in /usr/local/libexec/ghast.")
 
+            cacheSection
+
             FocusFormSection(caption: "Runners") {
                 FocusFormRow(label: "Runners folder") {
                     Text(context.displayPath(runnerService.runnersDirectory.path))
@@ -86,6 +90,12 @@ struct GeneralSettingsView: View {
             SettingsHelp(text: "Each runner keeps its work files and logs in its own folder here.")
         }
         .controlSize(.large)
+        .confirmationDialog("Clear the local cache?", isPresented: Bindable(cache).isShowingClearConfirmation) {
+            Button("Clear Cache", role: .destructive) { Task { await cache.confirmClear() } }
+            Button("Cancel", role: .cancel, action: cache.cancelClear)
+        } message: {
+            Text("Every saved cache is deleted and saves in progress are dropped. Jobs miss until they save again.")
+        }
         .confirmationDialog("Remove the network isolation helper?", isPresented: $isConfirmingHelperRemoval) {
             Button("Remove Helper", role: .destructive) { Task { await softnetHelper.remove() } }
         } message: {
@@ -95,7 +105,43 @@ struct GeneralSettingsView: View {
             openAtLogin.refresh()
             await notifications.refreshAuthorization()
             await softnetHelper.refresh()
+            await cache.refresh()
         }
+    }
+
+    /// The local Actions cache VM runners use: space used, the size cap, and Clear Cache.
+    @ViewBuilder
+    private var cacheSection: some View {
+        FocusFormSection(caption: "Cache") {
+            FocusFormRow(label: "Space used") {
+                Text(cache.usageText)
+                    .font(FocusType.subheadline)
+                    .foregroundStyle(.secondary)
+                Button("Clear Cache…", action: cache.requestClear)
+                    .disabled(cache.usage == nil)
+            }
+            FocusFormDivider()
+            FocusFormRow(label: "Size cap") {
+                Text("\(cache.capGB) GB")
+                    .font(FocusType.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Stepper("Size cap", value: capBinding, in: AppSettings.minimumCacheSizeCapGB ... Self.maximumCacheSizeCapGB, step: Self.cacheCapStepGB)
+                    .labelsHidden()
+            }
+        }
+        if let message = cache.errorMessage {
+            SettingsHelp(text: message)
+        }
+        SettingsHelp(text: "VM runners' caches stay on this Mac, in ~/.ghast/cache. Above the cap the least recently used are removed, and any unused for 7 days.")
+    }
+
+    private static let maximumCacheSizeCapGB = 10_000
+    private static let cacheCapStepGB = 5
+
+    /// Each step applies at once, so lowering the cap removes caches straight away.
+    private var capBinding: Binding<Int> {
+        Binding(get: { cache.capGB }, set: { value in Task { await cache.applyCap(value) } })
     }
 
     private var versionRow: some View {

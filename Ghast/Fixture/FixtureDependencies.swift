@@ -145,7 +145,8 @@ struct FixtureDependencies {
             xcodeVersions: FixtureXcodeVersions(),
             hostCapacity: FixtureHostCapacity(),
             softnetHelper: .fixture(),
-            loginItemService: InertLoginItemService(status: .enabled)
+            loginItemService: InertLoginItemService(status: .enabled),
+            cacheStats: FixtureCacheStats()
         )
         // Settings.png: open at login is on and the last check found nothing new.
         dependencies.updateStatus.handle(.noUpdateFound)
