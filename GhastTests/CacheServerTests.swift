@@ -21,16 +21,16 @@ actor FakeBinder: CacheListenerBinding {
         func close() async { await binder.closed(address) }
     }
 
-    private(set) var binds: [(address: String, port: Int)] = []
+    private(set) var binds: [(address: String, port: Int, peers: CacheSubnet)] = []
     private(set) var closes: [String] = []
     var failing: Set<String> = []
 
     func fail(_ address: String) { failing.insert(address) }
     func closed(_ address: String) { closes.append(address) }
 
-    func bind(address: String, port: Int, responder: CacheResponder) async throws -> any CacheListening {
+    func bind(address: String, port: Int, peers: CacheSubnet, responder: CacheResponder) async throws -> any CacheListening {
         if failing.contains(address) { throw POSIXError(.EADDRINUSE) }
-        binds.append((address, port))
+        binds.append((address, port, peers))
         return Listener(address: address, binder: self)
     }
 }
@@ -40,8 +40,8 @@ actor FakeBinder: CacheListenerBinding {
 struct CacheServerTests {
     private let folder = CacheTestFolder()
     private let randomness = SequentialCacheRandomness()
-    private let bridge = InterfaceAddress(name: "bridge100", address: "192.168.64.1")
-    private let secondBridge = InterfaceAddress(name: "bridge101", address: "192.168.65.1")
+    private let bridge = InterfaceAddress(name: "bridge100", address: "192.168.64.1", netmask: "255.255.255.248")
+    private let secondBridge = InterfaceAddress(name: "bridge101", address: "192.168.65.1", netmask: "255.255.255.0")
 
     private func makeServer(_ interfaces: FakeInterfaces, binder: FakeBinder) throws -> CacheServer {
         randomness.port = 50123
@@ -93,6 +93,45 @@ struct CacheServerTests {
         #expect(await binder.binds.count == 1)
     }
 
+    @Test("each listener only admits peers from its bridge's subnet")
+    func peersFromBridgeSubnet() async throws {
+        defer { folder.cleanup() }
+        let binder = FakeBinder()
+        let server = try makeServer(FakeInterfaces([bridge, secondBridge]), binder: binder)
+        _ = await server.endpoint(forGateway: bridge.address)
+        _ = await server.endpoint(forGateway: secondBridge.address)
+        #expect(await binder.binds.map(\.peers) == [
+            try #require(CacheSubnet(address: "192.168.64.1", netmask: "255.255.255.248")),
+            try #require(CacheSubnet(address: "192.168.65.1", netmask: "255.255.255.0")),
+        ])
+    }
+
+    @Test("a listener is rebound when its bridge's subnet changes")
+    func rebindsOnSubnetChange() async throws {
+        defer { folder.cleanup() }
+        let interfaces = FakeInterfaces([bridge])
+        let binder = FakeBinder()
+        let server = try makeServer(interfaces, binder: binder)
+        _ = await server.endpoint(forGateway: bridge.address)
+
+        interfaces.set([InterfaceAddress(name: "bridge100", address: "192.168.64.1", netmask: "255.255.255.0")])
+        _ = await server.endpoint(forGateway: bridge.address)
+
+        #expect(await binder.closes == ["192.168.64.1"])
+        #expect(await binder.binds.map(\.peers.netmask) == ["255.255.255.248", "255.255.255.0"])
+    }
+
+    @Test("a bridge with an unusable netmask is never bound")
+    func refusesBadNetmask() async throws {
+        defer { folder.cleanup() }
+        let binder = FakeBinder()
+        let server = try makeServer(FakeInterfaces([InterfaceAddress(name: "bridge100", address: "192.168.64.1", netmask: "0.255.0.0")]),
+                                    binder: binder)
+        let result = await server.endpoint(forGateway: "192.168.64.1")
+        #expect(throws: CacheUnavailable.self) { try result.get() }
+        #expect(await binder.binds.isEmpty)
+    }
+
     @Test("a listener whose address is gone is closed on the next call")
     func closesVanished() async throws {
         defer { folder.cleanup() }
@@ -114,7 +153,7 @@ struct CacheServerTests {
     func refusesNonBridge(name: String, address: String) async throws {
         defer { folder.cleanup() }
         let binder = FakeBinder()
-        let server = try makeServer(FakeInterfaces([InterfaceAddress(name: name, address: address)]), binder: binder)
+        let server = try makeServer(FakeInterfaces([InterfaceAddress(name: name, address: address, netmask: "255.255.255.0")]), binder: binder)
         let result = await server.endpoint(forGateway: address)
         #expect(throws: CacheUnavailable.self) { try result.get() }
         #expect(await binder.binds.isEmpty)

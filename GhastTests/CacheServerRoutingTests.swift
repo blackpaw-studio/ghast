@@ -15,28 +15,12 @@ struct CacheServerRoutingTests {
     /// A server listening on 127.0.0.1 at a port that was free a moment ago.
     private func start() async throws -> (CacheServer, CacheEndpoint) {
         let randomness = SequentialCacheRandomness()
-        randomness.port = try Self.freePort()
+        randomness.port = try RawConnection.freePort()
         let store = try CacheStore(root: folder.url, clock: FakeClock(), randomness: randomness, writer: FileBlobWriter())
         let server = CacheServer(store: store, verifier: FakeCacheVerifier(), upstream: upstream, randomness: randomness,
-                                 interfaces: FakeInterfaces([InterfaceAddress(name: "lo0", address: "127.0.0.1")]),
+                                 interfaces: FakeInterfaces([InterfaceAddress(name: "lo0", address: "127.0.0.1", netmask: "255.0.0.0")]),
                                  allowLoopbackForTests: true)
         return (server, try await server.endpoint(forGateway: "127.0.0.1").get())
-    }
-
-    private static func freePort() throws -> Int {
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let bound = withUnsafeMutablePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0
-            }
-        }
-        guard bound else { throw POSIXError(.EADDRNOTAVAIL) }
-        return Int(UInt16(bigEndian: address.sin_port))
     }
 
     private func send(_ url: URL, method: String = "GET", headers: [String: String] = [:], body: Data? = nil)

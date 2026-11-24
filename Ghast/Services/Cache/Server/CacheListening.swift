@@ -6,6 +6,52 @@ import Synchronization
 struct InterfaceAddress: Equatable, Sendable {
     let name: String
     let address: String
+    let netmask: String
+}
+
+/// The IPv4 subnet of a VM bridge: the peers a listener on that bridge accepts. macOS uses
+/// the weak host model, so a LAN host can route to a bridge address through the Mac's LAN
+/// address; checking the peer against the bridge's subnet keeps it out (a spoofed source
+/// can't finish the TCP handshake, because the replies go to the bridge).
+struct CacheSubnet: Equatable, Sendable {
+    let address: String
+    let netmask: String
+    private let network: UInt32
+    private let mask: UInt32
+
+    /// Nil unless both are canonical IPv4 addresses and the netmask is contiguous and non-zero.
+    init?(address: String, netmask: String) {
+        guard let value = Self.ipv4(address), let mask = Self.ipv4(netmask), mask != 0 else { return nil }
+        let hostBits = ~mask
+        guard hostBits & (hostBits &+ 1) == 0 else { return nil }
+        self.address = address
+        self.netmask = netmask
+        self.mask = mask
+        network = value & mask
+    }
+
+    /// True for a host address inside the subnet. The network and broadcast addresses are
+    /// never peers (except on /31 and /32, which have none).
+    func contains(_ remote: String) -> Bool {
+        guard let value = Self.ipv4(remote), value & mask == network else { return false }
+        let hostBits = ~mask
+        guard hostBits > 1 else { return true }
+        return value != network && value != network | hostBits
+    }
+
+    /// A canonical dotted-quad IPv4 address as a host-order number, else nil.
+    static func ipv4(_ text: String) -> UInt32? {
+        var address = in_addr()
+        guard inet_pton(AF_INET, text, &address) == 1, format(address) == text else { return nil }
+        return UInt32(bigEndian: address.s_addr)
+    }
+
+    static func format(_ address: in_addr) -> String? {
+        var address = address
+        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard inet_ntop(AF_INET, &address, &buffer, socklen_t(buffer.count)) != nil else { return nil }
+        return String(cString: buffer)
+    }
 }
 
 protocol InterfaceAddressListing: Sendable {
@@ -19,12 +65,17 @@ struct SystemInterfaceAddresses: InterfaceAddressListing {
         guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(head) }
         return sequence(first: first, next: { $0.pointee.ifa_next }).compactMap { entry in
-            guard let socket = entry.pointee.ifa_addr, socket.pointee.sa_family == UInt8(AF_INET) else { return nil }
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            guard getnameinfo(socket, socklen_t(socket.pointee.sa_len), &host, socklen_t(host.count), nil, 0,
-                              NI_NUMERICHOST) == 0 else { return nil }
-            return InterfaceAddress(name: String(cString: entry.pointee.ifa_name), address: String(cString: host))
+            guard let socket = entry.pointee.ifa_addr, socket.pointee.sa_family == UInt8(AF_INET),
+                  let mask = entry.pointee.ifa_netmask,
+                  let address = Self.ipv4(socket), let netmask = Self.ipv4(mask) else { return nil }
+            return InterfaceAddress(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask)
         }
+    }
+}
+
+extension SystemInterfaceAddresses {
+    private static func ipv4(_ socket: UnsafeMutablePointer<sockaddr>) -> String? {
+        socket.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { CacheSubnet.format($0.pointee.sin_addr) }
     }
 }
 
@@ -62,7 +113,8 @@ protocol CacheListening: Sendable {
 /// Starts a listener for `responder` on one address and port; returns once it is accepting
 /// connections, or throws the bind error.
 protocol CacheListenerBinding: Sendable {
-    func bind(address: String, port: Int, responder: CacheResponder) async throws -> any CacheListening
+    /// Starts a listener that closes every connection whose peer isn't in `peers`.
+    func bind(address: String, port: Int, peers: CacheSubnet, responder: CacheResponder) async throws -> any CacheListening
 }
 
 /// One VM's registration: the token in its results URL and the cache events its calls make.
