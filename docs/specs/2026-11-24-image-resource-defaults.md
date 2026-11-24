@@ -23,15 +23,15 @@ Each blank Resources field shows the image's real value as its placeholder, and 
 
 1. **Local VM name** (no `/`): `tart get <name> --format json` (CPU, Memory, Disk) through the existing `TartCLI`.
 2. **Pulled OCI image:** `~/.tart/cache/OCIs/<host>/<repo>/<tag>/`. `config.json` gives `cpuCount` and `memorySize` (bytes); `manifest.json`'s annotation `org.cirruslabs.tart.uncompressed-disk-size` gives the disk (bytes). Read through an injected file reader.
-3. **Not pulled, ghcr.io only:** anonymous token (same flow as `GHCRXcodeVersionProvider`), `GET /v2/<repo>/manifests/<tag>` (Accept: OCI manifest), then `GET /v2/<repo>/blobs/<config digest>`. Uses the injected `HTTPTransport`. Other registries return nil.
+3. **Not pulled, ghcr.io only:** anonymous token (same flow as `GHCRXcodeVersionProvider`), `GET /v2/<repo>/manifests/<tag>` (Accept: OCI manifest), then `GET /v2/<repo>/blobs/<digest>` of the layer with mediaType `application/vnd.cirruslabs.tart.config.v1` (the manifest's `config` descriptor is the generic OCI config and has no CPU or memory). Uses the injected `HTTPTransport`. Other registries return nil.
 
 Units: memory is bytes ÷ 1024³ (matching `tart set --memory`, which Ghast sends as GB × 1024 MB); disk is bytes ÷ 1000³, rounded down (matching `tart get`/`tart list` Disk, e.g. 140000000000 → 140). Example: `macos-tahoe-xcode:27.2` is 4 cores, 8 GB, 140 GB.
 
 ## Untrusted input
 
 Registry and cache files are untrusted:
-- HTTPS to `ghcr.io` only; the repo and tag come from the saved image ref and are validated against OCI name/tag grammar before going into a URL.
-- Response size caps: manifest 64 KB, config blob 16 KB. The config blob's SHA-256 must match the manifest's digest.
+- HTTPS to `ghcr.io` only, plus the blob redirect target `pkg-containers.githubusercontent.com` (ghcr answers blob GETs with a 307 there); the final response URL's host must be one of the two. The repo and tag come from the saved image ref and are validated against OCI name/tag grammar before going into a URL.
+- Response size caps: manifest 512 KB (Xcode image manifests are ~90 KB), Tart config layer 16 KB. The layer's SHA-256 must match the manifest's digest.
 - Values must be positive and within sane bounds (CPU 1–256, memory 1–4096 GB, disk 1–100000 GB); anything else makes that value nil.
 - Cache paths are built from validated components only (no `..`), and symlinks aren't followed out of `~/.tart/cache/OCIs`.
 
