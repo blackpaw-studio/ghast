@@ -1,13 +1,14 @@
 import Foundation
 
 /// Parses an Azure `Put Block List` body (`<BlockList><Latest>id</Latest>…</BlockList>`) into
-/// block IDs in commit order. Refuses a DOCTYPE or any entity declaration, never resolves
-/// external entities, and caps the number of IDs.
+/// block IDs in commit order. Accepts only plain UTF-8 with no `<!` markup at all (so no
+/// DOCTYPE or entity, in any encoding), never resolves external entities, and caps the
+/// number of IDs.
 enum CacheBlockList {
     static func parse(_ data: Data, maximumBlocks: Int) -> [String]? {
-        guard !containsDeclaration(data) else { return nil }
+        guard let body = plainUTF8(data) else { return nil }
         let delegate = Delegate(maximumBlocks: maximumBlocks)
-        let parser = XMLParser(data: data)
+        let parser = XMLParser(data: body)
         parser.shouldResolveExternalEntities = false
         parser.shouldProcessNamespaces = false
         parser.delegate = delegate
@@ -15,10 +16,27 @@ enum CacheBlockList {
         return delegate.ids
     }
 
-    /// True when the body has a `<!DOCTYPE` or `<!ENTITY` (checked before XMLParser sees it).
-    private static func containsDeclaration(_ data: Data) -> Bool {
-        let text = String(decoding: data, as: UTF8.self).uppercased()
-        return text.contains("<!DOCTYPE") || text.contains("<!ENTITY")
+    private static let utf8BOM: [UInt8] = [0xEF, 0xBB, 0xBF]
+    private static let allowedControls: Set<UInt8> = [0x09, 0x0A, 0x0D]
+
+    /// The body without a UTF-8 byte order mark, when it is valid UTF-8 with no other control
+    /// bytes (so XMLParser can't detect UTF-16 or UTF-32), no `<!` anywhere (no DOCTYPE,
+    /// entity, comment or CDATA) and no XML declaration naming another encoding. Else nil.
+    private static func plainUTF8(_ data: Data) -> Data? {
+        let bytes = data.starts(with: utf8BOM) ? Array(data.dropFirst(utf8BOM.count)) : Array(data)
+        guard String(validating: bytes, as: UTF8.self) != nil,
+              !bytes.contains(where: { $0 < 0x20 && !allowedControls.contains($0) }),
+              bytes.firstRange(of: Array("<!".utf8)) == nil,
+              declaresOnlyUTF8(String(decoding: bytes, as: UTF8.self))
+        else { return nil }
+        return Data(bytes)
+    }
+
+    private static func declaresOnlyUTF8(_ text: String) -> Bool {
+        guard text.hasPrefix("<?xml"), let end = text.range(of: "?>") else { return true }
+        let declaration = text[..<end.lowerBound].lowercased().replacingOccurrences(of: " ", with: "")
+        guard declaration.contains("encoding") else { return true }
+        return declaration.contains(#"encoding="utf-8""#) || declaration.contains("encoding='utf-8'")
     }
 
     private final class Delegate: NSObject, XMLParserDelegate {

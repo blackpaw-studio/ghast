@@ -163,6 +163,47 @@ struct CacheBlobUploadTests {
         #expect(await store.pendingUpload(reservation.uploadID)?.hasWhole == false)
     }
 
+    private static func utf16(_ text: String, bom: Bool) -> [UInt8] {
+        (bom ? [0xFF, 0xFE] : []) + Array(text.data(using: .utf16LittleEndian)!)
+    }
+
+    @Test("a block list that isn't plain UTF-8, or has any markup declaration, is refused", arguments: [
+        utf16(#"<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE BlockList [<!ENTITY x "QQ==">]><BlockList><Latest>&x;</Latest></BlockList>"#, bom: true),
+        utf16(#"<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE BlockList [<!ENTITY x "QQ==">]><BlockList><Latest>&x;</Latest></BlockList>"#, bom: false),
+        utf16("<BlockList><Latest>QQ==</Latest></BlockList>", bom: true),
+        [0xFE, 0xFF] + Array("<BlockList><Latest>QQ==</Latest></BlockList>".utf8),
+        Array("<BlockList><!-- note --><Latest>QQ==</Latest></BlockList>".utf8),
+        Array("<BlockList><Latest><![CDATA[QQ==]]></Latest></BlockList>".utf8),
+        Array("<BlockList><Latest>QQ==</Latest></BlockList>".utf8) + [0xC3, 0x28],
+        Array(#"<?xml version="1.0" encoding="UTF-16"?><BlockList><Latest>QQ==</Latest></BlockList>"#.utf8),
+    ] as [[UInt8]])
+    func nonUTF8BlockList(body: [UInt8]) async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore()
+        let handler = CacheBlobUploadHandler(store: store)
+        let reservation = try #require(try await store.reserve(repo: repo, scope: scope, key: "k", version: "v"))
+        _ = await put(handler, reservation.uploadID, sig: reservation.signature,
+                      [URLQueryItem(name: "comp", value: "block"), URLQueryItem(name: "blockid", value: "QQ==")], bytes: [1])
+        let response = await put(handler, reservation.uploadID, sig: reservation.signature,
+                                 [URLQueryItem(name: "comp", value: "blocklist")], bytes: body)
+        #expect(response.status == 400)
+        #expect(await store.pendingUpload(reservation.uploadID)?.hasWhole == false)
+    }
+
+    @Test("a UTF-8 byte order mark is fine")
+    func utf8BOM() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore()
+        let handler = CacheBlobUploadHandler(store: store)
+        let reservation = try #require(try await store.reserve(repo: repo, scope: scope, key: "k", version: "v"))
+        _ = await put(handler, reservation.uploadID, sig: reservation.signature,
+                      [URLQueryItem(name: "comp", value: "block"), URLQueryItem(name: "blockid", value: "QQ==")], bytes: [1])
+        let body: [UInt8] = [0xEF, 0xBB, 0xBF] + Array(#"<?xml version="1.0" encoding="utf-8"?><BlockList><Latest>QQ==</Latest></BlockList>"#.utf8)
+        let response = await put(handler, reservation.uploadID, sig: reservation.signature,
+                                 [URLQueryItem(name: "comp", value: "blocklist")], bytes: body)
+        #expect(response.status == 201)
+    }
+
     @Test("a body shorter than its Content-Length leaves the part incomplete")
     func shortBody() async throws {
         defer { folder.cleanup() }
