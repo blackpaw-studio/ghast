@@ -60,6 +60,7 @@ struct AppDependencies {
     let localCache: LocalCache?
     /// Settings › General › Cache.
     let cacheStats: any CacheStatsProviding
+    let cacheSettings: CacheSettingsModel
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -95,7 +96,9 @@ struct AppDependencies {
         cacheStats: (any CacheStatsProviding)? = nil
     ) {
         self.localCache = localCache
-        self.cacheStats = cacheStats ?? localCache ?? NoLocalCache()
+        let resolvedCacheStats = cacheStats ?? localCache ?? NoLocalCache()
+        self.cacheStats = resolvedCacheStats
+        cacheSettings = CacheSettingsModel(stats: resolvedCacheStats, settings: settings)
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
             api: apiService,
@@ -324,6 +327,7 @@ struct GhastApp: App {
                     .environment(dependencies.remoteStore)
                     .environment(dependencies.authService)
                     .environment(dependencies.softnetHelper)
+                    .environment(dependencies.cacheSettings)
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.appWindowRouter, dependencies.router)
                     .environment(\.settingsTabPreset, appDelegate.settingsTabPreset)
