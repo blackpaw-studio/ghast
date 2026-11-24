@@ -83,6 +83,9 @@ actor CacheStore {
         return reservation
     }
 
+    /// The largest archive the cache accepts; a part larger than this can never be saved.
+    func capacityBytes() -> Int64 { capBytes }
+
     /// The pending upload `uploadID` names, if any.
     func pendingUpload(_ uploadID: String) -> PendingUpload? { uploads[uploadID] }
 
