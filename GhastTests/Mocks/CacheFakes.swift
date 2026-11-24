@@ -9,6 +9,8 @@ final class SequentialCacheRandomness: CacheRandomness, @unchecked Sendable {
 
     func id128() -> String { lock.withLock { ids += 1; return "id-\(ids)" } }
     func signature() -> String { lock.withLock { sigs += 1; return "sig-\(sigs)" } }
+    var port = 49152
+    func highPort() -> Int { lock.withLock { port } }
 }
 
 /// Writes through to disk until `failAfterBytes` would be exceeded, then throws `ENOSPC`.

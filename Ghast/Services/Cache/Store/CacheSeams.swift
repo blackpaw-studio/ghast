@@ -6,6 +6,8 @@ protocol CacheRandomness: Sendable {
     func id128() -> String
     /// A per-upload secret for the `sig` query parameter, base64url.
     func signature() -> String
+    /// A port in the dynamic range (49152–65535) for the cache server.
+    func highPort() -> Int
 }
 
 /// `SystemRandomNumberGenerator` is a cryptographically secure generator on Apple platforms.
@@ -19,6 +21,11 @@ struct SystemCacheRandomness: CacheRandomness {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    func highPort() -> Int {
+        var generator = SystemRandomNumberGenerator()
+        return Int.random(in: 49152 ... 65535, using: &generator)
     }
 
     private static func bytes(_ count: Int) -> [UInt8] {
