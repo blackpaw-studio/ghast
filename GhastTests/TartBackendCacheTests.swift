@@ -59,6 +59,44 @@ struct TartBackendCacheTests {
         await h.service.stopRunner(id: runner.id)
     }
 
+    @Test("a gateway lookup that stalls ends at its deadline: the lookup is cancelled and the job runs without the cache")
+    func stalledGatewayTimesOut() async throws {
+        let cache = FakeLocalCache()
+        let h = harness(cache)
+        defer { h.cleanup() }
+        h.cli.routeGate = HoldGate()
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { routeExecs(h).count == 1 })
+        #expect(h.sleeps.all.contains(TartBackend.Timing.standard.gatewayTimeout))
+        await h.gatewayDeadline.open()
+        #expect(await h.settled { h.cli.jobsStarted == 1 })
+
+        #expect(h.cli.cancelledRouteLookups == 1)
+        #expect(h.lines.lines.filter { $0.contains("Local cache unavailable: the VM didn't report its gateway in time") }.count == 1)
+        #expect(try #require(h.cli.streamedCommands.last).suffix(2).first == "_")
+        #expect(cache.gateways.isEmpty)
+        await h.service.stopRunner(id: runner.id)
+    }
+
+    @Test("Stop during a stalled gateway lookup cancels it and cleans up without waiting for the deadline")
+    func stopDuringStalledGateway() async throws {
+        let cache = FakeLocalCache()
+        let h = harness(cache)
+        defer { h.cleanup() }
+        h.cli.routeGate = HoldGate()
+        let runner = h.addRunner()
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { routeExecs(h).count == 1 })
+
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(await h.settled { h.cli.cancelledRouteLookups == 1 })
+        #expect(h.cli.jobsStarted == 0)
+        #expect(cache.registered.isEmpty)
+    }
+
     @Test("an unavailable server costs one log line and the job still runs, without the cache")
     func unavailable() async throws {
         let cache = FakeLocalCache()

@@ -23,6 +23,9 @@ final class TartBackend: RunnerBackend {
         var slotRecheckInterval: Duration = .seconds(15)
         /// `tart stop --timeout`, in seconds.
         var vmStopTimeout = 8
+        /// How long the guest has to report its gateway for the local cache. Kept apart from the
+        /// other intervals (tests tell the waits apart by duration).
+        var gatewayTimeout: Duration = .seconds(12)
 
         static let standard = Timing()
     }
@@ -577,8 +580,12 @@ final class TartBackend: RunnerBackend {
     /// line and the job uses GitHub's cache (nil).
     private func connectCache(_ cache: (any LocalCacheServing)?, cli: any TartCLI, vm: VMRun, runner: LocalRunner) async -> URL? {
         guard let cache else { return nil }
-        let route = try? await cli.execOutput(vm.clone, TartArguments.guestRoute)
-        guard let route, route.status == 0, let gateway = TartRoute.gateway(from: route.output) else {
+        let lookup = await gatewayLookup(cli, vm: vm)
+        if case .timedOut = lookup {
+            log("Local cache unavailable: the VM didn't report its gateway in time; this job uses GitHub's cache", runner: runner, vm: vm)
+            return nil
+        }
+        guard case let .finished(route?) = lookup, route.status == 0, let gateway = TartRoute.gateway(from: route.output) else {
             log("Local cache unavailable: couldn't read the VM's gateway; this job uses GitHub's cache", runner: runner, vm: vm)
             return nil
         }
@@ -593,6 +600,27 @@ final class TartBackend: RunnerBackend {
                 for await event in registration.events { self?.log(event.logLine, runner: runner, vm: vm) }
             }
             return endpoint.resultsURL(vmToken: registration.token)
+        }
+    }
+
+    private enum GatewayLookup: Sendable {
+        /// The lookup ended; nil when it failed or was cancelled.
+        case finished(ScriptResult?)
+        case timedOut
+    }
+
+    /// Runs the guest's route lookup under `timing.gatewayTimeout`. Whichever ends first cancels
+    /// the other, so a stalled guest agent's `tart exec` is terminated; so is a cancelled boot (Stop).
+    private func gatewayLookup(_ cli: any TartCLI, vm: VMRun) async -> GatewayLookup {
+        let clone = vm.clone, sleeper = sleeper, timeout = timing.gatewayTimeout
+        return await withTaskGroup(of: GatewayLookup?.self) { group in
+            group.addTask { .finished(try? await cli.execOutput(clone, TartArguments.guestRoute)) }
+            group.addTask { (try? await sleeper(timeout)) == nil ? nil : .timedOut }
+            defer { group.cancelAll() }
+            while let outcome = await group.next() {
+                if let outcome { return outcome }
+            }
+            return .finished(nil)
         }
     }
 

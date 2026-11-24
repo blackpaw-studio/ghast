@@ -43,6 +43,8 @@ final class TartHarness {
     let service: RunnerService
     let backend: TartBackend
     let softnet: FakeSoftnetChecker
+    /// Holds the gateway lookup's deadline until a test opens it.
+    let gatewayDeadline = HoldGate()
 
     init(
         entries: [TartVMEntry]? = nil,
@@ -62,6 +64,7 @@ final class TartHarness {
         }
         let recheck = timing.slotRecheckInterval
         let power = power
+        let gatewayTimeout = timing.gatewayTimeout, gatewayDeadline = gatewayDeadline
         let backend = TartBackend(
             cliProvider: { cli },
             api: api,
@@ -73,6 +76,10 @@ final class TartHarness {
             clock: clock,
             sleeper: { duration in
                 sleeps.record(duration)
+                if duration == gatewayTimeout {
+                    try await gatewayDeadline.wait()
+                    return
+                }
                 if duration == recheck { try await HoldGate().wait() }
                 await Task.yield()
             },
