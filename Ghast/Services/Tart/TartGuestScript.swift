@@ -65,7 +65,7 @@ enum TartGuestScript {
         ghast_count() { GHAST_NEEDLE="$1" perl -0777 -ne 'my $n = join("", map { $_ . "\0" } split(//, $ENV{GHAST_NEEDLE})); my $c = () = /\Q$n\E/g; print $c' "$2" 2>/dev/null; }
         ghast_off() { rm -f "$GHAST_PATCHED"; echo "Local cache off: $1; this job uses GitHub's cache"; }
         GHAST_FOUND=$(ghast_count ACTIONS_RESULTS_URL "$DLL")
-        GHAST_ENV_SIZE=$(wc -c < .env 2>/dev/null || echo 0)
+        GHAST_ENV_SIZE=$( { [ -f .env ] && wc -c < .env; } 2>/dev/null || echo 0)
         if [ "$GHAST_FOUND" != "1" ]; then
             ghast_off "the runner has ${GHAST_FOUND:-0} copies of its results URL setting, not 1"
         elif ! cp -p "$DLL" "$GHAST_PATCHED" 2>/dev/null \

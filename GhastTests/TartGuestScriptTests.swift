@@ -62,7 +62,7 @@ struct TartGuestScriptTests {
 /// runner package (perl is the system perl, as in the guest).
 @Suite("Tart guest script cache patch")
 struct TartGuestScriptCacheTests {
-    private static let url = "http://192.168.64.1:50123/v/abc/"
+    private static let url = "http://192.168.64.1:50123/"
 
     private static func utf16(_ text: String) -> [UInt8] { Array(text.data(using: .utf16LittleEndian)!) }
 
@@ -76,12 +76,12 @@ struct TartGuestScriptCacheTests {
     }
 
     /// Writes `bin/Runner.Worker.dll` (when `dll` is non-nil) and a `.env`, runs the cache block.
-    private func run(dll: [UInt8]?, cacheURL: String, envIsWritable: Bool = true) throws -> Run {
+    private func run(dll: [UInt8]?, cacheURL: String, envIsWritable: Bool = true, hasEnv: Bool = true) throws -> Run {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("guest-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("bin"), withIntermediateDirectories: true)
         if let dll { try Data(dll).write(to: folder.appendingPathComponent("bin/Runner.Worker.dll")) }
-        try Data("EXISTING=1\n".utf8).write(to: folder.appendingPathComponent(".env"))
+        if hasEnv { try Data("EXISTING=1\n".utf8).write(to: folder.appendingPathComponent(".env")) }
         if !envIsWritable {
             try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: folder.appendingPathComponent(".env").path)
         }
@@ -120,6 +120,16 @@ struct TartGuestScriptCacheTests {
         #expect(result.env == "EXISTING=1\nACTIONS_RESULTS_URL=\(Self.url)\n")
         #expect(result.output.isEmpty)
         #expect(result.binFiles == ["Runner.Worker.dll"])
+    }
+
+    @Test("with no .env yet the runner is patched, the URL goes in a new .env, and nothing is printed")
+    func noEnv() throws {
+        let result = try run(dll: Self.dll, cacheURL: Self.url, hasEnv: false)
+
+        #expect(result.status == 0)
+        #expect(result.output.isEmpty)
+        #expect(Self.count(Self.utf16("ACTIONS_RESULTS_ORL"), in: result.dll) == 1)
+        #expect(result.env == "ACTIONS_RESULTS_URL=\(Self.url)\n")
     }
 
     @Test("when .env can't be written the runner stays unpatched, with one log line")
