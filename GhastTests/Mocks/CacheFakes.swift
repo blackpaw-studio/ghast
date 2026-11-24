@@ -43,3 +43,23 @@ struct CacheTestFolder {
             .sorted()
     }
 }
+
+/// Writes the index for real, except on the call numbers in `failingCalls` (1-based) or every
+/// call while `failsAll` is set.
+final class FailingIndexWriter: CacheIndexWriting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    var failingCalls: Set<Int> = []
+    var failsAll = false
+
+    func write(_ data: Data, to url: URL) throws {
+        let shouldFail = lock.withLock {
+            calls += 1
+            return failsAll || failingCalls.contains(calls)
+        }
+        if shouldFail { throw POSIXError(.EIO) }
+        try AtomicIndexWriter().write(data, to: url)
+    }
+
+    var callCount: Int { lock.withLock { calls } }
+}

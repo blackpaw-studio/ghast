@@ -25,6 +25,8 @@ enum CacheStoreError: Error, Equatable {
     case missingBlock(id: String)
     case nothingUploaded
     case sizeMismatch(expected: Int64, actual: Int64)
+    /// The archive is larger than the whole cache may be.
+    case tooLarge(sizeBytes: Int64, capBytes: Int64)
     case writeFailed(String)
     case indexWriteFailed(String)
 }

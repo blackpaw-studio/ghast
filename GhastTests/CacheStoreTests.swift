@@ -7,11 +7,13 @@ struct CacheStoreTests {
     private let folder = CacheTestFolder()
     private let clock = FakeClock()
     private let writer = FailingBlobWriter()
+    private let indexWriter = FailingIndexWriter()
     private let repo = CacheRepoID(rawValue: "42")
     private let main = "refs/heads/main"
 
     private func makeStore() throws -> CacheStore {
-        try CacheStore(root: folder.url, clock: clock, randomness: SequentialCacheRandomness(), writer: writer)
+        try CacheStore(root: folder.url, clock: clock, randomness: SequentialCacheRandomness(), writer: writer,
+                       indexWriter: indexWriter)
     }
 
     /// Reserves, uploads `bytes` in one part and finalizes; returns the entry.
@@ -99,20 +101,55 @@ struct CacheStoreTests {
         }
     }
 
-    @Test("entries and their recency survive reopening the store")
+    @Test("entries and restore recency survive reopening the store")
     func reload() async throws {
         defer { folder.cleanup() }
         let store = try makeStore()
-        try await save(store, key: "deps")
-        clock.advance(by: 60)
-        let used = try #require(await lookup(store, "deps"))
+        let restored = try await save(store, key: "a")
+        clock.advance(by: 10)
+        try await save(store, key: "b")
+        clock.advance(by: 10)
+        _ = try #require(await lookup(store, "a"))
         try await store.flush()
 
+        // Only the persisted recency can tell the reopened store that "a", the older entry,
+        // was used last, so a cap that fits one entry must keep it.
         let reopened = try makeStore()
-        let entry = try #require(await lookup(reopened, "deps"))
-        #expect(entry.downloadID == used.downloadID)
-        #expect(entry.createdAt < used.lastUsedAt)
+        try await reopened.evict(capBytes: 5)
+
         #expect(await reopened.usage() == CacheUsage(entryCount: 1, totalBytes: 5, pendingUploads: 0))
+        #expect(folder.files().filter { $0.hasPrefix("blobs/") } == ["blobs/\(restored.downloadID)"])
+    }
+
+    @Test("an entry whose archive is missing is dropped when the store opens")
+    func missingArchive() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore()
+        let lost = try await save(store, key: "lost")
+        try await save(store, key: "kept")
+        try FileManager.default.removeItem(at: try #require(await store.blobURL(downloadID: lost.downloadID)))
+
+        let reopened = try makeStore()
+
+        #expect(await lookup(reopened, "lost") == nil)
+        #expect(await lookup(reopened, "kept") != nil)
+        #expect(await reopened.usage().entryCount == 1)
+    }
+
+    @Test("a failed index write during clear keeps every entry and upload")
+    func clearRollback() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore()
+        try await save(store, key: "old")
+        let id = try #require(try await store.reserve(repo: repo, scope: main, key: "new", version: "v1")).uploadID
+        try await store.beginPart(uploadID: id, part: .whole)
+        indexWriter.failsAll = true
+
+        await #expect(throws: CacheStoreError.self) { try await store.clear() }
+
+        #expect(await store.usage() == CacheUsage(entryCount: 1, totalBytes: 5, pendingUploads: 1))
+        #expect(await lookup(store, "old") != nil)
+        try await store.appendPart(uploadID: id, part: .whole, bytes: Array("x".utf8))
     }
 
     @Test("a disk-full write aborts that upload, leaves no partial files and reports the error")

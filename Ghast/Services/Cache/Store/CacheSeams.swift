@@ -48,6 +48,18 @@ struct FileBlobWriter: CacheBlobWriting {
     }
 }
 
+/// Writes the index file. Injected so tests can fail a write.
+protocol CacheIndexWriting: Sendable {
+    func write(_ data: Data, to url: URL) throws
+}
+
+/// Writes through a temporary file and a rename, so a reader sees the old or the new index.
+struct AtomicIndexWriter: CacheIndexWriting {
+    func write(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+    }
+}
+
 /// How long things live in the cache.
 struct CacheTiming: Sendable {
     /// An upload with no write for this long is dropped.

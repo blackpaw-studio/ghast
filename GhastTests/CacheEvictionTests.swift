@@ -6,13 +6,14 @@ import Testing
 struct CacheEvictionTests {
     private let folder = CacheTestFolder()
     private let clock = FakeClock()
+    private let indexWriter = FailingIndexWriter()
     private let repo = CacheRepoID(rawValue: "42")
     private let main = "refs/heads/main"
     private static let day: TimeInterval = 24 * 60 * 60
 
     private func makeStore(capBytes: Int64 = .max) throws -> CacheStore {
         try CacheStore(root: folder.url, clock: clock, randomness: SequentialCacheRandomness(), writer: FileBlobWriter(),
-                       capBytes: capBytes)
+                       indexWriter: indexWriter, capBytes: capBytes)
     }
 
     @discardableResult
@@ -60,6 +61,52 @@ struct CacheEvictionTests {
         #expect(await has(store, "b"))
         #expect(!(await has(store, "a")))
         #expect(blobFiles().count == 2)
+    }
+
+    @Test("a failed index write during eviction keeps the entries")
+    func evictRollback() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore()
+        try await save(store, key: "a")
+        try await save(store, key: "b")
+        indexWriter.failsAll = true
+
+        await #expect(throws: CacheStoreError.self) { try await store.evict(capBytes: 0) }
+
+        #expect(await store.usage().entryCount == 2)
+        #expect(blobFiles().count == 2)
+    }
+
+    @Test("an archive larger than the cap is refused at finalize and leaves the cache as it was")
+    func tooLarge() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore(capBytes: 10)
+        try await save(store, key: "small")
+        let id = try #require(try await store.reserve(repo: repo, scope: main, key: "big", version: "v1")).uploadID
+        try await store.beginPart(uploadID: id, part: .whole)
+        try await store.appendPart(uploadID: id, part: .whole, bytes: [UInt8](repeating: 1, count: 11))
+
+        await #expect(throws: CacheStoreError.tooLarge(sizeBytes: 11, capBytes: 10)) {
+            try await store.finalize(repo: repo, scope: main, key: "big", version: "v1", sizeBytes: 11)
+        }
+
+        #expect(await has(store, "small"))
+        #expect(!(await has(store, "big")))
+        #expect(folder.files().allSatisfy { !$0.hasPrefix("uploads/") })
+    }
+
+    @Test("an eviction failure after a finalize still reports the save")
+    func evictFailureAfterFinalize() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore(capBytes: 5)
+        try await save(store, key: "a")
+        // The next finalize writes the index (succeeds), then its eviction writes it (fails).
+        indexWriter.failingCalls = [indexWriter.callCount + 2]
+
+        let saved = try await save(store, key: "b")
+
+        #expect(saved.key == "b")
+        #expect(await has(store, "b"))
     }
 
     @Test("an entry unused for exactly 7 days is kept; one unused for longer is removed")

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 /// The cache on disk: `index.json` (finalized entries, written atomically), `blobs/<downloadID>`
 /// (archives) and `uploads/<uploadID>/` (uploads in progress). File names are always random hex
@@ -12,11 +13,13 @@ import Foundation
 actor CacheStore {
     static let indexFileName = "index.json"
     static let defaultCapBytes: Int64 = 50 * 1_000_000_000
+    private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "cache")
 
     private let root: URL
     private let clock: any AppClock
     private let randomness: any CacheRandomness
     private let writer: any CacheBlobWriting
+    private let indexWriter: any CacheIndexWriting
     let timing: CacheTiming
     /// The size cap applied after each finalize.
     private var capBytes: Int64
@@ -31,25 +34,34 @@ actor CacheStore {
     private var uploadsURL: URL { root.appendingPathComponent("uploads", isDirectory: true) }
 
     init(root: URL, clock: any AppClock, randomness: any CacheRandomness, writer: any CacheBlobWriting,
-         timing: CacheTiming = CacheTiming(), capBytes: Int64 = CacheStore.defaultCapBytes) throws {
+         indexWriter: any CacheIndexWriting = AtomicIndexWriter(), timing: CacheTiming = CacheTiming(),
+         capBytes: Int64 = CacheStore.defaultCapBytes) throws {
         self.root = root
         self.capBytes = capBytes
         self.clock = clock
         self.randomness = randomness
         self.writer = writer
+        self.indexWriter = indexWriter
         self.timing = timing
         for folder in [root, root.appendingPathComponent("blobs"), root.appendingPathComponent("uploads")] {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
         }
-        index = Self.loadIndex(at: root.appendingPathComponent(Self.indexFileName))
+        index = Self.loadIndex(root: root)
     }
 
     /// A missing index is an empty cache. An unreadable one is treated the same: its archives
-    /// become unnamed files, which the sweep removes.
-    private static func loadIndex(at url: URL) -> CacheIndex {
-        guard let data = try? Data(contentsOf: url) else { return CacheIndex() }
-        return (try? JSONDecoder().decode(CacheIndex.self, from: data)) ?? CacheIndex()
+    /// become unnamed files, which the sweep removes. Entries whose archive is gone are dropped
+    /// (the next index write records that).
+    private static func loadIndex(root: URL) -> CacheIndex {
+        guard let data = try? Data(contentsOf: root.appendingPathComponent(indexFileName)),
+              let saved = try? JSONDecoder().decode(CacheIndex.self, from: data)
+        else { return CacheIndex() }
+        let blobs = root.appendingPathComponent("blobs", isDirectory: true)
+        let present = saved.entries.filter {
+            FileManager.default.fileExists(atPath: blobs.appendingPathComponent($0.downloadID).path)
+        }
+        return CacheIndex(entries: present)
     }
 
     // MARK: Uploads
@@ -138,6 +150,10 @@ actor CacheStore {
             discard(uploadID)
             throw CacheStoreError.sizeMismatch(expected: sizeBytes, actual: actual)
         }
+        guard actual <= capBytes else {
+            discard(uploadID)
+            throw CacheStoreError.tooLarge(sizeBytes: actual, capBytes: capBytes)
+        }
         let now = clock.now()
         let entry = CacheEntry(id: uploadID, repo: repo, scope: scope, key: key, version: version, sizeBytes: actual,
                                createdAt: now, lastUsedAt: now, downloadID: randomness.id128())
@@ -157,7 +173,12 @@ actor CacheStore {
             throw error
         }
         discard(uploadID)
-        try evict(capBytes: capBytes)
+        do {
+            try evict(capBytes: capBytes)
+        } catch {
+            // The entry is saved; the cap is applied again by the next finalize or sweep.
+            Self.logger.error("Cache eviction after a save failed: \(String(describing: error), privacy: .public)")
+        }
         return entry
     }
 
@@ -187,9 +208,15 @@ actor CacheStore {
 
     /// Removes every entry and every upload in progress.
     func clear() throws {
+        let (savedIndex, savedUploads) = (index, uploads)
         index = CacheIndex()
         uploads = [:]
-        try saveIndex()
+        do {
+            try saveIndex()
+        } catch {
+            (index, uploads) = (savedIndex, savedUploads)
+            throw error
+        }
         try Self.emptyFolder(blobsURL)
         try Self.emptyFolder(uploadsURL)
     }
@@ -236,9 +263,15 @@ actor CacheStore {
     /// already reading an archive keeps its open file; POSIX frees it when the reader closes.
     private func remove(entryIDs: Set<String>) throws {
         guard !entryIDs.isEmpty else { return }
+        let before = index
         let removed = index.entries.filter { entryIDs.contains($0.id) }
         index.entries.removeAll { entryIDs.contains($0.id) }
-        try saveIndex()
+        do {
+            try saveIndex()
+        } catch {
+            index = before
+            throw error
+        }
         for entry in removed {
             try? FileManager.default.removeItem(at: blobsURL.appendingPathComponent(entry.downloadID))
         }
@@ -248,7 +281,7 @@ actor CacheStore {
 
     private func saveIndex() throws {
         do {
-            try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
+            try indexWriter.write(JSONEncoder().encode(index), to: indexURL)
             isIndexDirty = false
         } catch {
             throw CacheStoreError.indexWriteFailed(String(describing: error))
