@@ -142,21 +142,34 @@ final class CacheServer {
 }
 
 /// Runs one Hummingbird HTTP/1.1 server per address, capped at 64 connections.
+/// Runs one Hummingbird HTTP/1.1 server per address, under `limits`: read deadlines, an idle
+/// timeout, and connection caps in all and per peer (shared by this binder's listeners).
 struct HummingbirdListenerBinder: CacheListenerBinding {
-    var maximumConnections = 64
+    let limits: CacheConnectionLimits
+    private let peerLimiter: CachePeerLimiter
+
+    init(limits: CacheConnectionLimits = CacheConnectionLimits()) {
+        self.limits = limits
+        peerLimiter = CachePeerLimiter(maximumPerPeer: limits.maximumPerPeer)
+    }
 
     func bind(address: String, port: Int, peers: CacheSubnet, responder: CacheResponder) async throws -> any CacheListening {
         let started = StartSignal()
         var logger = Logger(label: "net.evancoleman.ghast.cache")
         logger.logLevel = .error
+        let limits = limits, peerLimiter = peerLimiter
         let server = HTTPServerBuilder { respond in
-            AdmittingHTTP1Channel(inner: HTTP1Channel(responder: respond), peers: peers)
+            let configuration = HTTP1Channel.Configuration(
+                additionalChannelHandlers: [CacheDeadlineHandler(limits: limits)],
+                idleTimeout: .nanoseconds(Int64(limits.idleTimeout.components.seconds) * 1_000_000_000))
+            return AdmittingHTTP1Channel(inner: HTTP1Channel(responder: respond, configuration: configuration), peers: peers,
+                                         peerLimiter: peerLimiter)
         }
         let app = Application(
             responder: responder,
             server: server,
             configuration: .init(address: .hostname(address, port: port),
-                                 availableConnectionsDelegate: MaximumAvailableConnections(maximumConnections)),
+                                 availableConnectionsDelegate: MaximumAvailableConnections(limits.maximumConnections)),
             onServerRunning: { _ in await started.resolve(nil) },
             logger: logger)
         let task = Task {
@@ -175,18 +188,20 @@ struct HummingbirdListenerBinder: CacheListenerBinding {
     }
 }
 
-/// HTTP/1.1, but a connection from outside `peers` is closed as soon as it is accepted,
-/// before any byte of it is read.
+/// HTTP/1.1, but a connection from outside `peers`, or from a peer already at its connection
+/// limit, is closed as soon as it is accepted, before any byte of it is read.
 private struct AdmittingHTTP1Channel: ServerChildChannel {
     typealias Value = HTTP1Channel.Value
     let inner: HTTP1Channel
     let peers: CacheSubnet
+    let peerLimiter: CachePeerLimiter
 
     func setup(channel: any Channel, logger: Logger) -> EventLoopFuture<Value> {
-        guard let remote = channel.remoteAddress?.ipAddress, peers.contains(remote) else {
+        guard let remote = channel.remoteAddress?.ipAddress, peers.contains(remote), peerLimiter.acquire(remote) else {
             channel.close(mode: .all, promise: nil)
             return channel.eventLoop.makeFailedFuture(CacheConnectionRefused())
         }
+        channel.closeFuture.whenComplete { _ in peerLimiter.release(remote) }
         return inner.setup(channel: channel, logger: logger)
     }
 
