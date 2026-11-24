@@ -94,9 +94,12 @@ actor CacheStore {
 
     /// Starts (or restarts) one part with an empty file and returns its writer. The caller
     /// writes the body through it, off this actor, then calls `finishPart` or `abandonPart`.
+    /// A part has one writer at a time: a newer one cancels the one still writing, whose bytes
+    /// go to the replaced (unlinked) file and stay in its budget until it finishes or abandons.
     func beginPart(uploadID: String, part: CacheUploadPart) throws -> CachePartWriter {
         guard var upload = uploads[uploadID] else { throw CacheStoreError.unknownUpload }
         guard upload.commitToken == nil else { throw CacheStoreError.commitInProgress }
+        supersedeWriters(uploadID, part)
         let sink: any CacheFileSink
         do {
             sink = try writer.create(partURL(uploadID, part))
@@ -255,6 +258,14 @@ actor CacheStore {
     private static func firstDuplicate(_ ids: [String]) -> String? {
         var seen: Set<String> = []
         return ids.first { !seen.insert($0).inserted }
+    }
+
+    /// Cancels the writers still writing `part`; they stop counting as its writers at once.
+    private func supersedeWriters(_ uploadID: String, _ part: CacheUploadPart) {
+        let superseded = activeWriters[uploadID]?.filter { $0.part == part } ?? []
+        guard !superseded.isEmpty else { return }
+        superseded.forEach { $0.cancel() }
+        activeWriters[uploadID]?.removeAll { $0.part == part }
     }
 
     private func release(_ partWriter: CachePartWriter) {

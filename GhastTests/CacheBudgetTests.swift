@@ -54,6 +54,45 @@ struct CacheBudgetTests {
         }
     }
 
+    @Test("a second writer for a part supersedes the first, so the budget keeps every byte on disk")
+    func concurrentWritersForOnePart() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore(cap: 10)
+        let reservation = try await reserve(store, "k")
+
+        for id in ["a", "b", "c"] {
+            let first = try await store.beginPart(uploadID: reservation.uploadID, part: block(id))
+            let second = try await store.beginPart(uploadID: reservation.uploadID, part: block(id))
+            try second.write([UInt8](repeating: 1, count: 3))
+            try await store.finishPart(second)
+            #expect(throws: CacheStoreError.unknownUpload) { try first.write([1]) }
+            await #expect(throws: CacheStoreError.unknownUpload) { try await store.finishPart(first) }
+        }
+
+        #expect(fileSizes().filter { $0.key.hasPrefix("uploads/") }.values.sorted() == [3, 3, 3])
+        let extra = try await store.beginPart(uploadID: reservation.uploadID, part: block("d"))
+        #expect(throws: CacheStoreError.tooLarge(sizeBytes: 2, capBytes: 10)) { try extra.write([1, 2]) }
+        try extra.write([1])
+    }
+
+    @Test("rewriting a finished part releases its old bytes only as its file is replaced")
+    func replaceAfterFinish() async throws {
+        defer { folder.cleanup() }
+        let store = try makeStore(cap: 10)
+        let reservation = try await reserve(store, "k")
+        let original = try await store.beginPart(uploadID: reservation.uploadID, part: block("a"))
+        try original.write([UInt8](repeating: 1, count: 6))
+        try await store.finishPart(original)
+
+        let replacement = try await store.beginPart(uploadID: reservation.uploadID, part: block("a"))
+        try replacement.write([UInt8](repeating: 2, count: 4))
+        try await store.finishPart(replacement)
+
+        let other = try await store.beginPart(uploadID: reservation.uploadID, part: block("b"))
+        try other.write([UInt8](repeating: 3, count: 6))
+        #expect(throws: CacheStoreError.tooLarge(sizeBytes: 7, capBytes: 10)) { try other.write([4]) }
+    }
+
     @Test("a commit larger than the cap is refused before anything is copied")
     func projectedOverCap() async throws {
         defer { folder.cleanup() }
