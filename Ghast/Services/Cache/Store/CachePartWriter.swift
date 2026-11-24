@@ -1,47 +1,41 @@
 import Foundation
 
-/// Writes one upload part straight to its file, off the store's actor, so uploads from
+/// Writes one upload part straight to its own file, off the store's actor, so uploads from
 /// different VMs don't wait for each other. Made by `CacheStore.beginPart`; the caller writes
 /// the body with `write` and then always calls `CacheStore.finishPart` (or `abandonPart` when
-/// the request ends early).
+/// the request ends early). A newer writer for the same part closes this one at once.
 final class CachePartWriter: @unchecked Sendable {
     let uploadID: String
     let part: CacheUploadPart
-    private let sink: any CacheFileSink
+    let file: CacheUploadFile
     private let clock: any AppClock
     private let budget: CacheByteBudget
     private let lock = NSLock()
     private var lastWriteAt: Date
     private var failure: String?
-    private var isCancelled = false
 
-    init(uploadID: String, part: CacheUploadPart, sink: any CacheFileSink, clock: any AppClock, budget: CacheByteBudget) {
+    init(uploadID: String, part: CacheUploadPart, file: CacheUploadFile, clock: any AppClock, budget: CacheByteBudget) {
         self.uploadID = uploadID
         self.part = part
-        self.sink = sink
+        self.file = file
         self.clock = clock
         self.budget = budget
         lastWriteAt = clock.now()
     }
 
-    /// This writer's share of the upload byte budget.
-    var budgetKey: CacheByteBudget.Key { .init(uploadID: uploadID, holder: .writer(ObjectIdentifier(self))) }
-
-    /// Appends bytes. Throws `unknownUpload` once the store dropped the upload, `tooLarge`
-    /// when pending uploads would pass the cache cap (the caller then abandons the part), and
-    /// `writeFailed` after a write error (the store then drops the upload in `finishPart`).
+    /// Appends bytes. Throws `unknownUpload` once the store closed this writer (superseded or
+    /// the upload dropped), `tooLarge` when pending uploads would pass the cache cap (the
+    /// caller then abandons the part), and `writeFailed` after a write error (the store then
+    /// drops the upload in `finishPart`).
     func write(_ bytes: some Collection<UInt8>) throws {
-        try lock.withLock {
-            if isCancelled { throw CacheStoreError.unknownUpload }
-            if let failure { throw CacheStoreError.writeFailed(failure) }
-        }
-        let count = Int64(bytes.count)
-        guard budget.grow(budgetKey, by: count) else {
-            throw CacheStoreError.tooLarge(sizeBytes: budget.bytes(budgetKey) + count, capBytes: budget.limit)
-        }
+        if let failure = lock.withLock({ failure }) { throw CacheStoreError.writeFailed(failure) }
         do {
-            try sink.write(bytes)
-        } catch {
+            try file.append(bytes)
+        } catch .closed {
+            throw CacheStoreError.unknownUpload
+        } catch .overBudget(let charged) {
+            throw CacheStoreError.tooLarge(sizeBytes: charged + Int64(bytes.count), capBytes: budget.limit)
+        } catch .write(let error) {
             let reason = String(describing: error)
             lock.withLock { failure = reason }
             throw CacheStoreError.writeFailed(reason)
@@ -52,10 +46,4 @@ final class CachePartWriter: @unchecked Sendable {
 
     var lastActivity: Date { lock.withLock { lastWriteAt } }
     var writeFailure: String? { lock.withLock { failure } }
-    var wasCancelled: Bool { lock.withLock { isCancelled } }
-
-    /// Called by the store when it drops the upload; later writes throw `unknownUpload`.
-    func cancel() { lock.withLock { isCancelled = true } }
-
-    func close() throws { try sink.close() }
 }

@@ -105,7 +105,7 @@ struct CacheBudgetTests {
         await #expect(throws: CacheStoreError.tooLarge(sizeBytes: 10, capBytes: 8)) {
             try await store.commitBlocks(uploadID: reservation.uploadID, order: [blockID("a"), blockID("b")])
         }
-        #expect(!folder.files().contains { $0.hasSuffix("/archive") })
+        #expect(!folder.files().contains { $0.contains("/archive") })
     }
 
     @Test("two uploads together can't write more than the cap")
@@ -161,7 +161,7 @@ struct CacheBudgetTests {
         await #expect(throws: CacheStoreError.self) {
             try await store.commitBlocks(uploadID: reservation.uploadID, order: [blockID("a")])
         }
-        #expect(fileSizes().filter { $0.key.hasSuffix("/archive") }.values.allSatisfy { $0 <= 4 })
+        #expect(fileSizes().filter { $0.key.contains("/archive") }.values.allSatisfy { $0 <= 4 })
         #expect(await store.pendingUpload(reservation.uploadID)?.hasWhole != true)
     }
 

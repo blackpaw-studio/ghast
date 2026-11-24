@@ -48,7 +48,7 @@ struct CacheStoreConcurrencyTests {
     func clearDuringCommit() async throws {
         defer { folder.cleanup() }
         let gate = WriteGate()
-        let store = try makeStore(writer: GatedBlobWriter(gate: gate) { $0.lastPathComponent == "archive" })
+        let store = try makeStore(writer: GatedBlobWriter(gate: gate) { $0.lastPathComponent.hasPrefix("archive") })
         let id = try await uploadBlocks(store, key: "deps")
         let commit = Task { try await store.commitBlocks(uploadID: id, order: ["YQ==", "Yg=="]) }
         await gate.waitUntilHolding()
@@ -72,7 +72,8 @@ struct CacheStoreConcurrencyTests {
         }
         try await store.commitBlocks(uploadID: id, order: ["YQ==", "Yg=="])
 
-        #expect(uploadFiles() == ["uploads/\(id)/archive"])
+        #expect(uploadFiles().count == 1)
+        #expect(uploadFiles().allSatisfy { $0.hasPrefix("uploads/\(id)/archive") })
         let entry = try await store.finalize(repo: repo, scope: main, key: "deps", version: "v1", sizeBytes: 12)
         let blob = try #require(await store.blobURL(downloadID: entry.downloadID))
         #expect(try String(contentsOf: blob, encoding: .utf8) == "first-second")
