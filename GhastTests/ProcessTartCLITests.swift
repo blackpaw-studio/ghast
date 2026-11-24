@@ -148,6 +148,42 @@ struct ProcessTartCLITests {
         #expect(!spec.arguments.contains("--net-softnet"))
     }
 
+    /// A stand-in `tart` that prints `output` and exits with `status` only when called as
+    /// `get <vm> --format json`; any other argv exits 99. Nothing real runs.
+    private func scriptedTart(vm: String, output: String, status: Int32 = 0) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ghast-tart-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let script = folder.appendingPathComponent("tart")
+        let body = """
+        #!/bin/bash
+        [ "$*" = "get \(vm) --format json" ] || exit 99
+        echo '\(output)'
+        exit \(status)
+        """
+        try body.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        return script
+    }
+
+    @Test("info runs `tart get --format json` and decodes CPU, memory and disk")
+    func info() async throws {
+        let json = #"{"OS":"darwin","CPU":4,"Memory":8192,"Disk":140,"Running":false}"#
+        let tartScript = try scriptedTart(vm: "my-vm", output: json)
+        defer { try? FileManager.default.removeItem(at: tartScript.deletingLastPathComponent()) }
+
+        let info = try await ProcessTartCLI(executable: tartScript).info(of: "my-vm")
+
+        #expect(info == TartVMInfo(cpuCount: 4, memoryMB: 8192, diskGB: 140))
+    }
+
+    @Test("info throws when tart get fails")
+    func infoFails() async throws {
+        let tartScript = try scriptedTart(vm: "my-vm", output: "no such VM", status: 1)
+        defer { try? FileManager.default.removeItem(at: tartScript.deletingLastPathComponent()) }
+
+        await #expect(throws: TartError.self) { try await ProcessTartCLI(executable: tartScript).info(of: "my-vm") }
+    }
+
     @Test("execStreaming runs the guest command and logs its output, each line marked with the VM")
     func execStreaming() throws {
         let launcher = RecordingLauncher()
