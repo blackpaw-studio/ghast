@@ -103,6 +103,7 @@ struct CacheTwirpService: Sendable {
         case .unknownUpload: "no upload is open for this key"
         case .commitInProgress: "the upload is still being committed"
         case .missingBlock: "a block of the upload is missing"
+        case .duplicateBlock: "the block list names a block twice"
         case .nothingUploaded: "nothing was uploaded"
         case .sizeMismatch(let expected, let actual): "size mismatch (expected \(expected), got \(actual))"
         case .tooLarge(let size, let cap): "the archive (\(size) bytes) is larger than the cache (\(cap) bytes)"

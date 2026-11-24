@@ -9,25 +9,35 @@ final class CachePartWriter: @unchecked Sendable {
     let part: CacheUploadPart
     private let sink: any CacheFileSink
     private let clock: any AppClock
+    private let budget: CacheByteBudget
     private let lock = NSLock()
     private var lastWriteAt: Date
     private var failure: String?
     private var isCancelled = false
 
-    init(uploadID: String, part: CacheUploadPart, sink: any CacheFileSink, clock: any AppClock) {
+    init(uploadID: String, part: CacheUploadPart, sink: any CacheFileSink, clock: any AppClock, budget: CacheByteBudget) {
         self.uploadID = uploadID
         self.part = part
         self.sink = sink
         self.clock = clock
+        self.budget = budget
         lastWriteAt = clock.now()
     }
 
-    /// Appends bytes. Throws `unknownUpload` once the store dropped the upload, and
+    /// This writer's share of the upload byte budget.
+    var budgetKey: CacheByteBudget.Key { .init(uploadID: uploadID, holder: .writer(ObjectIdentifier(self))) }
+
+    /// Appends bytes. Throws `unknownUpload` once the store dropped the upload, `tooLarge`
+    /// when pending uploads would pass the cache cap (the caller then abandons the part), and
     /// `writeFailed` after a write error (the store then drops the upload in `finishPart`).
     func write(_ bytes: some Collection<UInt8>) throws {
         try lock.withLock {
             if isCancelled { throw CacheStoreError.unknownUpload }
             if let failure { throw CacheStoreError.writeFailed(failure) }
+        }
+        let count = Int64(bytes.count)
+        guard budget.grow(budgetKey, by: count) else {
+            throw CacheStoreError.tooLarge(sizeBytes: budget.bytes(budgetKey) + count, capBytes: budget.limit)
         }
         do {
             try sink.write(bytes)

@@ -82,6 +82,9 @@ struct CacheBlobUploadHandler: Sendable {
                 }
                 try writer.write(chunk)
             }
+        } catch CacheStoreError.tooLarge {
+            await store.abandonPart(writer)
+            return .azureError(413, "RequestBodyTooLarge")
         } catch let error as CacheStoreError {
             return await finishAfterWriteError(writer, error)
         } catch {
@@ -139,7 +142,7 @@ struct CacheBlobUploadHandler: Sendable {
         switch error as? CacheStoreError {
         case .unknownUpload: .azureError(404, "BlobNotFound")
         case .commitInProgress: .azureError(409, "OperationNotAllowedInCurrentState")
-        case .missingBlock: .azureError(400, "InvalidBlockList")
+        case .missingBlock, .duplicateBlock: .azureError(400, "InvalidBlockList")
         case .tooLarge: .azureError(413, "RequestBodyTooLarge")
         default: .azureError(500, "InternalError")
         }

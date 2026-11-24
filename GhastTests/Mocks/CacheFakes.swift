@@ -48,10 +48,15 @@ final class CheckedSink: CacheFileSink, @unchecked Sendable {
 }
 
 extension CacheStore {
-    /// Writes one part in full: begin, write, finish.
+    /// Writes one part in full: begin, write, finish (or abandon when the write throws).
     func writePart(uploadID: String, part: CacheUploadPart, bytes: [UInt8]) throws {
         let partWriter = try beginPart(uploadID: uploadID, part: part)
-        try partWriter.write(bytes)
+        do {
+            try partWriter.write(bytes)
+        } catch {
+            abandonPart(partWriter)
+            throw error
+        }
         try finishPart(partWriter)
     }
 }

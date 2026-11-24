@@ -24,6 +24,8 @@ enum CacheStoreError: Error, Equatable {
     /// A block list is being committed for this upload.
     case commitInProgress
     case missingBlock(id: String)
+    /// A block list names the same block more than once.
+    case duplicateBlock(id: String)
     case nothingUploaded
     case sizeMismatch(expected: Int64, actual: Int64)
     /// The archive is larger than the whole cache may be.

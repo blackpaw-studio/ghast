@@ -76,15 +76,18 @@ struct CacheEvictionTests {
         #expect(blobFiles().count == 2)
     }
 
-    @Test("an archive larger than the cap is refused at finalize and leaves the cache as it was")
+    @Test("an archive larger than the cap is refused and leaves the cache as it was")
     func tooLarge() async throws {
         defer { folder.cleanup() }
         let store = try makeStore(capBytes: 10)
         try await save(store, key: "small")
         let id = try #require(try await store.reserve(repo: repo, scope: main, key: "big", version: "v1")).uploadID
-        try await store.writePart(uploadID: id, part: .whole, bytes: [UInt8](repeating: 1, count: 11))
 
+        // The upload budget refuses the bytes as they are written, before any finalize.
         await #expect(throws: CacheStoreError.tooLarge(sizeBytes: 11, capBytes: 10)) {
+            try await store.writePart(uploadID: id, part: .whole, bytes: [UInt8](repeating: 1, count: 11))
+        }
+        await #expect(throws: CacheStoreError.nothingUploaded) {
             try await store.finalize(repo: repo, scope: main, key: "big", version: "v1", sizeBytes: 11)
         }
 

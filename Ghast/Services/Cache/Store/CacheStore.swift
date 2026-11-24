@@ -23,6 +23,8 @@ actor CacheStore {
     let timing: CacheTiming
     /// The size cap applied after each finalize.
     private var capBytes: Int64
+    /// Bytes pending uploads hold on disk, limited to `capBytes` across all uploads.
+    private let budget: CacheByteBudget
 
     private var index: CacheIndex
     private var uploads: [String: PendingUpload] = [:]
@@ -41,6 +43,7 @@ actor CacheStore {
          capBytes: Int64 = CacheStore.defaultCapBytes) throws {
         self.root = root
         self.capBytes = capBytes
+        budget = CacheByteBudget(limit: capBytes)
         self.clock = clock
         self.randomness = randomness
         self.writer = writer
@@ -100,7 +103,8 @@ actor CacheStore {
         } catch {
             throw abort(uploadID, error)
         }
-        let partWriter = CachePartWriter(uploadID: uploadID, part: part, sink: sink, clock: clock)
+        budget.take(partKey(uploadID, part))  // the part's file was just replaced
+        let partWriter = CachePartWriter(uploadID: uploadID, part: part, sink: sink, clock: clock, budget: budget)
         activeWriters[uploadID, default: []].append(partWriter)
         upload.markIncomplete(part)
         upload.lastActivityAt = clock.now()
@@ -111,6 +115,7 @@ actor CacheStore {
     /// Ends a part whose body was written in full. A write error during it drops the upload.
     func finishPart(_ partWriter: CachePartWriter) throws {
         release(partWriter)
+        let written = budget.take(partWriter.budgetKey)
         var closeError: String?
         do { try partWriter.close() } catch { closeError = String(describing: error) }
         guard var upload = uploads[partWriter.uploadID], !partWriter.wasCancelled else {
@@ -123,12 +128,22 @@ actor CacheStore {
         upload.markComplete(partWriter.part)
         upload.lastActivityAt = clock.now()
         uploads[partWriter.uploadID] = upload
+        let key = partKey(partWriter.uploadID, partWriter.part)
+        budget.take(key)
+        budget.add(key, written)
     }
 
-    /// Ends a part whose request stopped early; the part stays incomplete and can be retried.
+    /// Ends a part whose request stopped early (or went over the budget). Its file is removed
+    /// unless a retry of the same part is already writing it; the part stays incomplete and
+    /// can be retried.
     func abandonPart(_ partWriter: CachePartWriter) {
         release(partWriter)
+        budget.take(partWriter.budgetKey)
         try? partWriter.close()
+        let isRetried = activeWriters[partWriter.uploadID]?.contains { $0.part == partWriter.part } == true
+        if !isRetried, !partWriter.wasCancelled {
+            try? FileManager.default.removeItem(at: partURL(partWriter.uploadID, partWriter.part))
+        }
     }
 
     /// Builds the archive from blocks in the order given; every block must be complete. The
@@ -139,7 +154,7 @@ actor CacheStore {
         let job = try beginCommit(uploadID: uploadID, order: order)
         let outcome: Result<Void, Error>
         do {
-            try await Self.concatenate(job.sources, into: job.sink)
+            try await Self.concatenate(job.sources, into: job.sink, limit: job.projectedBytes)
             outcome = .success(())
         } catch {
             outcome = .failure(error)
@@ -151,6 +166,7 @@ actor CacheStore {
         let uploadID: String
         let token: Int
         let sources: [URL]
+        let projectedBytes: Int64
         let sink: any CacheFileSink
     }
 
@@ -160,26 +176,49 @@ actor CacheStore {
         if let missing = order.first(where: { !upload.completedBlocks.contains($0) }) {
             throw CacheStoreError.missingBlock(id: missing)
         }
+        if let duplicate = Self.firstDuplicate(order) {
+            throw CacheStoreError.duplicateBlock(id: duplicate)
+        }
+        for unlisted in upload.completedBlocks.subtracting(order) {
+            try? FileManager.default.removeItem(at: partURL(uploadID, .block(id: unlisted)))
+            budget.take(partKey(uploadID, .block(id: unlisted)))
+            upload.completedBlocks.remove(unlisted)
+        }
+        uploads[uploadID] = upload
+        // The archive replaces the blocks in the budget, so the projection only has to fit the
+        // cap and the budget as it stands (a lowered cap can leave it over).
+        let projected = order.reduce(Int64(0)) { $0 + budget.bytes(partKey(uploadID, .block(id: $1))) }
+        guard projected <= capBytes, budget.total <= budget.limit else {
+            discard(uploadID)
+            throw CacheStoreError.tooLarge(sizeBytes: projected, capBytes: capBytes)
+        }
         let sink: any CacheFileSink
         do {
             sink = try writer.create(partURL(uploadID, .whole))
         } catch {
             throw abort(uploadID, error)
         }
+        budget.take(partKey(uploadID, .whole))
+        for id in order { budget.add(partKey(uploadID, .whole), budget.take(partKey(uploadID, .block(id: id)))) }
         nextCommitToken += 1
         upload.commitToken = nextCommitToken
         upload.hasWhole = false
         upload.lastActivityAt = clock.now()
         uploads[uploadID] = upload
         return CommitJob(uploadID: uploadID, token: nextCommitToken,
-                         sources: order.map { partURL(uploadID, .block(id: $0)) }, sink: sink)
+                         sources: order.map { partURL(uploadID, .block(id: $0)) }, projectedBytes: projected, sink: sink)
     }
 
     private func endCommit(_ job: CommitJob, outcome: Result<Void, Error>) throws {
         guard var upload = uploads[job.uploadID], upload.commitToken == job.token else {
+            if uploads[job.uploadID] == nil { budget.releaseUpload(job.uploadID) }
             throw CacheStoreError.unknownUpload
         }
         if case .failure(let error) = outcome {
+            if let error = error as? CacheStoreError, case .tooLarge = error {
+                discard(job.uploadID)
+                throw error
+            }
             throw abort(job.uploadID, error)
         }
         for block in upload.completedBlocks {
@@ -194,18 +233,28 @@ actor CacheStore {
 
     private static let copyChunkSize = 8 << 20
 
-    /// Appends each source to `sink` in large chunks, then closes it. Runs off the actor.
+    /// Appends each source to `sink` in large chunks, deleting each source once copied, then
+    /// closes it. Never writes more than `limit` bytes. Runs off the actor.
     @concurrent
-    private nonisolated static func concatenate(_ sources: [URL], into sink: any CacheFileSink) async throws {
+    private nonisolated static func concatenate(_ sources: [URL], into sink: any CacheFileSink, limit: Int64) async throws {
         defer { try? sink.close() }
+        var copied: Int64 = 0
         for source in sources {
             let handle = try FileHandle(forReadingFrom: source)
             defer { try? handle.close() }
             while let chunk = try handle.read(upToCount: copyChunkSize), !chunk.isEmpty {
+                copied += Int64(chunk.count)
+                guard copied <= limit else { throw CacheStoreError.tooLarge(sizeBytes: copied, capBytes: limit) }
                 try sink.write(chunk)
             }
+            try? FileManager.default.removeItem(at: source)
         }
         try sink.close()
+    }
+
+    private static func firstDuplicate(_ ids: [String]) -> String? {
+        var seen: Set<String> = []
+        return ids.first { !seen.insert($0).inserted }
     }
 
     private func release(_ partWriter: CachePartWriter) {
@@ -297,6 +346,7 @@ actor CacheStore {
         }
         activeWriters.values.joined().forEach { $0.cancel() }
         activeWriters = [:]
+        budget.releaseAll()
         try Self.emptyFolder(blobsURL)
         try Self.emptyFolder(uploadsURL)
     }
@@ -311,6 +361,7 @@ actor CacheStore {
     /// Changes the cap and applies it now.
     func setCapBytes(_ bytes: Int64) throws {
         capBytes = bytes
+        budget.setLimit(bytes)
         try evict(capBytes: bytes)
     }
 
@@ -382,7 +433,12 @@ actor CacheStore {
     private func discard(_ uploadID: String) {
         activeWriters.removeValue(forKey: uploadID)?.forEach { $0.cancel() }
         uploads[uploadID] = nil
+        budget.releaseUpload(uploadID)
         try? FileManager.default.removeItem(at: uploadFolder(uploadID))
+    }
+
+    private func partKey(_ uploadID: String, _ part: CacheUploadPart) -> CacheByteBudget.Key {
+        .init(uploadID: uploadID, holder: .part(part))
     }
 
     private func uploadFolder(_ uploadID: String) -> URL {
