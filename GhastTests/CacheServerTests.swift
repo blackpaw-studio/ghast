@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import Ghast
 
@@ -13,25 +14,61 @@ final class FakeInterfaces: InterfaceAddressListing, @unchecked Sendable {
     func addresses() -> [InterfaceAddress] { lock.withLock { list } }
 }
 
-/// Records binds and closes; binding an address in `failing` throws.
+/// Records binds and closes; binding an address in `failing` throws. With `holdBinds`, each
+/// bind waits for `releaseBinds`; `kill` stops an address's latest listener on its own.
 actor FakeBinder: CacheListenerBinding {
     struct Listener: CacheListening {
         let address: String
         let binder: FakeBinder
+        let life: Life
+        var isRunning: Bool { life.isAlive }
         func close() async { await binder.closed(address) }
+    }
+
+    final class Life: Sendable {
+        private let alive = Mutex(true)
+        var isAlive: Bool { alive.withLock { $0 } }
+        func end() { alive.withLock { $0 = false } }
     }
 
     private(set) var binds: [(address: String, port: Int, peers: CacheSubnet)] = []
     private(set) var closes: [String] = []
     var failing: Set<String> = []
+    private var holds = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+    private var heldWaiters: [CheckedContinuation<Void, Never>] = []
+    private var lives: [String: Life] = [:]
 
     func fail(_ address: String) { failing.insert(address) }
     func closed(_ address: String) { closes.append(address) }
+    func holdBinds() { holds = true }
+    func kill(_ address: String) { lives[address]?.end() }
+
+    func releaseBinds() {
+        holds = false
+        held.forEach { $0.resume() }
+        held = []
+    }
+
+    /// Returns once a bind is waiting for `releaseBinds`.
+    func waitForHeldBind() async {
+        if !held.isEmpty { return }
+        await withCheckedContinuation { heldWaiters.append($0) }
+    }
 
     func bind(address: String, port: Int, peers: CacheSubnet, responder: CacheResponder) async throws -> any CacheListening {
+        if holds {
+            await withCheckedContinuation { continuation in
+                held.append(continuation)
+                heldWaiters.forEach { $0.resume() }
+                heldWaiters = []
+            }
+        }
         if failing.contains(address) { throw POSIXError(.EADDRINUSE) }
         binds.append((address, port, peers))
-        return Listener(address: address, binder: self)
+        let life = Life()
+        lives[address] = life
+        return Listener(address: address, binder: self, life: life)
     }
 }
 
@@ -65,6 +102,42 @@ struct CacheServerTests {
         #expect(server.port == 50123)
         #expect(endpoint == CacheEndpoint(address: "192.168.65.1", port: 50123))
         #expect(await binder.binds.map(\.port) == [50123, 50123])
+    }
+
+    @Test("two VMs asking at once share one bind and both get the working listener")
+    func concurrentEndpoints() async throws {
+        defer { folder.cleanup() }
+        let binder = FakeBinder()
+        let server = try makeServer(FakeInterfaces([bridge]), binder: binder)
+        await binder.holdBinds()
+
+        async let first = server.endpoint(forGateway: bridge.address)
+        async let second = server.endpoint(forGateway: bridge.address)
+        await binder.waitForHeldBind()
+        for _ in 0..<50 { await Task.yield() }  // lets the second call join the pending bind
+        await binder.releaseBinds()
+        let results = await [first, second]
+
+        let expected = CacheEndpoint(address: bridge.address, port: server.port)
+        #expect(results.map { try? $0.get() } == [expected, expected])
+        #expect(await binder.binds.count == 1)
+        #expect(await binder.closes.isEmpty)
+        #expect(server.boundAddresses == [bridge.address])
+    }
+
+    @Test("a listener that stopped on its own is closed and bound again on the next ask")
+    func deadListenerRebinds() async throws {
+        defer { folder.cleanup() }
+        let binder = FakeBinder()
+        let server = try makeServer(FakeInterfaces([bridge]), binder: binder)
+        _ = try await server.endpoint(forGateway: bridge.address).get()
+
+        await binder.kill(bridge.address)
+        let again = await server.endpoint(forGateway: bridge.address)
+
+        #expect(try again.get() == CacheEndpoint(address: bridge.address, port: server.port))
+        #expect(await binder.binds.count == 2)
+        #expect(await binder.closes == [bridge.address])
     }
 
     @Test("each bridge address gets one listener, bound once")

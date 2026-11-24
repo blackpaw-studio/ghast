@@ -4,6 +4,7 @@ import Hummingbird
 import HummingbirdCore
 import Logging
 import NIOCore
+import Synchronization
 
 /// The cache's HTTP server. The port is chosen once, when the server is made, so it can go
 /// on `tart run`'s argv before the VM's gateway is known. Each VM bridge address gets its
@@ -19,7 +20,8 @@ final class CacheServer {
     private let binder: any CacheListenerBinding
     private let allowsLoopback: Bool
     private var listeners: [String: (listener: any CacheListening, peers: CacheSubnet)] = [:]
-    private var binding: [String: Task<Result<any CacheListening, CacheUnavailable>, Never>] = [:]
+    /// Binds under way, one per address. Only the call that started one installs its listener.
+    private var binding: [String: (id: UUID, task: Task<Result<any CacheListening, CacheUnavailable>, Never>)] = [:]
 
     convenience init(store: CacheStore, verifier: any CacheTokenVerifying, upstream: any UpstreamForwarding,
                      randomness: any CacheRandomness = SystemCacheRandomness(),
@@ -57,25 +59,35 @@ final class CacheServer {
     var boundAddresses: [String] { listeners.keys.sorted() }
 
     /// Makes sure the port is open on `gateway` (a VM bridge address) and returns where the
-    /// VM reaches it. Closes listeners whose address has gone first.
+    /// VM reaches it. Closes listeners whose address has gone, or that stopped on their own, first.
     func endpoint(forGateway gateway: String) async -> Result<CacheEndpoint, CacheUnavailable> {
         guard let address = Self.canonicalIPv4(gateway) else { return .failure(.invalidAddress(gateway)) }
         let live = liveBridges()
         await closeListeners(notMatching: live)
         guard let peers = live[address] else { return .failure(.addressNotLocalBridge(gateway)) }
         let endpoint = CacheEndpoint(address: address, port: port)
-        guard listeners[address] == nil else { return .success(endpoint) }
+        if let entry = listeners[address], !entry.listener.isRunning {
+            listeners[address] = nil
+            await entry.listener.close()
+        }
+        // No await from here until a bind is pending or its result is read, so the checks hold.
+        if listeners[address] != nil { return .success(endpoint) }
+        if let pending = binding[address] {
+            return await pending.task.value.map { _ in endpoint }
+        }
 
-        let task = binding[address] ?? startBinding(address, peers: peers)
-        binding[address] = task
+        let id = UUID()
+        let task = startBinding(address, peers: peers)
+        binding[address] = (id, task)
         let result = await task.value
+        guard binding[address]?.id == id else {
+            // `stop()` took this bind meanwhile and closed its listener.
+            return .failure(.bindFailed(address: address, reason: "the cache server stopped"))
+        }
         binding[address] = nil
-        switch result {
-        case .success(let listener):
-            if listeners[address] == nil { listeners[address] = (listener, peers) } else { await listener.close() }
-            return .success(endpoint)
-        case .failure(let reason):
-            return .failure(reason)
+        return result.map { listener in
+            listeners[address] = (listener, peers)
+            return endpoint
         }
     }
 
@@ -95,7 +107,7 @@ final class CacheServer {
         registry.unregisterAll()
         let pending = binding.values
         binding.removeAll()
-        for task in pending {
+        for (_, task) in pending {
             if case .success(let listener) = await task.value { await listener.close() }
         }
         await closeListeners(notMatching: [:])
@@ -172,7 +184,9 @@ struct HummingbirdListenerBinder: CacheListenerBinding {
                                  availableConnectionsDelegate: MaximumAvailableConnections(limits.maximumConnections)),
             onServerRunning: { _ in await started.resolve(nil) },
             logger: logger)
+        let running = RunningFlag()
         let task = Task {
+            defer { running.stop() }
             do {
                 try await app.run()
                 await started.resolve(CancellationError())
@@ -184,7 +198,7 @@ struct HummingbirdListenerBinder: CacheListenerBinding {
             task.cancel()
             throw error
         }
-        return HummingbirdListener(task: task)
+        return HummingbirdListener(task: task, running: running)
     }
 }
 
@@ -214,11 +228,21 @@ private struct CacheConnectionRefused: Error {}
 
 private struct HummingbirdListener: CacheListening {
     let task: Task<Void, Never>
+    let running: RunningFlag
+
+    var isRunning: Bool { running.value }
 
     func close() async {
         task.cancel()
         await task.value
     }
+}
+
+/// Whether a listener's server is still running; cleared when its run ends for any reason.
+private final class RunningFlag: Sendable {
+    private let state = Mutex(true)
+    var value: Bool { state.withLock { $0 } }
+    func stop() { state.withLock { $0 = false } }
 }
 
 /// Resolves once: nil when the server is listening, or the error that stopped it first.

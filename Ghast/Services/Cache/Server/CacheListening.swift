@@ -107,6 +107,8 @@ enum CacheUnavailable: Error, Equatable, Sendable {
 
 /// One running listener on one address.
 protocol CacheListening: Sendable {
+    /// False once the listener has stopped on its own (or been closed).
+    var isRunning: Bool { get }
     func close() async
 }
 
