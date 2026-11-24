@@ -31,6 +31,15 @@ struct LocalRunnerMigrationTests {
         #expect(runner.workFolder == "_work")
     }
 
+    @Test("the local cache is on unless a record turned it off")
+    func usesLocalCache() throws {
+        #expect(try decode(legacyJSON(status: "stopped")).usesLocalCache)
+        var runner = try decode(legacyJSON(status: "stopped"))
+        runner.usesLocalCache = false
+        #expect(try object(runner)["usesLocalCache"] as? Bool == false)
+        #expect(try !decode(JSONEncoder().encode(runner)).usesLocalCache)
+    }
+
     @Test("legacy status running means the runner should be running")
     func legacyRunningIntent() throws {
         #expect(try decode(legacyJSON(status: "running")).shouldBeRunning)

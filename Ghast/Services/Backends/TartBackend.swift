@@ -49,6 +49,8 @@ final class TartBackend: RunnerBackend {
     private let makeID: @Sendable () -> String
     private let timing: Timing
     private let bootGate = BootGate()
+    /// The local cache server, made on first use; nil when there is none (tests, the fixture).
+    private let cacheProvider: @MainActor () -> (any LocalCacheServing)?
 
     private var entries: [String: OnDemandEntry] = [:]
 
@@ -58,6 +60,7 @@ final class TartBackend: RunnerBackend {
     ///   - softnet: Says whether the isolation helper may be used; checked before every isolated boot.
     ///   - makeID: A short unique id (6 hex digits) for a clone and its JIT runner name.
     ///   - power: Sleep and wake: a sleeping Mac gives up its job queue so another Mac can use it.
+    ///   - cacheProvider: The local Actions cache server, asked for only when a VM uses it.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
@@ -70,7 +73,8 @@ final class TartBackend: RunnerBackend {
         sleeper: @escaping Sleeper,
         makeID: @escaping @Sendable () -> String = TartBackend.randomID,
         timing: Timing = .standard,
-        power: any PowerEventSource = NoPowerEvents()
+        power: any PowerEventSource = NoPowerEvents(),
+        cacheProvider: @escaping @MainActor () -> (any LocalCacheServing)? = { nil }
     ) {
         self.cliProvider = cliProvider
         self.api = api
@@ -83,6 +87,7 @@ final class TartBackend: RunnerBackend {
         self.sleeper = sleeper
         self.makeID = makeID
         self.timing = timing
+        self.cacheProvider = cacheProvider
         power.observe(
             willSleep: { [weak self] in self?.systemWillSleep() },
             didWake: { [weak self] in self?.systemDidWake() }
@@ -299,7 +304,11 @@ final class TartBackend: RunnerBackend {
     private func bootAndRun(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner, image: String) async throws -> VMOutcome {
         let cli = try await cliProvider()
         vm.cli = cli
-        guard let network = try await passIsolationGate(entry, runner: runner) else { return .isolationNotReady }
+        guard let gatedNetwork = try await passIsolationGate(entry, runner: runner) else { return .isolationNotReady }
+        // Read at each boot. The port is fixed per server, so it can go in the softnet rules
+        // before the VM's gateway is known.
+        let cache = runner.usesLocalCache ? cacheProvider() : nil
+        let network = Self.network(gatedNetwork, cachePort: cache?.port)
         let tarball = try await prepare(entry, runner: runner, image: image, cli: cli)
         try checkStop(entry)
         guard try await reserveSlot(vm, cli: cli) else { return .noSlot }
@@ -349,7 +358,9 @@ final class TartBackend: RunnerBackend {
 
         log("Waiting for job", runner: runner, vm: vm)
         log("ghast: start", runner: runner, vm: vm)
-        let command = TartGuestScript.command(tarball: tarball, jitConfig: jit.encodedConfig)
+        let cacheURL = await connectCache(cache, cli: cli, vm: vm, runner: runner)
+        try checkStop(entry)
+        let command = TartGuestScript.command(tarball: tarball, jitConfig: jit.encodedConfig, cacheURL: cacheURL)
         let exitCode = await runGuest(cli, vm: vm, command: command, entry: entry, runner: runner)
         log("ghast: exit code=\(exitCode)", runner: runner, vm: vm)
         // Demand is not lowered here: the source's next report (JobCompleted's statistics)
@@ -556,6 +567,35 @@ final class TartBackend: RunnerBackend {
         try await cli.set(vm.clone, resources: sizes)
     }
 
+    private static func network(_ network: TartNetwork, cachePort: Int?) -> TartNetwork {
+        guard case let .softnet(helperDirectory, _) = network else { return network }
+        return .softnet(helperDirectory: helperDirectory, cachePort: cachePort)
+    }
+
+    /// Points this VM at the local cache: reads its gateway, has the server listen there and
+    /// registers the VM, whose cache events then become its log lines. Any failure is one log
+    /// line and the job uses GitHub's cache (nil).
+    private func connectCache(_ cache: (any LocalCacheServing)?, cli: any TartCLI, vm: VMRun, runner: LocalRunner) async -> URL? {
+        guard let cache else { return nil }
+        let route = try? await cli.execOutput(vm.clone, TartArguments.guestRoute)
+        guard let route, route.status == 0, let gateway = TartRoute.gateway(from: route.output) else {
+            log("Local cache unavailable: couldn't read the VM's gateway; this job uses GitHub's cache", runner: runner, vm: vm)
+            return nil
+        }
+        switch await cache.endpoint(forGateway: gateway) {
+        case .failure(let unavailable):
+            log("Local cache unavailable: \(unavailable.reason); this job uses GitHub's cache", runner: runner, vm: vm)
+            return nil
+        case .success(let endpoint):
+            let registration = cache.registerVM()
+            vm.cacheRegistration = (registration.token, cache)
+            Task { [weak self] in
+                for await event in registration.events { self?.log(event.logLine, runner: runner, vm: vm) }
+            }
+            return endpoint.resultsURL(vmToken: registration.token)
+        }
+    }
+
     private func waitForGuest(_ cli: any TartCLI, vm: VMRun, entry: OnDemandEntry) async throws {
         var waited = Duration.zero
         while true {
@@ -637,6 +677,10 @@ final class TartBackend: RunnerBackend {
     /// forgets the lease only when both went through. Failures are logged, never thrown.
     private func cleanUp(_ vm: VMRun, entry: OnDemandEntry, runner: LocalRunner) async {
         vm.guest = nil
+        if let registration = vm.cacheRegistration {
+            registration.cache.unregisterVM(registration.token)
+            vm.cacheRegistration = nil
+        }
         try? FileManager.default.removeItem(at: Self.jobFolder(for: runner, vm: vm))
         defer { vm.holdsSlot = false }
         guard vm.holdsSlot, let cli = vm.cli else { return }

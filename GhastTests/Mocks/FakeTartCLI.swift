@@ -127,6 +127,14 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return Handle(label: "vm \(vm)", owner: self)
     }
 
+    /// What `/sbin/route -n get default` prints in the guest.
+    var routeOutput = "    gateway: 192.168.64.1\n"
+
+    func execOutput(_ vm: String, _ command: [String]) async throws -> ScriptResult {
+        log.append("exec \(vm) \(command.joined(separator: " "))")
+        return ScriptResult(status: 0, output: command.first == "/sbin/route" ? lock.withLock { routeOutput } : "")
+    }
+
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 {
         if command == ["/usr/bin/true"] {
             log.append("probe \(vm)")

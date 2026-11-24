@@ -60,6 +60,8 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
     var queueRole: QueueRole
     /// CPU, memory, disk and network settings for the VMs a Tart runner boots.
     var vmResources: VMResources
+    /// VM runners: jobs use Ghast's built-in Actions cache. Read at each boot.
+    var usesLocalCache = true
 
     /// Repository full name or organization login (see `RunnerScope.displayName`).
     var repository: String { scope.displayName }
@@ -95,7 +97,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         case id, name, scope, repository, path, labels, status, createdAt
         case environmentVariables, preJobScript, postJobScript
         case shouldBeRunning, lastExit, outputClearOffset, runnerGroup, workFolder, backend
-        case showsOnDemandNote, queueRole, vmResources
+        case showsOnDemandNote, queueRole, vmResources, usesLocalCache
     }
 
     /// Runners saved before scopes existed (or rewritten by an older build) carry only
@@ -131,6 +133,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         // Its labels stay saved (an older build still reads them) but no longer apply.
         queueRole = try container.decodeIfPresent(QueueRole.self, forKey: .queueRole) ?? .primary
         vmResources = try container.decodeIfPresent(VMResources.self, forKey: .vmResources) ?? .empty
+        usesLocalCache = try container.decodeIfPresent(Bool.self, forKey: .usesLocalCache) ?? true
         if let saved = try container.decodeIfPresent(Bool.self, forKey: .showsOnDemandNote) {
             showsOnDemandNote = saved
         } else if case .tart = backend {
@@ -168,6 +171,7 @@ struct LocalRunner: Codable, Identifiable, Hashable, Sendable {
         try container.encode(showsOnDemandNote, forKey: .showsOnDemandNote)
         try container.encode(queueRole, forKey: .queueRole)
         try container.encode(vmResources, forKey: .vmResources)
+        try container.encode(usesLocalCache, forKey: .usesLocalCache)
     }
 
     // Custom equality based on ID only

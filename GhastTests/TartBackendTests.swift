@@ -48,7 +48,8 @@ final class TartHarness {
         entries: [TartVMEntry]? = nil,
         timing: TartBackend.Timing = .standard,
         initialDemand: Int? = 1,
-        softnet: FakeSoftnetChecker = FakeSoftnetChecker()
+        softnet: FakeSoftnetChecker = FakeSoftnetChecker(),
+        cache: FakeLocalCache? = nil
     ) {
         let cli = FakeTartCLI(log: log, entries: entries ?? [TartVMEntry(name: Self.image, source: "OCI", isRunning: false)])
         let api = FlowGitHubAPI(log: log)
@@ -77,7 +78,8 @@ final class TartHarness {
             },
             makeID: { ids.next() },
             timing: timing,
-            power: power
+            power: power,
+            cacheProvider: { cache }
         )
         self.clock = clock
         self.cli = cli
