@@ -92,7 +92,7 @@ final class VMRun {
     /// The guest answered its readiness probe; cleared when cleanup starts.
     var isReachable = false
     /// This VM's registration with the local cache, unregistered at cleanup.
-    var cacheRegistration: (token: String, cache: any LocalCacheServing)?
+    var cacheRegistration: (id: String, cache: any LocalCacheServing)?
 
     init(id: String, clone: String) {
         self.id = id

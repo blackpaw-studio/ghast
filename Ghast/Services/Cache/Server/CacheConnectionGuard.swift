@@ -61,13 +61,18 @@ struct CacheDeadlineState {
 /// Open connections per peer address, shared by every listener of one server.
 final class CachePeerLimiter: Sendable {
     private let maximumPerPeer: Int
+    private let maximumTotal: Int
     private let counts = Mutex<[String: Int]>([:])
 
-    init(maximumPerPeer: Int) { self.maximumPerPeer = maximumPerPeer }
+    /// `maximumTotal` caps connections across every listener sharing this limiter.
+    init(maximumPerPeer: Int, maximumTotal: Int = .max) {
+        self.maximumPerPeer = maximumPerPeer
+        self.maximumTotal = maximumTotal
+    }
 
     func acquire(_ peer: String) -> Bool {
         counts.withLock { counts in
-            guard counts[peer, default: 0] < maximumPerPeer else { return false }
+            guard counts[peer, default: 0] < maximumPerPeer, counts.values.reduce(0, +) < maximumTotal else { return false }
             counts[peer, default: 0] += 1
             return true
         }

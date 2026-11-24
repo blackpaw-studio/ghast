@@ -1,7 +1,8 @@
 import Foundation
 @testable import Ghast
 
-/// Predictable IDs: `id-1`, `id-2`, … and `sig-1`, `sig-2`, …
+/// Predictable IDs: `id-1`, `id-2`, … and `sig-1`, `sig-2`, … Ports come from `ports` while
+/// it lasts, then count up from `port`.
 final class SequentialCacheRandomness: CacheRandomness, @unchecked Sendable {
     private let lock = NSLock()
     private var ids = 0
@@ -10,7 +11,14 @@ final class SequentialCacheRandomness: CacheRandomness, @unchecked Sendable {
     func id128() -> String { lock.withLock { ids += 1; return "id-\(ids)" } }
     func signature() -> String { lock.withLock { sigs += 1; return "sig-\(sigs)" } }
     var port = 49152
-    func highPort() -> Int { lock.withLock { port } }
+    var ports: [Int] = []
+    func highPort() -> Int {
+        lock.withLock {
+            if !ports.isEmpty { return ports.removeFirst() }
+            defer { port += 1 }
+            return port
+        }
+    }
 }
 
 /// Writes through to disk until `failAfterBytes` would be exceeded, then throws `ENOSPC`.

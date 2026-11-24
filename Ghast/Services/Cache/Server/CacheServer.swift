@@ -6,22 +6,33 @@ import Logging
 import NIOCore
 import Synchronization
 
-/// The cache's HTTP server. The port is chosen once, when the server is made, so it can go
-/// on `tart run`'s argv before the VM's gateway is known. Each VM bridge address gets its
-/// own listener on that port, bound when a VM first asks for it and closed once the address
-/// is gone. Only `bridge*` addresses are ever bound: never a wildcard, loopback or LAN one.
+/// The cache's HTTP server. Each VM gets its own port, chosen when it registers (before it
+/// boots, so the port can go in its softnet rules), and its own listener on that port, bound on
+/// its bridge address once the VM's gateway is known and closed when the VM unregisters. The
+/// port tells the server which VM a call comes from; the job's runtime token still authorizes
+/// it. Only `bridge*` addresses are ever bound: never a wildcard, loopback or LAN one.
 @MainActor
 final class CacheServer {
-    let port: Int
     private let router: CacheRouter
     private let registry: CacheVMRegistry
     private let randomness: any CacheRandomness
     private let interfaces: any InterfaceAddressListing
     private let binder: any CacheListenerBinding
     private let allowsLoopback: Bool
-    private var listeners: [String: (listener: any CacheListening, peers: CacheSubnet)] = [:]
-    /// Binds under way, one per address. Only the call that started one installs its listener.
-    private var binding: [String: (id: UUID, task: Task<Result<any CacheListening, CacheUnavailable>, Never>)] = [:]
+    private var vms: [String: VMListener] = [:]
+    /// Listeners being closed, awaited by `stop()`.
+    private var closing: [UUID: Task<Void, Never>] = [:]
+
+    /// A registered VM's port and its listener (once bound) or its bind in progress.
+    private struct VMListener {
+        let port: Int
+        var listener: (listener: any CacheListening, address: String, peers: CacheSubnet)?
+        var binding: (id: UUID, address: String, task: Task<Result<any CacheListening, CacheUnavailable>, Never>)?
+    }
+
+    /// Tries this many random ports for a VM before taking one another VM already holds (its
+    /// bind then fails, and that job uses GitHub's cache).
+    private static let portAttempts = 32
 
     convenience init(store: CacheStore, verifier: any CacheTokenVerifying, upstream: any UpstreamForwarding,
                      randomness: any CacheRandomness = SystemCacheRandomness(),
@@ -53,69 +64,104 @@ final class CacheServer {
         self.interfaces = interfaces
         self.binder = binder
         self.allowsLoopback = allowsLoopback
-        port = randomness.highPort()
     }
 
-    var boundAddresses: [String] { listeners.keys.sorted() }
+    /// Where each registered VM's listener is bound, as `address:port`.
+    var boundEndpoints: [String] {
+        vms.values.compactMap { vm in vm.listener.map { "\($0.address):\(vm.port)" } }.sorted()
+    }
 
-    /// Makes sure the port is open on `gateway` (a VM bridge address) and returns where the
-    /// VM reaches it. Closes listeners whose address has gone, or that stopped on their own, first.
-    func endpoint(forGateway gateway: String) async -> Result<CacheEndpoint, CacheUnavailable> {
+    /// Registers a VM before it boots: picks its port and opens its event stream, which ends at
+    /// `unregisterVM`.
+    func registerVM() -> CacheVMRegistration {
+        let id = randomness.id128()
+        let port = freshPort()
+        vms[id] = VMListener(port: port)
+        return CacheVMRegistration(id: id, port: port, events: registry.register(id))
+    }
+
+    /// Opens the VM's port on `gateway` (a VM bridge address) and returns where the VM reaches
+    /// it. A listener that stopped on its own, or is on another address or subnet, is replaced.
+    func endpoint(forVM id: String, gateway: String) async -> Result<CacheEndpoint, CacheUnavailable> {
         guard let address = Self.canonicalIPv4(gateway) else { return .failure(.invalidAddress(gateway)) }
-        let live = liveBridges()
-        await closeListeners(notMatching: live)
-        guard let peers = live[address] else { return .failure(.addressNotLocalBridge(gateway)) }
+        guard let port = vms[id]?.port else { return .failure(.notRegistered) }
+        guard let peers = liveBridges()[address] else { return .failure(.addressNotLocalBridge(gateway)) }
         let endpoint = CacheEndpoint(address: address, port: port)
-        if let entry = listeners[address], !entry.listener.isRunning {
-            listeners[address] = nil
-            await entry.listener.close()
+        if let current = vms[id]?.listener {
+            if current.address == address, current.peers == peers, current.listener.isRunning { return .success(endpoint) }
+            vms[id]?.listener = nil
+            close(current.listener)
         }
         // No await from here until a bind is pending or its result is read, so the checks hold.
-        if listeners[address] != nil { return .success(endpoint) }
-        if let pending = binding[address] {
+        if let pending = vms[id]?.binding, pending.address == address {
             return await pending.task.value.map { _ in endpoint }
         }
 
-        let id = UUID()
-        let task = startBinding(address, peers: peers)
-        binding[address] = (id, task)
+        let bindID = UUID()
+        let task = startBinding(address, port: port, peers: peers, vmID: id)
+        vms[id]?.binding = (bindID, address, task)
         let result = await task.value
-        guard binding[address]?.id == id else {
-            // `stop()` took this bind meanwhile and closed its listener.
-            return .failure(.bindFailed(address: address, reason: "the cache server stopped"))
+        guard vms[id]?.binding?.id == bindID else {
+            // The VM unregistered (or the server stopped) meanwhile, and that closes this bind.
+            return .failure(.notRegistered)
         }
-        binding[address] = nil
+        vms[id]?.binding = nil
         return result.map { listener in
-            listeners[address] = (listener, peers)
+            vms[id]?.listener = (listener, address, peers)
             return endpoint
         }
     }
 
-    /// Registers a VM; its token goes in the VM's results URL and its cache events arrive on
-    /// `events` until `unregisterVM`.
-    func registerVM() -> CacheVMRegistration {
-        let token = randomness.id128()
-        return CacheVMRegistration(token: token, events: registry.register(token))
-    }
-
-    func unregisterVM(_ token: String) {
-        registry.unregister(token)
+    /// Ends the VM's events and closes its listener (or its bind in progress).
+    func unregisterVM(_ id: String) {
+        registry.unregister(id)
+        guard let vm = vms.removeValue(forKey: id) else { return }
+        vm.listener.map { close($0.listener) }
+        vm.binding.map { pending in
+            closeWhenBound(pending.task)
+        }
     }
 
     /// Closes every listener and ends every VM's events (app quit).
     func stop() async {
+        vms.keys.forEach(unregisterVM)
         registry.unregisterAll()
-        let pending = binding.values
-        binding.removeAll()
-        for (_, task) in pending {
-            if case .success(let listener) = await task.value { await listener.close() }
-        }
-        await closeListeners(notMatching: [:])
+        for task in closing.values { await task.value }
+        closing.removeAll()
     }
 
-    private func startBinding(_ address: String, peers: CacheSubnet) -> Task<Result<any CacheListening, CacheUnavailable>, Never> {
-        let binder = binder, port = port
-        let responder = CacheResponder(router: router, serverBase: URL(string: "http://\(address):\(port)/")!)
+    /// A random high port no registered VM holds.
+    private func freshPort() -> Int {
+        let taken = Set(vms.values.map(\.port))
+        var port = randomness.highPort()
+        var attempts = 1
+        while taken.contains(port), attempts < Self.portAttempts {
+            port = randomness.highPort()
+            attempts += 1
+        }
+        return port
+    }
+
+    private func close(_ listener: any CacheListening) {
+        let id = UUID()
+        closing[id] = Task { [weak self] in
+            await listener.close()
+            self?.closing[id] = nil
+        }
+    }
+
+    private func closeWhenBound(_ bind: Task<Result<any CacheListening, CacheUnavailable>, Never>) {
+        let id = UUID()
+        closing[id] = Task { [weak self] in
+            if case .success(let listener) = await bind.value { await listener.close() }
+            self?.closing[id] = nil
+        }
+    }
+
+    private func startBinding(_ address: String, port: Int, peers: CacheSubnet, vmID: String)
+        -> Task<Result<any CacheListening, CacheUnavailable>, Never> {
+        let binder = binder
+        let responder = CacheResponder(router: router, serverBase: URL(string: "http://\(address):\(port)/")!, vmID: vmID)
         return Task {
             do {
                 return .success(try await binder.bind(address: address, port: port, peers: peers, responder: responder))
@@ -124,13 +170,6 @@ final class CacheServer {
                 return .failure(.bindFailed(address: address, reason: reason))
             }
         }
-    }
-
-    /// Closes listeners whose address is gone or whose bridge now has another subnet.
-    private func closeListeners(notMatching live: [String: CacheSubnet]) async {
-        let gone = listeners.filter { live[$0.key] != $0.value.peers }
-        gone.keys.forEach { listeners.removeValue(forKey: $0) }
-        for entry in gone.values { await entry.listener.close() }
     }
 
     /// Bindable bridge addresses and their subnets.
@@ -153,16 +192,16 @@ final class CacheServer {
     }
 }
 
-/// Runs one Hummingbird HTTP/1.1 server per address, capped at 64 connections.
-/// Runs one Hummingbird HTTP/1.1 server per address, under `limits`: read deadlines, an idle
-/// timeout, and connection caps in all and per peer (shared by this binder's listeners).
+/// Runs one Hummingbird HTTP/1.1 server per VM listener, under `limits`: read deadlines, an
+/// idle timeout, and connection caps in all and per peer, shared by every listener this binder
+/// starts.
 struct HummingbirdListenerBinder: CacheListenerBinding {
     let limits: CacheConnectionLimits
     private let peerLimiter: CachePeerLimiter
 
     init(limits: CacheConnectionLimits = CacheConnectionLimits()) {
         self.limits = limits
-        peerLimiter = CachePeerLimiter(maximumPerPeer: limits.maximumPerPeer)
+        peerLimiter = CachePeerLimiter(maximumPerPeer: limits.maximumPerPeer, maximumTotal: limits.maximumConnections)
     }
 
     func bind(address: String, port: Int, peers: CacheSubnet, responder: CacheResponder) async throws -> any CacheListening {

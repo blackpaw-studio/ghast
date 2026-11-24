@@ -12,15 +12,17 @@ struct CacheServerRoutingTests {
     private let session = URLSession(configuration: .ephemeral)
     private static let twirp = "twirp/github.actions.results.api.v1.CacheService/"
 
-    /// A server listening on 127.0.0.1 at a port that was free a moment ago.
-    private func start() async throws -> (CacheServer, CacheEndpoint) {
+    /// A server with one VM registered and listening on 127.0.0.1, at a port that was free a
+    /// moment ago.
+    private func start() async throws -> (CacheServer, CacheVMRegistration, CacheEndpoint) {
         let randomness = SequentialCacheRandomness()
-        randomness.port = try RawConnection.freePort()
+        randomness.ports = [try RawConnection.freePort()]
         let store = try CacheStore(root: folder.url, clock: FakeClock(), randomness: randomness, writer: FileBlobWriter())
         let server = CacheServer(store: store, verifier: FakeCacheVerifier(), upstream: upstream, randomness: randomness,
                                  interfaces: FakeInterfaces([InterfaceAddress(name: "lo0", address: "127.0.0.1", netmask: "255.0.0.0")]),
                                  allowLoopbackForTests: true)
-        return (server, try await server.endpoint(forGateway: "127.0.0.1").get())
+        let registration = server.registerVM()
+        return (server, registration, try await server.endpoint(forVM: registration.id, gateway: "127.0.0.1").get())
     }
 
     private func send(_ url: URL, method: String = "GET", headers: [String: String] = [:], body: Data? = nil)
@@ -45,9 +47,8 @@ struct CacheServerRoutingTests {
     @Test("a save and a restore work end to end, with one event per cache call")
     func saveAndRestore() async throws {
         defer { folder.cleanup() }
-        let (server, endpoint) = try await start()
-        let registration = server.registerVM()
-        let base = endpoint.resultsURL(vmToken: registration.token)
+        let (server, registration, endpoint) = try await start()
+        let base = endpoint.resultsURL
         let archive = Data((0 ..< 1000).map { UInt8(truncatingIfNeeded: $0 * 31) })
 
         let created = try await twirp(base, "CreateCacheEntry", ["key": "deps", "version": "v1"])
@@ -69,56 +70,90 @@ struct CacheServerRoutingTests {
         let head = try await send(downloadURL, method: "HEAD")
         #expect(head.headers["Content-Length"] as? String == "1000")
 
-        server.unregisterVM(registration.token)
+        server.unregisterVM(registration.id)
         var events: [CacheEvent] = []
         for await event in registration.events { events.append(event) }
         #expect(events == [.saved(key: "deps", sizeBytes: 1000), .hit(key: "deps", matchedKey: "deps", sizeBytes: 1000)])
         await server.stop()
     }
 
-    @Test("an unknown or unregistered VM token is 404")
-    func unknownToken() async throws {
+    /// actions/toolkit builds each call as `new URL(`/twirp/${service}/${method}`, baseUrl)`
+    /// (cacheTwirpClient.ts, artifact-twirp-client.ts): the leading slash drops any path in
+    /// ACTIONS_RESULTS_URL, so only its origin reaches the server.
+    private func toolkitURL(_ resultsURL: URL, _ service: String, _ method: String) throws -> URL {
+        try #require(URL(string: "/twirp/\(service)/\(method)", relativeTo: resultsURL)?.absoluteURL)
+    }
+
+    @Test("a client that builds URLs like actions/toolkit saves, restores and reaches the passthrough")
+    func toolkitURLs() async throws {
         defer { folder.cleanup() }
-        let (server, endpoint) = try await start()
-        let registration = server.registerVM()
+        let (server, _, endpoint) = try await start()
+        let resultsURL = endpoint.resultsURL
+        let cacheService = "github.actions.results.api.v1.CacheService"
+        func call(_ method: String, _ json: [String: Any]) async throws -> (status: Int, body: Data) {
+            let response = try await send(try toolkitURL(resultsURL, cacheService, method), method: "POST",
+                                          headers: ["Authorization": "Bearer writer", "Content-Type": "application/json"],
+                                          body: try JSONSerialization.data(withJSONObject: json))
+            return (response.status, response.body)
+        }
+        func json(_ body: Data) throws -> [String: Any] {
+            try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        }
 
-        let unknown = try await twirp(endpoint.resultsURL(vmToken: "not-a-token"), "GetCacheEntryDownloadURL",
-                                      ["key": "a", "version": "v"])
-        server.unregisterVM(registration.token)
-        let gone = try await twirp(endpoint.resultsURL(vmToken: registration.token), "GetCacheEntryDownloadURL",
-                                   ["key": "a", "version": "v"])
+        let created = try await call("CreateCacheEntry", ["key": "deps", "version": "v1"])
+        #expect(created.status == 200)
+        let uploadURL = try #require((try? json(created.body))?["signed_upload_url"] as? String).flatMap(URL.init(string:))
+        let put = try await send(try #require(uploadURL), method: "PUT", headers: ["x-ms-blob-type": "BlockBlob"], body: Data([1, 2, 3]))
+        #expect(put.status == 201)
+        let finalized = try await call("FinalizeCacheEntryUpload", ["key": "deps", "version": "v1", "size_bytes": "3"])
+        #expect((try? json(finalized.body))?["ok"] as? Bool == true)
+        let got = try await call("GetCacheEntryDownloadURL", ["key": "deps", "version": "v1"])
+        let downloadURL = try #require((try? json(got.body))?["signed_download_url"] as? String).flatMap(URL.init(string:))
+        #expect(try await send(try #require(downloadURL)).body == Data([1, 2, 3]))
 
-        #expect(unknown.status == 404)
-        #expect(gone.status == 404)
+        let artifact = try toolkitURL(resultsURL, "github.actions.results.api.v1.ArtifactService", "CreateArtifact")
+        let forwarded = try await send(artifact, method: "POST", headers: ["Content-Type": "application/json"], body: Data("{}".utf8))
+        #expect(forwarded.status == 200)
+        #expect(await upstream.requests.map(\.url.path) == [artifact.path])
         await server.stop()
     }
 
-    @Test("non-cache calls under a VM token are forwarded, and nowhere else")
-    func passthroughNeedsToken() async throws {
+    @Test("once its VM unregisters, a listener answers 404")
+    func unregisteredVM() async throws {
         defer { folder.cleanup() }
-        let (server, endpoint) = try await start()
-        let registration = server.registerVM()
-        let root = URL(string: "http://127.0.0.1:\(endpoint.port)/")!
+        let (server, registration, endpoint) = try await start()
         let artifact = "twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact"
 
-        let forwarded = try await send(endpoint.resultsURL(vmToken: registration.token).appendingPathComponent(artifact),
+        server.unregisterVM(registration.id)
+        let cache = try? await twirp(endpoint.resultsURL, "GetCacheEntryDownloadURL", ["key": "a", "version": "v"])
+        let forwarded = try? await send(endpoint.resultsURL.appendingPathComponent(artifact), method: "POST", body: Data("{}".utf8))
+
+        // The listener may already be closed (no answer at all), or answer 404 while it closes.
+        #expect(cache.map { $0.status == 404 } ?? true)
+        #expect(forwarded.map { $0.status == 404 } ?? true)
+        #expect(await upstream.requests.isEmpty)
+        await server.stop()
+    }
+
+    @Test("non-cache calls at the VM's origin are forwarded with their path")
+    func passthrough() async throws {
+        defer { folder.cleanup() }
+        let (server, _, endpoint) = try await start()
+        let artifact = "twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact"
+
+        let forwarded = try await send(endpoint.resultsURL.appendingPathComponent(artifact),
                                        method: "POST", headers: ["Content-Type": "application/json"], body: Data("{}".utf8))
-        let atRoot = try await send(root.appendingPathComponent(artifact), method: "POST", body: Data("{}".utf8))
-        let unknownPath = try await send(root.appendingPathComponent("anything"))
 
         #expect(forwarded.status == 200)
         #expect(await upstream.requests.map(\.url.path) == ["/" + artifact])
-        #expect(atRoot.status == 404)
-        #expect(unknownPath.status == 404)
         await server.stop()
     }
 
     @Test("a Twirp cache call that isn't a POST is refused")
     func twirpNeedsPost() async throws {
         defer { folder.cleanup() }
-        let (server, endpoint) = try await start()
-        let registration = server.registerVM()
-        let url = endpoint.resultsURL(vmToken: registration.token).appendingPathComponent(Self.twirp + "GetCacheEntryDownloadURL")
+        let (server, _, endpoint) = try await start()
+        let url = endpoint.resultsURL.appendingPathComponent(Self.twirp + "GetCacheEntryDownloadURL")
         let response = try await send(url, headers: ["Authorization": "Bearer writer"])
         #expect(response.status == 404)
         #expect(await upstream.requests.isEmpty)

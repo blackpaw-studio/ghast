@@ -34,9 +34,9 @@ struct TartBackendCacheTests {
         #expect(await h.settled { h.cli.jobsStarted == 1 })
 
         let command = try #require(h.cli.streamedCommands.last)
-        #expect(command.last == "http://192.168.64.1:50123/v/tok-1/")
+        #expect(command.last == "http://192.168.64.1:50123/")
         #expect(cache.gateways == ["192.168.64.1"])
-        #expect(cache.registered == ["tok-1"])
+        #expect(cache.registered == ["vm-1"])
         #expect(routeExecs(h).count == 1)
         await h.service.stopRunner(id: runner.id)
     }
@@ -94,7 +94,7 @@ struct TartBackendCacheTests {
 
         #expect(await h.settled { h.cli.cancelledRouteLookups == 1 })
         #expect(h.cli.jobsStarted == 0)
-        #expect(cache.registered.isEmpty)
+        #expect(await h.settled { cache.unregistered == ["vm-1"] })
     }
 
     @Test("an unavailable server costs one log line and the job still runs, without the cache")
@@ -110,8 +110,8 @@ struct TartBackendCacheTests {
 
         #expect(h.lines.lines.filter { $0.contains("Local cache unavailable: ") }.count == 1)
         #expect(try #require(h.cli.streamedCommands.last).suffix(2).first == "_")
-        #expect(cache.registered.isEmpty)
         await h.service.stopRunner(id: runner.id)
+        #expect(await h.settled { cache.unregistered == ["vm-1"] })
     }
 
     @Test("a gateway that can't be read costs one log line and no bind", arguments: ["", "gateway: nope", "gateway: 192.168.064.1"])
@@ -138,8 +138,8 @@ struct TartBackendCacheTests {
         try await h.service.startRunner(id: runner.id)
         #expect(await h.settled { h.cli.jobsStarted == 1 })
 
-        cache.emit(.hit(key: "deps-abc", matchedKey: "deps-abc", sizeBytes: 1_500_000), for: "tok-1")
-        cache.emit(.saved(key: "deps-new\nforged line", sizeBytes: 12), for: "tok-1")
+        cache.emit(.hit(key: "deps-abc", matchedKey: "deps-abc", sizeBytes: 1_500_000), for: "vm-1")
+        cache.emit(.saved(key: "deps-new\nforged line", sizeBytes: 12), for: "vm-1")
 
         #expect(await h.settled { h.lines.lines.contains { $0.contains("Cache saved") } })
         let lines = h.lines.lines.filter { $0.contains("Cache ") }
@@ -161,7 +161,7 @@ struct TartBackendCacheTests {
 
         await h.service.stopRunner(id: runner.id)
 
-        #expect(await h.settled { cache.unregistered == ["tok-1"] })
+        #expect(await h.settled { cache.unregistered == ["vm-1"] })
     }
 
     @Test("an isolated VM gets the cache port in its softnet rules only while the cache is on")

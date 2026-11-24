@@ -9,8 +9,8 @@ struct TartShare: Equatable, Sendable {
 }
 
 /// How a VM is networked. An isolated boot can't be built without the folder that holds the
-/// softnet helper, because Tart only finds softnet through `PATH`. `cachePort` is the local
-/// cache's port when the VM uses it.
+/// softnet helper, because Tart only finds softnet through `PATH`. `cachePort` is the
+/// VM's own local-cache port when the VM uses the cache.
 enum TartNetwork: Equatable, Sendable {
     case shared
     case softnet(helperDirectory: String, cachePort: Int? = nil)

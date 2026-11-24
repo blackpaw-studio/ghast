@@ -3,11 +3,12 @@ import Foundation
 /// The cache server as `TartBackend` sees it (`CacheServer` in the app, a fake in tests).
 @MainActor
 protocol LocalCacheServing: AnyObject {
-    /// Fixed for the server's life; it goes in an isolated VM's softnet rules before boot.
-    var port: Int { get }
-    func endpoint(forGateway gateway: String) async -> Result<CacheEndpoint, CacheUnavailable>
+    /// Registers a VM before it boots. Its port goes in an isolated VM's softnet rules.
     func registerVM() -> CacheVMRegistration
-    func unregisterVM(_ token: String)
+    /// Opens the VM's port on its gateway once that is known.
+    func endpoint(forVM id: String, gateway: String) async -> Result<CacheEndpoint, CacheUnavailable>
+    /// Ends the VM's events and closes its listener.
+    func unregisterVM(_ id: String)
     /// Closes every listener; called once, at quit.
     func stop() async
 }

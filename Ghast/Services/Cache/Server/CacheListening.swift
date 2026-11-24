@@ -79,15 +79,15 @@ extension SystemInterfaceAddresses {
     }
 }
 
-/// Where a VM reaches the cache.
+/// Where a VM reaches the cache: its own port on its bridge address.
 struct CacheEndpoint: Equatable, Sendable {
     let address: String
     let port: Int
 
-    /// The `ACTIONS_RESULTS_URL` for one VM: its token is the first path segment.
-    func resultsURL(vmToken: String) -> URL {
-        URL(string: "http://\(address):\(port)/v/\(vmToken)/")!
-    }
+    /// The VM's `ACTIONS_RESULTS_URL`: the origin alone. actions/toolkit resolves every call
+    /// as `new URL("/twirp/…", base)`, which drops any path in the base, so the port (not a
+    /// path) is what tells the server which VM is calling.
+    var resultsURL: URL { URL(string: "http://\(address):\(port)/")! }
 }
 
 /// Why a VM boots without the cache; `reason` is one line for the runner log.
@@ -95,12 +95,14 @@ enum CacheUnavailable: Error, Equatable, Sendable {
     case invalidAddress(String)
     case addressNotLocalBridge(String)
     case bindFailed(address: String, reason: String)
+    case notRegistered
 
     var reason: String {
         switch self {
         case .invalidAddress(let address): "\(address) isn't an IPv4 address"
         case .addressNotLocalBridge(let address): "\(address) isn't a VM bridge address on this Mac"
         case .bindFailed(let address, let reason): "couldn't listen on \(address): \(reason)"
+        case .notRegistered: "the VM's cache registration has ended"
         }
     }
 }
@@ -119,13 +121,15 @@ protocol CacheListenerBinding: Sendable {
     func bind(address: String, port: Int, peers: CacheSubnet, responder: CacheResponder) async throws -> any CacheListening
 }
 
-/// One VM's registration: the token in its results URL and the cache events its calls make.
+/// One VM's registration: its own port (in its softnet rules before boot, and its listener's
+/// port once its gateway is known) and the cache events its calls make.
 struct CacheVMRegistration: Sendable {
-    let token: String
+    let id: String
+    let port: Int
     let events: AsyncStream<CacheEvent>
 }
 
-/// Known VM tokens and their event streams, read from request handlers on any thread.
+/// Registered VMs and their event streams, read from request handlers on any thread.
 final class CacheVMRegistry: Sendable {
     private let continuations = Mutex<[String: AsyncStream<CacheEvent>.Continuation]>([:])
 

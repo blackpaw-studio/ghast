@@ -2,13 +2,14 @@ import Foundation
 import HTTPTypes
 import Hummingbird
 
-/// Sends each request to its handler:
-/// - `/v/<vmToken>/twirp/…CacheService/<Method>` (POST): the Twirp service; its event goes to
-///   that VM's stream.
-/// - any other path under `/v/<vmToken>/`: the passthrough to the results service.
-/// - `/devstoreaccount1/upload/<id>` and `/download/<id>`: the blob routes, at the root; the
-///   upload ID plus `sig`, or the 128-bit download ID, is the capability.
-/// Everything else, and any unknown token, is 404.
+/// Sends each request on one VM's listener to its handler. Every path is at the root, as
+/// actions/toolkit builds them:
+/// - `/devstoreaccount1/upload/<id>` and `/download/<id>`: the blob routes; the upload ID plus
+///   `sig`, or the 128-bit download ID, is the capability.
+/// - `/twirp/…CacheService/<Method>` (POST): the Twirp service; its event goes to that VM's
+///   stream.
+/// - anything else: the passthrough to the results service.
+/// A VM that has unregistered gets 404 for everything but the blob routes.
 struct CacheRouter: Sendable {
     let twirp: CacheTwirpService
     let upload: CacheBlobUploadHandler
@@ -20,40 +21,33 @@ struct CacheRouter: Sendable {
     private static let uploadPrefix = "/devstoreaccount1/upload/"
     private static let downloadPrefix = "/download/"
 
-    func route(_ request: Request, serverBase: URL) async -> Response {
+    func route(_ request: Request, serverBase: URL, vmID: String) async -> Response {
         let target = request.uri.string
         guard target.hasPrefix("/"), !target.hasPrefix("//") else { return Self.twirpError(400, "malformed") }
         let path = String(target.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0])
-        if path.hasPrefix("/v/") {
-            return await routeVM(request, target: String(target.dropFirst(3)), serverBase: serverBase)
-        }
         if let id = Self.identifier(path, after: Self.uploadPrefix) {
             return await routeUpload(request, uploadID: id, target: target)
         }
         if let id = Self.identifier(path, after: Self.downloadPrefix) {
             return await routeDownload(request, downloadID: id)
         }
-        return Self.twirpError(404, "bad_route")
+        guard registry.contains(vmID) else { return Self.twirpError(404, "bad_route") }
+        guard path.lowercased().hasPrefix(Self.twirpPrefix.lowercased()) else {
+            return await routePassthrough(request, target: target)
+        }
+        return await routeTwirp(request, path: path, serverBase: serverBase, vmID: vmID)
     }
 
-    /// `afterV` is the target with `/v/` removed: `<token>/<rest>`.
-    private func routeVM(_ request: Request, target afterV: String, serverBase: URL) async -> Response {
-        guard let slash = afterV.firstIndex(of: "/") else { return Self.twirpError(404, "bad_route") }
-        let token = String(afterV[..<slash]), rest = String(afterV[slash...])
-        guard !token.isEmpty, registry.contains(token) else { return Self.twirpError(404, "bad_route") }
-        let restPath = rest.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0]
-        guard restPath.lowercased().hasPrefix(Self.twirpPrefix.lowercased()) else {
-            return await routePassthrough(request, target: rest)
-        }
+    private func routeTwirp(_ request: Request, path: String, serverBase: URL, vmID: String) async -> Response {
         guard request.method == .post else { return Self.twirpError(404, "bad_route") }
-        let method = String(restPath.dropFirst(Self.twirpPrefix.count))
+        let method = String(path.dropFirst(Self.twirpPrefix.count))
         var request = request
         guard let buffer = try? await request.collectBody(upTo: CacheTwirp.maximumBodyBytes) else {
             return Self.twirpError(400, "malformed")
         }
         let (response, event) = await twirp.handle(method: method, bearer: Self.bearer(request.headers),
                                                    body: Data(buffer.readableBytesView), serverBase: serverBase)
-        if let event { registry.emit(event, for: token) }
+        if let event { registry.emit(event, for: vmID) }
         return Response(status: .init(code: response.status), headers: [.contentType: "application/json"],
                         body: .init(byteBuffer: ByteBuffer(bytes: response.body)))
     }
@@ -136,13 +130,14 @@ struct CacheRouter: Sendable {
     }
 }
 
-/// The Hummingbird responder for one listener; `serverBase` is that listener's address.
+/// The Hummingbird responder for one VM's listener; `serverBase` is that listener's origin.
 struct CacheResponder: HTTPResponder {
     typealias Context = BasicRequestContext
     let router: CacheRouter
     let serverBase: URL
+    let vmID: String
 
     func respond(to request: Request, context: BasicRequestContext) async throws -> Response {
-        await router.route(request, serverBase: serverBase)
+        await router.route(request, serverBase: serverBase, vmID: vmID)
     }
 }

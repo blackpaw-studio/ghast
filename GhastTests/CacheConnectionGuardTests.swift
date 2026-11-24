@@ -74,6 +74,17 @@ struct CacheDeadlineStateTests {
 
 @Suite("Cache peer connection limit")
 struct CachePeerLimiterTests {
+    @Test("connections from every peer, across every listener, share one total cap")
+    func totalCap() {
+        let limiter = CachePeerLimiter(maximumPerPeer: 2, maximumTotal: 3)
+        #expect(limiter.acquire("192.168.64.2"))
+        #expect(limiter.acquire("192.168.64.2"))
+        #expect(limiter.acquire("192.168.64.3"))
+        #expect(!limiter.acquire("192.168.64.4"))
+        limiter.release("192.168.64.2")
+        #expect(limiter.acquire("192.168.64.4"))
+    }
+
     @Test("each peer gets at most its share of connections, given back on close")
     func perPeer() {
         let limiter = CachePeerLimiter(maximumPerPeer: 2)

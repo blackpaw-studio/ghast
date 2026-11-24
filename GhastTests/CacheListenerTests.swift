@@ -14,7 +14,7 @@ struct CacheListenerTests {
         let router = CacheRouter(twirp: CacheTwirpService(store: store, verifier: FakeCacheVerifier()),
                                  upload: CacheBlobUploadHandler(store: store), download: CacheBlobDownloadHandler(store: store),
                                  passthrough: CachePassthrough(upstream: FakeUpstream()), registry: CacheVMRegistry())
-        return CacheResponder(router: router, serverBase: URL(string: "http://127.0.0.1:\(port)/")!)
+        return CacheResponder(router: router, serverBase: URL(string: "http://127.0.0.1:\(port)/")!, vmID: "vm")
     }
 
     private static let loopbackPeers = CacheSubnet(address: "127.0.0.1", netmask: "255.0.0.0")!
