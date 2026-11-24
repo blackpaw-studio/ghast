@@ -35,11 +35,11 @@ struct CacheTestFolder {
 
     /// Every regular file under the folder, as paths relative to it, sorted.
     func files() -> [String] {
+        let base = url.resolvingSymlinksInPath().pathComponents
         let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey])
         let all = (enumerator?.allObjects as? [URL]) ?? []
         return all.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
-            .map { $0.path.replacingOccurrences(of: url.resolvingSymlinksInPath().path + "/", with: "")
-                .replacingOccurrences(of: url.path + "/", with: "") }
+            .map { $0.resolvingSymlinksInPath().pathComponents.dropFirst(base.count).joined(separator: "/") }
             .sorted()
     }
 }

@@ -11,12 +11,15 @@ import Foundation
 /// its file, so a crash leaves at worst an unnamed file for the sweep to reclaim.
 actor CacheStore {
     static let indexFileName = "index.json"
+    static let defaultCapBytes: Int64 = 50 * 1_000_000_000
 
     private let root: URL
     private let clock: any AppClock
     private let randomness: any CacheRandomness
     private let writer: any CacheBlobWriting
     let timing: CacheTiming
+    /// The size cap applied after each finalize.
+    private var capBytes: Int64
 
     private var index: CacheIndex
     private var uploads: [String: PendingUpload] = [:]
@@ -28,8 +31,9 @@ actor CacheStore {
     private var uploadsURL: URL { root.appendingPathComponent("uploads", isDirectory: true) }
 
     init(root: URL, clock: any AppClock, randomness: any CacheRandomness, writer: any CacheBlobWriting,
-         timing: CacheTiming = CacheTiming()) throws {
+         timing: CacheTiming = CacheTiming(), capBytes: Int64 = CacheStore.defaultCapBytes) throws {
         self.root = root
+        self.capBytes = capBytes
         self.clock = clock
         self.randomness = randomness
         self.writer = writer
@@ -153,6 +157,7 @@ actor CacheStore {
             throw error
         }
         discard(uploadID)
+        try evict(capBytes: capBytes)
         return entry
     }
 
@@ -192,6 +197,51 @@ actor CacheStore {
     /// Saves the index if restores changed it since the last write.
     func flush() throws {
         if isIndexDirty { try saveIndex() }
+    }
+
+    // MARK: Eviction and expiry
+
+    /// Changes the cap and applies it now.
+    func setCapBytes(_ bytes: Int64) throws {
+        capBytes = bytes
+        try evict(capBytes: bytes)
+    }
+
+    /// Removes the least recently used entries until the total is at most `capBytes`.
+    func evict(capBytes: Int64) throws {
+        var total = index.totalBytes
+        var doomed: Set<String> = []
+        for entry in index.entries.sorted(by: { $0.lastUsedAt < $1.lastUsedAt }) where total > capBytes {
+            doomed.insert(entry.id)
+            total -= entry.sizeBytes
+        }
+        try remove(entryIDs: doomed)
+    }
+
+    /// Removes entries unused for longer than `timing.entryExpiry`, uploads idle for longer
+    /// than `timing.uploadIdle`, and files no entry or upload names (left by a crash).
+    func sweep() throws {
+        let now = clock.now()
+        let expired = index.entries.filter { now.timeIntervalSince($0.lastUsedAt) > timing.entryExpiry }
+        try remove(entryIDs: Set(expired.map(\.id)))
+        for (uploadID, upload) in uploads where now.timeIntervalSince(upload.lastActivityAt) > timing.uploadIdle {
+            discard(uploadID)
+        }
+        try flush()
+        try Self.removeUnnamed(in: blobsURL, keeping: Set(index.entries.map(\.downloadID)))
+        try Self.removeUnnamed(in: uploadsURL, keeping: Set(uploads.keys))
+    }
+
+    /// Drops entries from the index (saved first), then deletes their archives. A download
+    /// already reading an archive keeps its open file; POSIX frees it when the reader closes.
+    private func remove(entryIDs: Set<String>) throws {
+        guard !entryIDs.isEmpty else { return }
+        let removed = index.entries.filter { entryIDs.contains($0.id) }
+        index.entries.removeAll { entryIDs.contains($0.id) }
+        try saveIndex()
+        for entry in removed {
+            try? FileManager.default.removeItem(at: blobsURL.appendingPathComponent(entry.downloadID))
+        }
     }
 
     // MARK: Helpers
@@ -251,6 +301,14 @@ actor CacheStore {
     private static func fileSize(_ url: URL) -> Int64 {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
         return size ?? -1
+    }
+
+    private static func removeUnnamed(in folder: URL, keeping names: Set<String>) throws {
+        let manager = FileManager.default
+        for item in try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+        where !names.contains(item.lastPathComponent) {
+            try manager.removeItem(at: item)
+        }
     }
 
     private static func emptyFolder(_ folder: URL) throws {
