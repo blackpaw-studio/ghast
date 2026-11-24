@@ -49,16 +49,18 @@ enum VMResourcesWarning {
         }
     }
 
-    static func overages(_ resources: VMResources, capacity: any HostCapacity) -> [Overage] {
+    /// A blank field counts as the image's value; when that is unknown (`image` is nil, or it
+    /// has no disk size) the blank field is skipped.
+    static func overages(_ resources: VMResources, image: TartImageDefaults? = nil, capacity: any HostCapacity) -> [Overage] {
         let vms = TartBackend.macOSVMLimit
         var found: [Overage] = []
-        if let cpu = resources.cpuCount, cpu * vms > capacity.coreCount {
+        if let cpu = resources.cpuCount ?? image?.cpuCount, cpu * vms > capacity.coreCount {
             found.append(.cpu(limit: capacity.coreCount))
         }
-        if let memory = resources.memoryGB, memory * vms > capacity.physicalMemoryGB {
+        if let memory = resources.memoryGB ?? image?.memoryGB, memory * vms > capacity.physicalMemoryGB {
             found.append(.memory(limit: capacity.physicalMemoryGB))
         }
-        if let disk = resources.diskGB, let free = capacity.freeDiskGB(), disk * vms > free {
+        if let disk = resources.diskGB ?? image?.diskGB, let free = capacity.freeDiskGB(), disk * vms > free {
             found.append(.disk(limit: free))
         }
         return found

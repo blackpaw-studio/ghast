@@ -30,6 +30,40 @@ struct VMResourcesWarningTests {
         #expect(VMResourcesWarning.overages(VMResources(diskGB: 4000), capacity: unknown).isEmpty)
     }
 
+    @Test("a blank field counts as the image's value")
+    func blankUsesImage() {
+        let image = TartImageDefaults(cpuCount: 12, memoryGB: 40, diskGB: 200)
+
+        let found = VMResourcesWarning.overages(.empty, image: image, capacity: host)
+
+        #expect(found == [.cpu(limit: 16), .memory(limit: 64), .disk(limit: 300)])
+    }
+
+    @Test("a blank field is skipped when the image value is unknown")
+    func blankWithoutImage() {
+        #expect(VMResourcesWarning.overages(.empty, image: nil, capacity: host).isEmpty)
+        let noDisk = TartImageDefaults(cpuCount: 4, memoryGB: 8, diskGB: nil)
+        #expect(VMResourcesWarning.overages(.empty, image: noDisk, capacity: host).isEmpty)
+    }
+
+    @Test("a typed value overrides the image's")
+    func typedOverridesImage() {
+        let image = TartImageDefaults(cpuCount: 12, memoryGB: 40, diskGB: 200)
+
+        let found = VMResourcesWarning.overages(VMResources(cpuCount: 4, memoryGB: 8, diskGB: 50), image: image, capacity: host)
+
+        #expect(found.isEmpty)
+    }
+
+    @Test("only the blank fields fall back to the image")
+    func mixed() {
+        let image = TartImageDefaults(cpuCount: 12, memoryGB: 40, diskGB: 50)
+
+        let found = VMResourcesWarning.overages(VMResources(cpuCount: 4), image: image, capacity: host)
+
+        #expect(found == [.memory(limit: 64)])
+    }
+
     @Test("every overage has a message naming the limit")
     func messages() {
         let messages = VMResourcesWarning.overages(VMResources(cpuCount: 12, memoryGB: 48, diskGB: 200), capacity: host).map(\.message)
