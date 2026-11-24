@@ -335,8 +335,8 @@ Stop if: `iss` is not `https://token.actions.githubusercontent.com`, the JWKS do
 
 ## Orchestrator decisions on the open questions (2026-11-23)
 
-1. Per-VM path segment `/v/<vmToken>/` is accepted as an implementation detail (it also stops one VM from reaching the server without its own token). The spec's URL is `http://<gateway>:<port>/v/<vmToken>/`.
+1. ~~Per-VM path segment `/v/<vmToken>/` is accepted as an implementation detail.~~ **Superseded 2026-11-24 (Evan):** the live check showed actions/toolkit resolves `/twirp/…` against `ACTIONS_RESULTS_URL` with a leading slash, which drops the path, so every call hit the root and got 404. Each VM now gets its own port, chosen at registration before boot; its URL is `http://<gateway>:<port>/`, its softnet rule allows only that port, and the port routes its events. Requests are still verified by the job's runtime token. The `/v/<vmToken>/` references in the steps above describe the first design.
 2. Multi-range requests get 416.
 3. The server keeps running until Ghast quits (it is bound to the VM bridge only).
 4. If Step 0.3 finds only a CIDR rule is possible, stop and ask Evan; don't pick an option.
-5. Step 0.3 (Evan, 2026-11-23): every isolated VM, cache on or off, gets `--net-softnet-block @host` plus allow `out proto udp @host port 53`, and `out proto tcp @host port <cachePort>` when the cache is on. The cache port is fixed per app run so it can go on the argv before the gateway is known.
+5. Step 0.3 (Evan, 2026-11-23): every isolated VM, cache on or off, gets `--net-softnet-block @host` plus allow `out proto udp @host port 53`, and `out proto tcp @host port <cachePort>` when the cache is on. The cache port is chosen before boot so it can go on the argv before the gateway is known (per app run at first; per VM since 2026-11-24, see 1).

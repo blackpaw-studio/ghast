@@ -191,31 +191,40 @@ Hummingbird 2 (SwiftNIO) HTTP/1.1 server inside Ghast.
   per-upload `sig`.
 
 ### Listening
-- One cache port per app run: a random high port chosen when the server is
-  created and kept until Ghast quits. It has to be known before boot, because
-  the isolation rule carries it on `tart run`'s argv, while the gateway address
-  is known only after boot.
+- One cache port per VM: a random high port (49152–65535, never one another
+  registered VM holds) chosen when the VM registers, before it boots. It has to
+  be known before boot, because the isolation rule carries it on `tart run`'s
+  argv, while the gateway address is known only after boot. An isolated VM can
+  reach only its own port.
+- The port identifies the VM: its listener routes cache events to that VM's
+  log. Requests are still authorized by the job's runtime token.
 - Binds only to host vmnet bridge addresses (the address a guest uses as its
   gateway), never to LAN interfaces. The bridge exists only while a VM runs and
-  softnet picks a new /29 on every boot, so the server binds the cache port on
-  each bridge address as it appears and drops listeners whose address is gone.
-  More than one address can be live when VMs run concurrently.
-- If the server can't start or can't bind the port on the guest's gateway, the
-  VM boots without the cache and the runner log says why.
+  softnet picks a new /29 on every boot, so each VM's listener is bound on its
+  gateway once that is known, and closed when the VM ends. Connection caps
+  (16 per peer, 64 in all) are shared by every listener.
+- **Why not one port with a per-VM path (the first design):** actions/toolkit
+  builds every call as `new URL("/twirp/<service>/<method>", baseUrl)`
+  (`cacheTwirpClient.ts`, `artifact-twirp-client.ts`); the leading slash drops
+  any path in `ACTIONS_RESULTS_URL`, so a `/v/<vmToken>/` prefix never reached
+  the server and every call was 404 (found by the live check, 2026-11-24).
+- If the server can't start or can't bind the VM's port on its gateway (for
+  example, the port is taken), the job runs without the cache and the runner
+  log says why.
 
 ### VM integration
 - `LocalRunner.usesLocalCache` (default true). Read at each boot.
 - After the guest is up, Ghast reads its gateway with
   `tart exec <vm> /sbin/route -n get default` (bare `route` isn't on the exec
-  PATH), checks it is a host bridge address and binds the port there.
+  PATH), checks it is a host bridge address and binds the VM's port there.
 - Guest script, after unpacking the runner: patch `Runner.Worker.dll`, check the
-  patch applied, then set `ACTIONS_RESULTS_URL=http://<gateway>:<port>/v/<vmToken>/` (a random per-boot token that routes events to the right VM log and rejects unknown VMs) in the
+  patch applied, then set `ACTIONS_RESULTS_URL=http://<gateway>:<port>/` (the VM's own port, at the root) in the
   runner `.env`. If the string isn't found or the patch fails, skip the env
   line and log one line; the job uses GitHub's cache.
 - Isolated VMs (cache on or off) boot with `--net-softnet-block @host` and
   `--net-softnet-allow out proto udp @host port 53` (softnet's DNS resolver is at
-  the gateway), plus `out proto tcp @host port <cachePort>` when the cache is
-  on. This also closes a 2.5.0 gap: isolated VMs could reach every host port on
+  the gateway), plus `out proto tcp @host port <port>` (that VM's own cache
+  port) when the cache is on. This also closes a 2.5.0 gap: isolated VMs could reach every host port on
   the bridge address, because softnet's default policy allows all traffic to
   the gateway.
 - Runner log lines (with the VM prefix): cache hit/miss with key and size, and
