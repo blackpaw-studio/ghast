@@ -49,7 +49,8 @@ struct LocalRunnerDetail: View {
                     runnerService: runnerService,
                     actions: actions,
                     sleeper: context.sleeper,
-                    hostCapacity: flowServices?.hostCapacity ?? SystemHostCapacity()
+                    hostCapacity: flowServices?.hostCapacity ?? SystemHostCapacity(),
+                    imageDefaults: flowServices?.imageDefaults ?? NoImageDefaults()
                 )
             }
         }

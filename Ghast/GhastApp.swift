@@ -86,6 +86,7 @@ struct AppDependencies {
         tartLocator: TartLocator = TartLocator(),
         xcodeVersions: any TartXcodeVersionProviding = GHCRXcodeVersionProvider(),
         hostCapacity: any HostCapacity = SystemHostCapacity(),
+        imageDefaults: any TartImageDefaultsProviding = NoImageDefaults(),
         demandSources: (any JobDemandSourceMaking)? = nil,
         softnetHelper: SoftnetHelperModel? = nil,
         notificationCenter: any UserNotificationCenter = InertNotificationCenter(),
@@ -127,7 +128,8 @@ struct AppDependencies {
             demandSources: demandSources,
             tartLocator: tartLocator,
             xcodeVersions: xcodeVersions,
-            hostCapacity: hostCapacity
+            hostCapacity: hostCapacity,
+            imageDefaults: imageDefaults
         )
         self.flowServices = flowServices
         flowCoordinator = RunnerFlowCoordinator(services: flowServices) { await resolvedRemoteStore.refresh(.explicit) }
@@ -254,6 +256,11 @@ struct AppDependencies {
             clock: clock,
             processLauncher: launcher,
             settings: AppSettings(defaults: .standard),
+            imageDefaults: CachingImageDefaultsProvider(TartImageDefaultsProvider(
+                cli: TartBackend.systemCLIProvider(launcher: launcher),
+                cache: FileSystemImageCacheReader(),
+                transport: RestrictedRedirectTransport(allowedHosts: GHCRClient.blobHosts)
+            )),
             demandSources: demandSources,
             softnetHelper: SoftnetHelperModel(
                 checker: softnetChecker,
