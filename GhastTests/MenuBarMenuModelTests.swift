@@ -139,4 +139,14 @@ struct MenuBarMenuModelTests {
         #expect(entry.submenu == [.showOutput, .separator, .start, .stop])
         #expect(!MenuBarMenuModel.isRunning(.restarting(wait)))
     }
+
+    @Test("Stop All stays on while a runner waits to restart, since Stop cancels the retry")
+    func stopAllCountsWaitingRunners() {
+        let wait = RetryWait(
+            attempt: 1, maxAttempts: 3, dueAt: Self.now.addingTimeInterval(5),
+            lastExit: RunnerExit(code: 1, startedAt: nil, at: Self.now, wasRequested: false)
+        )
+        let menu = MenuBarMenuModel.make(runners: [local("a", .restarting(wait))], isSignedIn: true, time: Self.time)
+        #expect(menu.contains(.command(.stopAll, isEnabled: true)))
+    }
 }

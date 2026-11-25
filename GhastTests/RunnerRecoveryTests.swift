@@ -307,4 +307,22 @@ struct RunnerRecoveryTests {
         #expect(announced.map(\.gaveUpAfter) == [3])
         #expect(announced.first?.exit.code == RunnerExit.launchFailureCode)
     }
+
+    // MARK: - Stop All
+
+    @Test("Stop All is available for a waiting runner and cancels its retry, clears the intent and reads stopped")
+    func stopAllCoversWaitingRunners() async throws {
+        let actions = RunnerActions(runnerService: service)
+        try await service.startRunner(id: runnerID)
+        await crash()
+        #expect(actions.canStopAll)
+
+        actions.stopAll()
+        await settle()
+        await retryNow()
+
+        #expect(state == .stopped)
+        #expect(!shouldBeRunning)
+        #expect(launcher.launchCount == 1)
+    }
 }

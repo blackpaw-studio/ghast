@@ -60,7 +60,7 @@ enum MenuBarMenuModel {
         return [.sectionHeader("This Mac")] + runnerEntries + [
             .separator,
             .command(.startAll, isEnabled: runners.contains { !isRunning($0.status) }),
-            .command(.stopAll, isEnabled: runners.contains { isRunning($0.status) }),
+            .command(.stopAll, isEnabled: runners.contains { isStoppable($0.status) }),
             .separator,
             .command(.newRunner, isEnabled: isSignedIn),
             .command(.openGhast, isEnabled: true),
@@ -86,6 +86,12 @@ enum MenuBarMenuModel {
         case .restarting: [.showOutput, .separator, .start, .stop]
         default: isRunning(status) ? [.showOutput, .separator, .restart, .stop] : [.showOutput, .separator, .start]
         }
+    }
+
+    /// Stop does something: the process is up, or a retry waits that Stop would cancel.
+    static func isStoppable(_ status: RunnerDisplayStatus) -> Bool {
+        if case .restarting = status { return true }
+        return isRunning(status)
     }
 
     /// The process is up: listening, running a job, or still connecting.

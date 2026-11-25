@@ -52,13 +52,18 @@ struct RunnerActions {
     }
 
     var canStartAll: Bool { runnerService.localRunners.contains { !isRunning($0.id) } }
-    var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) } }
+    var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) || isWaitingToRetry($0.id) } }
 
     func isRunning(_ localID: String) -> Bool {
         switch runnerService.processStates[localID] {
         case .running?, .onDemand?: return true
         default: return false
         }
+    }
+
+    /// Down after an unexpected exit, with a retry pending that Stop cancels.
+    func isWaitingToRetry(_ localID: String) -> Bool {
+        if case .waitingToRetry? = runnerService.processStates[localID] { true } else { false }
     }
 
     func showInFinder(_ localID: String) {
