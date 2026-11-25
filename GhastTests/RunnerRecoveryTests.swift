@@ -11,6 +11,7 @@ struct RunnerRecoveryTests {
     private let signaling = FakeSignaling()
     private let scanner = FakeScanner()
     private let clock = FakeClock()
+    private let power = FakePowerEvents()
     /// Waits inside a start or a stop (leftover-listener polling), not the retry delay.
     private let backendSleeper = ManualSleeper()
     /// Waits out retry delays only, so a test decides when a retry is due.
@@ -29,7 +30,8 @@ struct RunnerRecoveryTests {
             sleeper: backendSleeper.sleeper,
             signaling: signaling,
             scanner: scanner,
-            recoverySleeper: retrySleeper.sleeper
+            recoverySleeper: retrySleeper.sleeper,
+            power: power
         )
         folder = root.appendingPathComponent("mac", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -207,5 +209,56 @@ struct RunnerRecoveryTests {
 
         #expect(launcher.launchCount == 1)
         #expect(service.processStates[runnerID] == nil)
+    }
+
+    // MARK: - Quit and wake
+
+    @Test("quitting cancels pending retries and keeps the run intent for the next launch")
+    func stopAllKeepsIntent() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+
+        await service.stopAllRunners()
+        await retryNow()
+
+        #expect(shouldBeRunning)
+        #expect(launcher.launchCount == 1)
+    }
+
+    @Test("cancelPendingRestarts drops waiting retries without touching the intent")
+    func cancelPendingRestartsKeepsIntent() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+
+        service.cancelPendingRestarts()
+        await retryNow()
+
+        #expect(shouldBeRunning)
+        #expect(launcher.launchCount == 1)
+    }
+
+    @Test("a retry that came due while the Mac slept runs on wake")
+    func wakeRunsDueRetry() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+        clock.advance(by: 30)
+
+        power.wake()
+        await settle()
+
+        #expect(launcher.launchCount == 2)
+    }
+
+    @Test("a wake before the retry is due launches nothing")
+    func earlyWakeWaits() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+        clock.advance(by: 2)
+
+        power.wake()
+        await settle()
+
+        #expect(launcher.launchCount == 1)
+        #expect(waiting?.attempt == 1)
     }
 }

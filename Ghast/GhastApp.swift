@@ -558,6 +558,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// stuck runner delays the quit by at most the grace period.
     /// The local cache stops after the runners, so a job's last save lands first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A runner waiting to retry must not start while the quit waits on the others; its run
+        // intent stays, so the next launch restarts it.
+        builtDependencies?.runnerService.cancelPendingRestarts()
         guard stopsRunnersOnQuit || builtDependencies?.localCache != nil else { return .terminateNow }
         Task { @MainActor in
             await prepareForQuit()

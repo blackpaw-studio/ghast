@@ -278,10 +278,17 @@ class RunnerService {
         }
     }
     
+    /// Drops every pending retry and keeps the run intent, so the restart at the next launch
+    /// handles those runners. For a quit, which may still be waiting on running runners.
+    func cancelPendingRestarts() {
+        recovery.cancelAll()
+    }
+    
     /// Stops every runner for a quit and returns once they have ended, or after the same
     /// bounded grace period a single stop gets. Keeps `shouldBeRunning`, so the next launch can
     /// start them again.
     func stopAllRunners() async {
+        cancelPendingRestarts()
         // Together, so a quit waits as long as the slower kind, not the sum.
         async let hostRunners: Void = bareMetal.stopAll()
         async let vmRunners: Void = tart.stopAll()
