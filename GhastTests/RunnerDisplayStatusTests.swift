@@ -101,9 +101,9 @@ struct RunnerDisplayStatusTests {
         (.stopped(at: nil), "Stopped", "Not started yet", "Stopped · blackpaw-studio"),
     ])
     func localWords(status: RunnerDisplayStatus, title: String, secondary: String, sidebar: String) {
-        #expect(status.title == title)
+        #expect(status.title(time: displayTime()) == title)
         #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == secondary)
-        #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == sidebar)
     }
 
     @Test("the header shows a spinner until a percentage arrives, then a determinate bar")
@@ -123,7 +123,7 @@ struct RunnerDisplayStatusTests {
         (.runningJob(name: "build", since: nil), "Running build"),
     ])
     func vmSidebarSubtitle(status: RunnerDisplayStatus, expected: String) {
-        #expect(status.sidebarSubtitle(scope: Self.scope, imageLabel: "macOS Tahoe · Xcode 27.2") == expected)
+        #expect(status.sidebarSubtitle(scope: Self.scope, imageLabel: "macOS Tahoe · Xcode 27.2", time: displayTime()) == expected)
     }
 
     @Test("the pulling line names the image by its label")
@@ -143,18 +143,18 @@ struct RunnerDisplayStatusTests {
         (.cleaningUp, "Cleaning up…", "Deleting the virtual machine…", "Cleaning up…"),
     ])
     func vmWords(status: RunnerDisplayStatus, title: String, secondary: String, sidebar: String) {
-        #expect(status.title == title)
+        #expect(status.title(time: displayTime()) == title)
         #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == secondary)
-        #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == sidebar)
     }
 
     @Test("a running job: elapsed minutes in the header, the job name in the sidebar")
     func runningWords() {
         let status = RunnerDisplayStatus.runningJob(name: "build-and-notarize", since: at("10:08:15"))
-        #expect(status.title == "Running a job")
+        #expect(status.title(time: displayTime()) == "Running a job")
         #expect(status.secondaryLine(location: .thisMac, time: displayTime(now: "10:12:00")) == "build-and-notarize · started 4 min ago")
         #expect(status.secondaryLine(location: .thisMac, time: displayTime(now: "10:08:30")) == "build-and-notarize · started just now")
-        #expect(status.sidebarSubtitle(scope: Self.scope) == "Running build-and-notarize")
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == "Running build-and-notarize")
     }
 
     @Test("a job with no known start time shows no elapsed text")
@@ -172,9 +172,9 @@ struct RunnerDisplayStatusTests {
     @Test("an error names the code and the time")
     func errorWords() {
         let status = RunnerDisplayStatus.error(code: 1, at: at("10:05"))
-        #expect(status.title == "Exited with code 1")
+        #expect(status.title(time: displayTime()) == "Exited with code 1")
         #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == "Stopped unexpectedly at \(clock("10:05"))")
-        #expect(status.sidebarSubtitle(scope: Self.scope) == "Exited with code 1")
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == "Exited with code 1")
     }
 
     @Test("remote runners use the copy from RemoteRunner.png and the defaults beside it", arguments: [
@@ -183,9 +183,9 @@ struct RunnerDisplayStatusTests {
         (.offline, "Offline", "Not connected to GitHub", "Offline · blackpaw-studio"),
     ])
     func remoteWords(status: RunnerDisplayStatus, title: String, secondary: String, sidebar: String) {
-        #expect(status.title == title)
+        #expect(status.title(time: displayTime()) == title)
         #expect(status.secondaryLine(location: .otherMachine, time: displayTime()) == secondary)
-        #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == sidebar)
     }
 
     // MARK: Toolbar
@@ -344,9 +344,9 @@ struct RunnerDisplayStatusTests {
     ])
     func onDemandWords(phase: OnDemandPhase, title: String, secondary: String, sidebar: String, spinner: Bool) {
         let status = RunnerDisplayStatus.onDemand(phase)
-        #expect(status.title == title)
+        #expect(status.title(time: displayTime()) == title)
         #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == secondary)
-        #expect(status.sidebarSubtitle(scope: Self.scope) == sidebar)
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == sidebar)
         #expect(status.showsProgress == spinner)
         #expect(status.toolbarButtons(location: .thisMac) == [
             RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true),
@@ -358,5 +358,62 @@ struct RunnerDisplayStatusTests {
         let state = RunnerProcessState.onDemand(OnDemandState(since: at("10:00")))
         let stats = RunnerDisplayStatus.localStats(processState: state, lastExit: nil, activity: RunnerActivity(), time: displayTime(now: "10:30:00"))
         #expect(stats.first?.label == "Uptime")
+    }
+
+    // MARK: Restarting
+
+    private func restarting(attempt: Int = 2, dueIn seconds: TimeInterval) -> RunnerDisplayStatus {
+        let exit = RunnerExit(code: 1, startedAt: at("09:03"), at: at("10:05"), wasRequested: false)
+        return .restarting(RetryWait(attempt: attempt, maxAttempts: 3, dueAt: at("10:12").addingTimeInterval(seconds), lastExit: exit))
+    }
+
+    @Test("a runner waiting to retry reads as restarting, whatever the process log says")
+    func restartingDerivation() {
+        let exit = makeError()
+        let wait = RetryWait(attempt: 1, maxAttempts: 3, dueAt: at("10:06"), lastExit: exit)
+        #expect(RunnerDisplayStatus.make(processState: .waitingToRetry(wait), lastExit: exit, activity: idleActivity) == .restarting(wait))
+    }
+
+    @Test("the countdown rounds the remaining time up: seconds under a minute, minutes after, and Restarting… when due",
+          arguments: [
+            (30.0, "Restarting in 30 s (attempt 2 of 3)"),
+            (29.2, "Restarting in 30 s (attempt 2 of 3)"),
+            (1.0, "Restarting in 1 s (attempt 2 of 3)"),
+            (59.0, "Restarting in 59 s (attempt 2 of 3)"),
+            (60.0, "Restarting in 1 min (attempt 2 of 3)"),
+            (61.0, "Restarting in 2 min (attempt 2 of 3)"),
+            (120.0, "Restarting in 2 min (attempt 2 of 3)"),
+            (0.0, "Restarting… (attempt 2 of 3)"),
+            (-8.0, "Restarting… (attempt 2 of 3)"),
+          ])
+    func restartingWords(seconds: TimeInterval, expected: String) {
+        let status = restarting(dueIn: seconds)
+        #expect(status.title(time: displayTime()) == expected)
+        #expect(status.sidebarSubtitle(scope: Self.scope, time: displayTime()) == expected)
+    }
+
+    @Test("a restarting runner keeps the error's second line, offers Start and Stop and shows no spinner")
+    func restartingChrome() {
+        let status = restarting(dueIn: 30)
+        #expect(status.secondaryLine(location: .thisMac, time: displayTime()) == "Stopped unexpectedly at \(clock("10:05"))")
+        #expect(status.toolbarButtons(location: .thisMac) == [
+            RunnerToolbarButton(action: .start, isEnabled: true),
+            RunnerToolbarButton(action: .stop, isEnabled: true),
+        ])
+        #expect(!status.showsProgress)
+    }
+
+    @Test("VoiceOver hears the restart and the attempt")
+    func restartingSpoken() {
+        let label = restarting(dueIn: 30).accessibilityLabel(name: "r", scope: Self.scope, location: .thisMac, time: displayTime())
+        #expect(label == "r, restarting, restarting in 30 seconds (attempt 2 of 3), blackpaw-studio")
+    }
+
+    @Test("a runner waiting to retry shows Last Run, not Uptime")
+    func restartingStats() {
+        let exit = makeError()
+        let wait = RetryWait(attempt: 1, maxAttempts: 3, dueAt: at("10:06"), lastExit: exit)
+        let stats = RunnerDisplayStatus.localStats(processState: .waitingToRetry(wait), lastExit: exit, activity: idleActivity, time: displayTime())
+        #expect(stats.first?.label == "Last Run")
     }
 }

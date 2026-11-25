@@ -117,6 +117,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     case remoteBusy
     /// A started on-demand VM runner.
     case onDemand(OnDemandPhase)
+    /// Went down unexpectedly; Ghast starts it again at the wait's due time.
+    case restarting(RetryWait)
 
     // MARK: - Derivation
 
@@ -130,7 +132,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .exited(exit):
             return .error(code: exit.code, at: exit.at)
         case let .waitingToRetry(wait):
-            return .error(code: wait.lastExit.code, at: wait.lastExit.at)  // words come in step 7
+            return .restarting(wait)
         case .starting:
             return .starting
         case let .pulling(progress):
@@ -160,7 +162,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         switch self {
         case let .pulling(progress): progress.fraction == nil
         case .starting, .stopping, .booting, .cleaningUp, .onDemand(.booting), .onDemand(.handingOff), .onDemand(.connecting): true
-        case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy, .onDemand: false
+        case .idle, .runningJob, .stopped, .error, .offline, .remoteBusy, .onDemand, .restarting: false
         }
     }
 
@@ -171,8 +173,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
 
     // MARK: - Words
 
-    /// The header's status title (Title 2).
-    var title: String {
+    /// The header's status title (Title 2). `time` counts a restart down.
+    func title(time: DisplayTime) -> String {
         switch self {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running a job"
@@ -185,6 +187,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline"
         case let .onDemand(phase): return phase.title
+        case let .restarting(wait): return Self.restartingText(wait, time: time)
         }
     }
 
@@ -211,6 +214,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return at.map { "Stopped at \(time.timeOfDay.format($0))" } ?? "Not started yet"
         case let .error(_, at):
             return "Stopped unexpectedly at \(time.timeOfDay.format(at))"
+        case let .restarting(wait):
+            return "Stopped unexpectedly at \(time.timeOfDay.format(wait.lastExit.at))"
         case .offline:
             return "Not connected to GitHub"
         case .remoteBusy:
@@ -237,7 +242,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     }
 
     /// The sidebar row's second line. `scope` is the organization login or repository full name.
-    func sidebarSubtitle(scope: String, imageLabel: String? = nil) -> String {
+    func sidebarSubtitle(scope: String, imageLabel: String? = nil, time: DisplayTime) -> String {
         let detail = imageLabel ?? scope
         switch self {
         case .idle: return "Idle · \(detail)"
@@ -251,6 +256,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .error(code, _): return "Exited with code \(code)"
         case .offline: return "Offline · \(detail)"
         case .remoteBusy: return "Running a job · \(detail)"
+        case let .restarting(wait): return Self.restartingText(wait, time: time)
         case let .onDemand(phase):
             switch phase {
             case .waitingForJobs, .standingBy: return "\(phase.title) · \(detail)"
@@ -270,6 +276,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]
         case .stopped, .error, .offline, .remoteBusy:
             return [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]
+        case .restarting:
+            // Start retries now; Stop cancels the retry. Restart means nothing for a runner that is down.
+            return [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .stop, isEnabled: true)]
         }
     }
 
@@ -305,7 +314,26 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .error(code, at): return "error, exited with code \(code) at \(time.timeOfDay.format(at))"
         case .offline: return "offline"
         case let .onDemand(phase): return phase.title.lowercased()
+        case let .restarting(wait): return "restarting, \(Self.restartingText(wait, time: time, spoken: true).lowercased())"
         }
+    }
+
+    // MARK: - Restart wording
+
+    /// `Restarting in 30 s (attempt 2 of 3)`; the remaining time is rounded up, in seconds under
+    /// a minute and minutes after, and a retry that is due reads `Restarting… (attempt 2 of 3)`.
+    private static func restartingText(_ wait: RetryWait, time: DisplayTime, spoken: Bool = false) -> String {
+        let attempt = "(attempt \(wait.attempt) of \(wait.maxAttempts))"
+        let seconds = Int(wait.dueAt.timeIntervalSince(time.now).rounded(.up))
+        guard seconds > 0 else { return "Restarting… \(attempt)" }
+        let remaining: String
+        if seconds < 60 {
+            remaining = spoken ? "\(seconds) second\(seconds == 1 ? "" : "s")" : "\(seconds) s"
+        } else {
+            let minutes = (seconds + 59) / 60
+            remaining = spoken ? "\(minutes) minute\(minutes == 1 ? "" : "s")" : "\(minutes) min"
+        }
+        return "Restarting in \(remaining) \(attempt)"
     }
 
     // MARK: - Stats

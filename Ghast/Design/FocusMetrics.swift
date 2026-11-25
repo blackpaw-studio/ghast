@@ -77,6 +77,13 @@ enum FocusMetrics {
     static let headerBottom: CGFloat = 20
     /// "started 4 min ago" and Uptime refresh this often.
     static let headerRefreshInterval: TimeInterval = 30
+    /// A "Restarting in 30 s" countdown refreshes every second, so it visibly counts down.
+    static let restartCountdownInterval: TimeInterval = 1
+
+    /// How often a runner's status words refresh.
+    static func refreshInterval(for status: RunnerDisplayStatus) -> TimeInterval {
+        if case .restarting = status { restartCountdownInterval } else { headerRefreshInterval }
+    }
     static let headerStatsGap: CGFloat = 24
     static let headerStatsTopOffset: CGFloat = 4
     static let statSpacing: CGFloat = 21

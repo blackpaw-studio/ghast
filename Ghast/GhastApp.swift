@@ -182,7 +182,7 @@ struct AppDependencies {
     /// The menu bar extra over `host`: this Mac's runners (never GitHub's), following the setting.
     func makeMenuBarController(host: any StatusItemHosting) -> MenuBarController {
         let runnerService = runnerService, activityStore = activityStore, authService = authService
-        let settings = settings, router = router
+        let settings = settings, router = router, clock = clock
         let actions = RunnerActions(runnerService: runnerService, flows: flowCoordinator)
         return MenuBarController(
             host: host,
@@ -196,7 +196,7 @@ struct AppDependencies {
                 let busy = Set(runnerService.localRunners.map(\.id).filter(actions.isFlowBusy))
                 return MenuBarState(
                     isShown: settings.showMenuBarExtra,
-                    entries: MenuBarMenuModel.make(runners: catalog.thisMac, isSignedIn: authService.isAuthenticated, busyRunnerIDs: busy)
+                    entries: MenuBarMenuModel.make(runners: catalog.thisMac, isSignedIn: authService.isAuthenticated, busyRunnerIDs: busy, time: .current(now: clock.now()))
                 )
             },
             perform: { action in

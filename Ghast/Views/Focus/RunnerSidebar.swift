@@ -110,6 +110,7 @@ struct RunnerSidebar: View {
 struct RunnerRow: View {
     let item: RunnerItem
     let time: DisplayTime
+    @Environment(\.focusContext) private var context
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -119,11 +120,14 @@ struct RunnerRow: View {
                     .font(FocusType.body.weight(.medium))
                     .lineLimit(1)
             }
-            Text(item.status.sidebarSubtitle(scope: item.scope.displayName, imageLabel: item.imageLabel))
-                .font(FocusType.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .padding(.leading, FocusMetrics.statusDot + FocusMetrics.runnerRowDotSpacing)
+            // Re-read each tick, so a restart countdown keeps counting down.
+            TimelineView(.periodic(from: .now, by: FocusMetrics.refreshInterval(for: item.status))) { _ in
+                Text(item.status.sidebarSubtitle(scope: item.scope.displayName, imageLabel: item.imageLabel, time: context.displayTime))
+                    .font(FocusType.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.leading, FocusMetrics.statusDot + FocusMetrics.runnerRowDotSpacing)
         }
         .padding(.vertical, FocusMetrics.sidebarRowVerticalPadding)
         .accessibilityElement(children: .ignore)

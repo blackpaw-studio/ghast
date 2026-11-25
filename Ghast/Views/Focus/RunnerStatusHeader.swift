@@ -4,6 +4,7 @@ import SwiftUI
 /// or errored runner) what to do next.
 struct RunnerStatusHeader<Actions: View>: View {
     let status: RunnerDisplayStatus
+    let time: DisplayTime
     let secondaryLine: String
     let stats: [StatItem]
     let labels: [String]
@@ -15,7 +16,7 @@ struct RunnerStatusHeader<Actions: View>: View {
                 VStack(alignment: .leading, spacing: FocusMetrics.headerTitleSpacing) {
                     HStack(spacing: FocusMetrics.headerDotSpacing) {
                         StatusDot(status: status, size: FocusMetrics.statusDotHeader)
-                        Text(status.title).font(FocusType.title2)
+                        Text(status.title(time: time)).font(FocusType.title2)
                         if status.showsProgress {
                             ProgressView().controlSize(.small)
                         }
