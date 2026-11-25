@@ -23,6 +23,8 @@ struct DemandRunContext {
     var onDemand: @MainActor (Int) -> Void
     /// This Mac's hold on the job queue changed.
     var onQueue: @MainActor (JobQueueStatus) -> Void = { _ in }
+    /// A line for the runner's log (something worth a reader's attention, never per poll).
+    var onLog: @MainActor (String) -> Void = { _ in }
     var role: @MainActor () -> QueueRole = { .primary }
     /// Since when the runner has had no demand and no VMs; nil while it is busy.
     var idleSince: @MainActor () -> Date? = { nil }

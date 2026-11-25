@@ -40,7 +40,7 @@ import Foundation
         )
         let source = ScaleSetDemandSource(
             name: "mac-vm", groupID: { 1 }, client: client, transport: transport, ownerName: "Dionysus",
-            sleeper: sleeps.sleeper, clock: clock, timing: QueueTiming()
+            sleeper: sleeps.sleeper, clock: clock, timing: QueueTiming(reconcileInterval: .seconds(1_000_000)) // the yield tests move the clock far; recovery has its own suite
         )
         return (source, transport)
     }

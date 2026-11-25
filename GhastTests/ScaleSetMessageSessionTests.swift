@@ -3,16 +3,27 @@ import Foundation
 @testable import Ghast
 
 extension ScaleSetReplies {
-    static func session(id: String = "s-1", token: String = "qtok", assigned: Int = 0) -> FakeTransport.Reply {
+    static func session(id: String = "s-1", token: String = "qtok", assigned: Int = 0, available: Int = 0) -> FakeTransport.Reply {
         .json(#"""
         {"sessionId":"\#(id)","ownerName":"Dionysus","messageQueueUrl":"https://queue.example/q/abc?sig=xyz","messageQueueAccessToken":"\#(token)",
-         "statistics":{"totalAssignedJobs":\#(assigned)}}
+         "statistics":{"totalAssignedJobs":\#(assigned),"totalAvailableJobs":\#(available)}}
         """#)
     }
 
-    static func message(id: Int, assigned: Int, body: String = "[]") -> FakeTransport.Reply {
+    static func message(id: Int, assigned: Int, available: Int = 0, body: String = "[]") -> FakeTransport.Reply {
         let encoded = String(data: try! JSONEncoder().encode(body), encoding: .utf8)!
-        return .json(#"{"messageId":\#(id),"messageType":"RunnerScaleSetJobMessages","body":\#(encoded),"statistics":{"totalAssignedJobs":\#(assigned)}}"#)
+        return .json(#"{"messageId":\#(id),"messageType":"RunnerScaleSetJobMessages","body":\#(encoded),"statistics":{"totalAssignedJobs":\#(assigned),"totalAvailableJobs":\#(available)}}"#)
+    }
+
+    /// `GET .../acquirablejobs`: the queued jobs nobody has claimed (ARC's `AcquirableJobList`).
+    static func acquirable(_ ids: [Int64]) -> FakeTransport.Reply {
+        let jobs = ids.map { #"{"runnerRequestId":\#($0),"messageType":"JobRequest","acquireJobUrl":"https://pipelines.example/acquire","requestLabels":["mac-vm"]}"# }
+        return .json(#"{"count":\#(ids.count),"value":[\#(jobs.joined(separator: ","))]}"#)
+    }
+
+    /// `POST .../acquirejobs`: the ids the service let the set take.
+    static func acquired(_ ids: [Int64]) -> FakeTransport.Reply {
+        .json(#"{"count":\#(ids.count),"value":\#(ids)}"#)
     }
 
     static let noMessage = FakeTransport.Reply.json("", status: 202)

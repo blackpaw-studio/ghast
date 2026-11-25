@@ -13,6 +13,10 @@ struct QueueTiming: Sendable {
     /// After giving the queue up, a standby leaves it alone this long so a live primary takes it.
     var handoffWindow: Duration = .seconds(30)
 
+    /// While holding the queue, jobs the service lists as acquirable are checked this often,
+    /// so a message that never arrived (or arrived unreadable) cannot strand a job.
+    var reconcileInterval: Duration = .seconds(2 * 60)
+
     static let standard = QueueTiming()
 
     /// The wait before retry number `streak` (0 for the first) of a queue another Mac holds.

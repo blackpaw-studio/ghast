@@ -7,7 +7,7 @@ import Foundation
     let demand = DemandRecorder()
     let sleeps = SleepRecorder()
 
-    private func makeSource(_ replies: [FakeTransport.Reply], groupID: Int = 1) -> (ScaleSetDemandSource, FakeTransport) {
+    private func makeSource(_ replies: [FakeTransport.Reply], groupID: Int = 1, timing: QueueTiming = .standard) -> (ScaleSetDemandSource, FakeTransport) {
         let transport = FakeTransport([ScaleSetReplies.connection(exp: clock.now().addingTimeInterval(3600))] + replies)
         let client = ActionsServiceClient(
             scope: .repository(fullName: "octo/ghast"), api: MockGitHubAPIService(),
@@ -15,7 +15,7 @@ import Foundation
         )
         let source = ScaleSetDemandSource(
             name: "mac-vm", groupID: { groupID }, client: client, transport: transport, ownerName: "Dionysus",
-            sleeper: sleeps.sleeper
+            sleeper: sleeps.sleeper, clock: clock, timing: timing
         )
         return (source, transport)
     }
@@ -172,6 +172,150 @@ import Foundation
         #expect(calls.filter { $0 == "POST /abc/_apis/runtime/runnerscalesets/9/sessions" }.count == 1)
     }
 
+    // MARK: Recovery of jobs the queue never announced (issue #39)
+
+    private static let acquirablePath = "GET /abc/_apis/runtime/runnerscalesets/9/acquirablejobs"
+    private static let acquirePath = "POST /abc/_apis/runtime/runnerscalesets/9/acquirejobs"
+
+    /// Runs until the transport has seen `requests` requests (the last one is the hanging poll).
+    private func run(_ source: ScaleSetDemandSource, _ transport: FakeTransport, until requests: Int, context: DemandRunContext? = nil) async {
+        let context = context ?? demand.context
+        let task = Task { try await source.run(context) }
+        for _ in 0..<10_000 where await transport.requests.count < requests { await Task.yield() }
+        task.cancel()
+        _ = await task.result
+    }
+
+    private func acquiredIDs(_ transport: FakeTransport) async throws -> [[Int]] {
+        let bodies = await transport.requests
+            .filter { $0.httpMethod == "POST" && $0.url!.path.hasSuffix("/acquirejobs") }
+            .compactMap(\.httpBody)
+        return try bodies.map { try JSONDecoder().decode([Int].self, from: $0) }
+    }
+
+    @Test("a session that starts with available jobs acquires them without a JobAvailable message")
+    func sessionStartRecovers() async throws {
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 0, available: 1),
+            ScaleSetReplies.acquirable([31]), ScaleSetReplies.acquired([31]), .hang,
+        ])
+        await run(source, transport, until: 6)
+        let calls = await paths(transport)
+        #expect(calls.contains(Self.acquirablePath))
+        #expect(try await acquiredIDs(transport) == [[31]])
+        #expect(demand.logs == ["Picked up 1 queued job that wasn't announced"])
+        // The listing is an admin call, not a queue call.
+        let listing = try #require(await transport.requests.first { $0.url!.path.hasSuffix("/acquirablejobs") })
+        #expect(listing.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ey") == true)
+    }
+
+    @Test("a session that starts with nothing available lists nothing")
+    func sessionStartWithoutAvailableJobs() async throws {
+        let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(), .hang])
+        await run(source, transport, until: 4)
+        #expect(!(await paths(transport)).contains(Self.acquirablePath))
+    }
+
+    @Test("a job missed while holding is acquired at the next reconcile, and polls in between stay quiet")
+    func reconcileRecovers() async throws {
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(),
+            ScaleSetReplies.noMessage, ScaleSetReplies.noMessage,
+            ScaleSetReplies.acquirable([41]), ScaleSetReplies.acquired([41]), .hang,
+        ])
+        var context = demand.context
+        var reads = 0
+        let clock = clock
+        // The third loop turn comes a reconcile interval after the session was created.
+        context.idleSince = { reads += 1; if reads == 3 { clock.advance(by: 120) }; return nil }
+        await run(source, transport, until: 8, context: context)
+
+        let calls = await paths(transport)
+        #expect(calls.filter { $0 == Self.acquirablePath }.count == 1)
+        let listing = try #require(calls.firstIndex(of: Self.acquirablePath))
+        #expect(calls[(listing - 2)..<listing] == ["GET /q/abc", "GET /q/abc"])
+        #expect(try await acquiredIDs(transport) == [[41]])
+        #expect(demand.logs == ["Picked up 1 queued job that wasn't announced"])
+    }
+
+    @Test("statistics that show available jobs the message did not announce trigger a listing")
+    func statisticsTriggerRecovery() async throws {
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(),
+            ScaleSetReplies.message(id: 3, assigned: 0, available: 1),
+            ScaleSetReplies.acquirable([51]), ScaleSetReplies.acquired([51]), ScaleSetReplies.noContent, .hang,
+        ])
+        await run(source, transport, until: 8)
+        #expect(try await acquiredIDs(transport) == [[51]])
+        let calls = await paths(transport)
+        // Recovery runs before the message is acknowledged.
+        let acquire = try #require(calls.firstIndex(of: Self.acquirePath))
+        let ack = try #require(calls.firstIndex(of: "DELETE /q/abc/3"))
+        #expect(acquire < ack)
+    }
+
+    @Test("jobs the message announced are not listed again")
+    func announcedJobsAreNotListed() async throws {
+        let body = #"[{"messageType":"JobAvailable","runnerRequestId":11}]"#
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(),
+            ScaleSetReplies.message(id: 3, assigned: 0, available: 1, body: body),
+            ScaleSetReplies.acquired([11]), ScaleSetReplies.noContent, .hang,
+        ])
+        await run(source, transport, until: 7)
+        #expect(!(await paths(transport)).contains(Self.acquirablePath))
+        #expect(demand.logs.isEmpty)
+    }
+
+    @Test("recovery acquires no more than the capacity left")
+    func recoveryRespectsCapacity() async throws {
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 1, available: 3),
+            ScaleSetReplies.acquirable([1, 2, 3]), ScaleSetReplies.acquired([1]), .hang,
+        ])
+        await run(source, transport, until: 6)
+        #expect(try await acquiredIDs(transport) == [[1]])
+        #expect(demand.logs == ["Picked up 1 queued job that wasn't announced"])
+    }
+
+    @Test("a full set lists nothing")
+    func fullSetSkipsRecovery() async throws {
+        let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(assigned: 2, available: 4), .hang])
+        await run(source, transport, until: 4)
+        #expect(!(await paths(transport)).contains(Self.acquirablePath))
+    }
+
+    @Test("an empty listing acquires nothing and logs nothing", arguments: [ScaleSetReplies.noContent, ScaleSetReplies.acquirable([])])
+    func emptyListing(reply: FakeTransport.Reply) async throws {
+        let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(available: 1), reply, .hang])
+        await run(source, transport, until: 5)
+        #expect(try await acquiredIDs(transport).isEmpty)
+        #expect(demand.logs.isEmpty)
+    }
+
+    @Test("a failed listing does not end the session")
+    func failedListingIsBestEffort() async throws {
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(available: 1), .json("", status: 500), .hang,
+        ])
+        await run(source, transport, until: 5)
+        #expect(await paths(transport).filter { $0 == "POST /abc/_apis/runtime/runnerscalesets/9/sessions" }.count == 1)
+        #expect(!(await paths(transport)).contains { $0.hasPrefix("DELETE") })
+    }
+
+    @Test("a batch with an undecodable element still acquires its available jobs")
+    func undecodableElementStillAcquires() async throws {
+        let body = #"[{"messageType":"JobAssigned","runnerRequestId":"oops"},{"messageType":"JobAvailable","runnerRequestId":11}]"#
+        let (source, transport) = makeSource([
+            ScaleSetReplies.list([9]), ScaleSetReplies.session(),
+            ScaleSetReplies.message(id: 3, assigned: 1, body: body),
+            ScaleSetReplies.acquired([11]), ScaleSetReplies.noContent, .hang,
+        ])
+        await run(source, transport, until: 7)
+        #expect(try await acquiredIDs(transport) == [[11]])
+        #expect(demand.values == [0, 1])
+    }
+
     @Test("close after a cancelled run deletes the session")
     func closeDeletesSession() async throws {
         let (source, transport) = makeSource([ScaleSetReplies.list([9]), ScaleSetReplies.session(), .hang, ScaleSetReplies.noContent])
@@ -204,6 +348,7 @@ import Foundation
 @MainActor final class DemandRecorder {
     private(set) var values: [Int] = []
     private(set) var queue: [JobQueueStatus] = []
+    private(set) var logs: [String] = []
     var role = QueueRole.primary
     var idleSince: Date?
 
@@ -213,6 +358,7 @@ import Foundation
         DemandRunContext(
             onDemand: { [self] in values.append($0) },
             onQueue: { [self] in queue.append($0) },
+            onLog: { [self] in logs.append($0) },
             role: { [self] in role },
             idleSince: { [self] in idleSince }
         )
