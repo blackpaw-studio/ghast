@@ -132,7 +132,7 @@ struct NotificationPolicyTests {
 
     // MARK: Sources
 
-    @Test("a requested stop through the runner service never notifies; an unexpected exit does")
+    @Test("a requested stop or a retried exit never notifies; giving up after the retries does")
     func serviceExitsDriveNotifications() async throws {
         let h = makeHarness(names: [:])
         defer { h.cleanup() }
@@ -141,12 +141,14 @@ struct NotificationPolicyTests {
         let runner = LocalRunner(name: "ghast-release", scope: .organization(login: "blackpaw-studio"), path: folder.path)
         let isolated = makeIsolatedDefaults()
         defer { isolated.cleanup() }
+        let retries = ManualSleeper()
         let runnerService = RunnerService(
             defaults: isolated.defaults,
             runnersDirectory: makeTemporaryDirectory(),
             launcher: launcher,
             sleeper: { _ in },
-            scanner: NoRunnerProcessScanner()
+            scanner: NoRunnerProcessScanner(),
+            recoverySleeper: retries.sleeper
         )
         runnerService.addLocalRunner(runner)
         let service = NotificationService(
@@ -165,6 +167,14 @@ struct NotificationPolicyTests {
         await stopping.value
 
         try await runnerService.startRunner(id: runner.id)
+        // Three retries each fail again; only the exit after the last one is announced.
+        for _ in 0..<3 {
+            launcher.exit(folder.lastPathComponent, code: 1)
+            for _ in 0..<12 { await Task.yield() }
+            #expect(h.center.posted.isEmpty)
+            retries.wakeAll()
+            for _ in 0..<12 { await Task.yield() }
+        }
         launcher.exit(folder.lastPathComponent, code: 1)
 
         let notice = await h.center.nextPost()

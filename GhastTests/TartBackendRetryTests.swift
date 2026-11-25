@@ -8,9 +8,12 @@ import Foundation
 struct TartBackendRetryTests {
     private static let offline = URLError(.notConnectedToInternet)
 
+    /// The runner ended unexpectedly: in the error state, or waiting for the service's retry.
     private func hasExited(_ h: TartHarness, _ runner: LocalRunner) -> Bool {
-        if case .exited? = h.state(runner) { return true }
-        return false
+        switch h.state(runner) {
+        case .exited?, .waitingToRetry?: true
+        default: false
+        }
     }
 
     @Test("a network blip fetching the runner package is retried after the restart delay, and the runner stays on")
@@ -122,7 +125,7 @@ struct TartBackendRetryTests {
         #expect(await h.settled { hasExited(h, runner) })
         #expect(h.log.all.filter { $0.hasPrefix("jit ") }.count == 1)
         #expect(h.sleeps.all.isEmpty)
-        #expect(h.service.localRunners.first?.shouldBeRunning == false)
+        #expect(h.service.localRunners.first?.shouldBeRunning == true)
     }
 
     @Test("a missing runner group from the demand source stays fatal")

@@ -129,6 +129,8 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return .stopped(at: lastExit?.at)
         case let .exited(exit):
             return .error(code: exit.code, at: exit.at)
+        case let .waitingToRetry(wait):
+            return .error(code: wait.lastExit.code, at: wait.lastExit.at)  // words come in step 7
         case .starting:
             return .starting
         case let .pulling(progress):
@@ -320,7 +322,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case let .onDemand(state):
             label = "Uptime"
             duration = time.now.timeIntervalSince(state.since)
-        case .starting, .pulling, .booting, .cleaningUp, .stopped, .exited:
+        case .starting, .pulling, .booting, .cleaningUp, .stopped, .exited, .waitingToRetry:
             label = "Last Run"
             duration = lastExit?.startedAt.map { lastExit!.at.timeIntervalSince($0) }
         }

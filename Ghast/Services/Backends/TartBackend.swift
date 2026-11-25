@@ -825,7 +825,7 @@ final class TartBackend: RunnerBackend {
         finish(entry, failure: failure)
     }
 
-    /// A runner-level failure: an error state, and the intent to run is cleared.
+    /// A runner-level failure: it is recorded as an unexpected exit, so the service retries it.
     private func fail(_ entry: OnDemandEntry, _ failure: any Error) {
         shutDown(entry, failure: failure)
     }

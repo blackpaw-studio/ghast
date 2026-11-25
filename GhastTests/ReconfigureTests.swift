@@ -287,7 +287,7 @@ import Foundation
 
         // "my-vm" is a local name that does not exist: the next VM fails on it, which shows
         // it reads the saved image, not the one the runner started with.
-        #expect(await eventually { if case .exited? = h.service.processStates[runner.id] { true } else { false } })
+        #expect(await eventually { if case .waitingToRetry? = h.service.processStates[runner.id] { true } else { false } })
         #expect(!h.log.all.contains { $0.hasPrefix("clone \(other)") })
         #expect(h.log.all.filter { $0.hasPrefix("clone ") }.count == 1)
     }

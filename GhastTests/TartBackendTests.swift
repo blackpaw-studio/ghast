@@ -99,7 +99,8 @@ final class TartHarness {
             defaults: isolated.defaults,
             runnersDirectory: makeTemporaryDirectory(),
             scanner: NoRunnerProcessScanner(),
-            tartBackend: backend
+            tartBackend: backend,
+            recoverySleeper: parkedSleeper
         )
     }
 
@@ -343,7 +344,7 @@ struct TartBackendTests {
         #expect(h.log.all.contains { $0.hasPrefix("clone \(TartHarness.image) ") })
     }
 
-    @Test("a local image that does not exist is an error, not a pull")
+    @Test("a local image that does not exist is an error that waits to retry, not a pull")
     func missingLocalImage() async throws {
         let h = TartHarness(entries: [])
         defer { h.cleanup() }
@@ -351,7 +352,7 @@ struct TartBackendTests {
 
         try await h.service.startRunner(id: runner.id)
 
-        #expect(await h.settled { if case .exited? = h.state(runner) { true } else { false } })
+        #expect(await h.settled { if case .waitingToRetry? = h.state(runner) { true } else { false } })
         #expect(!h.log.all.contains { $0.hasPrefix("pull ") || $0.hasPrefix("clone ") })
         #expect(h.lines.lines.contains { $0.contains("my-vm") })
     }

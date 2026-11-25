@@ -79,6 +79,8 @@ final class ConnectionWatch {
         if cancelled { return .failure(CancellationError()) }
         switch state {
         case let .exited(exit)?: return .failure(Failure.exited(exit.code))
+        // The runner went down and Ghast is about to restart it: for the watch that is a failure.
+        case let .waitingToRetry(wait)?: return .failure(Failure.exited(wait.lastExit.code))
         case .stopped?, .stopping?, nil: return .failure(Failure.stopped)
         case .running?, .starting?, .pulling?, .booting?, .cleaningUp?, .onDemand?: break
         }
