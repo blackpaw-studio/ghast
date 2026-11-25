@@ -16,6 +16,7 @@ struct RunnerActions {
                 try await runnerService.startRunner(id: localID)
             } catch {
                 Self.logger.error("Couldn't start runner \(localID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                runnerService.recordStartFailure(id: localID)
             }
         }
     }
@@ -31,6 +32,7 @@ struct RunnerActions {
                 try await runnerService.startRunner(id: localID)
             } catch {
                 Self.logger.error("Couldn't restart runner \(localID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                runnerService.recordStartFailure(id: localID)
             }
         }
     }

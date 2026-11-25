@@ -8,11 +8,16 @@ import Foundation
 @MainActor
 struct RunnerRecoveryTests {
     private let launcher = FakeLauncher()
+    private let signaling = FakeSignaling()
+    private let scanner = FakeScanner()
     private let clock = FakeClock()
+    /// Waits inside a start or a stop (leftover-listener polling), not the retry delay.
+    private let backendSleeper = ManualSleeper()
     /// Waits out retry delays only, so a test decides when a retry is due.
     private let retrySleeper = ManualSleeper()
     private let service: RunnerService
     private let runnerID: String
+    private let folder: URL
 
     init() throws {
         let root = makeTemporaryDirectory()
@@ -21,12 +26,12 @@ struct RunnerRecoveryTests {
             runnersDirectory: root,
             clock: clock,
             launcher: launcher,
-            sleeper: { _ in },
-            signaling: FakeSignaling(),
-            scanner: FakeScanner(),
+            sleeper: backendSleeper.sleeper,
+            signaling: signaling,
+            scanner: scanner,
             recoverySleeper: retrySleeper.sleeper
         )
-        let folder = root.appendingPathComponent("mac", isDirectory: true)
+        folder = root.appendingPathComponent("mac", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let runner = LocalRunner(name: "mac", scope: .organization(login: "acme"), path: folder.path)
         service.addLocalRunner(runner)
@@ -126,5 +131,81 @@ struct RunnerRecoveryTests {
         #expect(waiting?.attempt == 1)
         #expect(waiting?.lastExit.code == RunnerExit.launchFailureCode)
         #expect(shouldBeRunning)
+    }
+
+    // MARK: - Start, Stop, Remove
+
+    @Test("Start on a waiting runner retries at once, keeps the attempt count and the timer does not start it again")
+    func startSkipsTheWait() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+        #expect(waiting?.attempt == 1)
+
+        try await service.startRunner(id: runnerID)
+        #expect(launcher.launchCount == 2)
+        await retryNow()
+        #expect(launcher.launchCount == 2)
+
+        await crash()
+        #expect(waiting?.attempt == 2)
+    }
+
+    @Test("Stop on a waiting runner clears the intent, reads stopped and nothing launches later")
+    func stopCancelsTheRetry() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+
+        await service.stopRunner(id: runnerID)
+        await retryNow()
+
+        #expect(state == .stopped)
+        #expect(!shouldBeRunning)
+        #expect(service.localRunners.first?.lastExit?.wasRequested == true)
+        #expect(launcher.launchCount == 1)
+    }
+
+    @Test("a user start that fails through the runner actions schedules a retry")
+    func failedUserStartRetries() async throws {
+        try FileManager.default.removeItem(at: folder)
+
+        RunnerActions(runnerService: service).start(runnerID)
+        await settle()
+
+        #expect(waiting?.attempt == 1)
+        #expect(waiting?.lastExit.code == RunnerExit.launchFailureCode)
+        #expect(shouldBeRunning)
+    }
+
+    @Test("Stop while a retry's start waits for a leftover listener cancels it without scheduling another")
+    func stopDuringPendingRetryStart() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+        scanner.listeners = [ListenerProcess(pid: 555, pgid: 555, command: folder.path + "/bin/Runner.Listener run")]
+        signaling.setAlive(process: 555, true)
+        await retryNow()
+        #expect(state == .starting)
+
+        await service.stopRunner(id: runnerID)
+        signaling.setAlive(process: 555, false)
+        backendSleeper.wakeAll()
+        await settle()
+        await retryNow()
+
+        #expect(state == .stopped)
+        #expect(waiting == nil)
+        #expect(!shouldBeRunning)
+        #expect(launcher.launchCount == 1)
+    }
+
+    @Test("Remove cancels a pending retry")
+    func removeCancelsTheRetry() async throws {
+        try await service.startRunner(id: runnerID)
+        await crash()
+
+        service.removeLocalRunner(id: runnerID)
+        await retryNow()
+
+        #expect(launcher.launchCount == 1)
+        #expect(service.processStates[runnerID] == nil)
     }
 }

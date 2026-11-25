@@ -135,6 +135,8 @@ class RunnerService {
     }
     
     func removeLocalRunner(id: String) {
+        recovery.cancel(id: id)
+        recovery.resetAttempts(id: id)
         backend(for: id).requestStop(id: id, keepingRunIntent: false)
         localRunners.removeAll { $0.id == id }
         processStates.removeValue(forKey: id)
@@ -144,6 +146,7 @@ class RunnerService {
     /// Removes all local runners and persists the empty state
     /// This is useful for testing or resetting the app state
     func removeAllLocalRunners() {
+        recovery.cancelAll()
         // Stop all running runners first
         for runner in localRunners {
             backend(for: runner.id).requestStop(id: runner.id, keepingRunIntent: false)
@@ -159,15 +162,41 @@ class RunnerService {
     /// Starts a runner. The runner reads as starting at once, even while the start waits for a
     /// pending stop or a leftover listener to end, and a second start for it is ignored until
     /// this one is done.
+    ///
+    /// Starting a runner that waits to retry runs that retry now and keeps its attempt count;
+    /// any other start begins the count over. The run intent is set before the start, so a start
+    /// that fails keeps it (and is retried, see `recordStartFailure`).
     func startRunner(id: String) async throws {
+        if let wait = recovery.takePending(id: id), processStates[id] == .waitingToRetry(wait) {
+            // Keep the attempt count: this is the retry, early.
+        } else {
+            recovery.resetAttempts(id: id)
+        }
+        updateRunner(id: id) { $0.shouldBeRunning = true }
         try await backend(for: id).start(id: id)
     }
     
     /// Stops a runner and returns once its process group has ended, so a start right after
     /// succeeds. Bounded: SIGTERM, SIGKILL after `stopGracePeriod`, then Ghast records the stop
     /// itself after `killWait` if the exit is never reported.
+    ///
+    /// Stopping a runner that waits to retry cancels the retry.
     func stopRunner(id: String) async {
+        recovery.cancel(id: id)
+        recovery.resetAttempts(id: id)
+        let wasWaiting = isWaitingToRetry(id: id)
         await backend(for: id).stop(id: id)
+        // No process to end, so no backend settles the state: record the stop here.
+        if wasWaiting, isWaitingToRetry(id: id) {
+            recordExit(id: id, code: Self.requestedStopCode, wasRequested: true, announces: false)
+        }
+    }
+    
+    /// The code recorded for a stop Ghast made on request (128 + SIGTERM).
+    private static let requestedStopCode: Int32 = 143
+    
+    private func isWaitingToRetry(id: String) -> Bool {
+        if case .waitingToRetry? = processStates[id] { true } else { false }
     }
     
     /// The backend that runs this runner; the host backend for an id with no runner.
