@@ -6,6 +6,11 @@ protocol TartImageDefaultsProviding: Sendable {
     func defaults(for image: String) async -> TartImageDefaults?
 }
 
+/// Knows no image's values: the default where no provider has been supplied (previews, tests).
+struct NoImageDefaults: TartImageDefaultsProviding {
+    func defaults(for image: String) async -> TartImageDefaults? { nil }
+}
+
 /// Reads an image's own size: a local VM through `tart get`, a pulled image from Tart's cache
 /// folder, an unpulled ghcr.io image from the registry. Everything from the cache and the
 /// registry is untrusted and checked (see the spec's "Untrusted input").
