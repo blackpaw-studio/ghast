@@ -196,6 +196,19 @@ struct ScaleSetAcquiredJobs: Decodable, Sendable {
     let value: [Int64]
 }
 
+/// `GET <scale set>/acquirablejobs` (ARC's `AcquirableJobList`): queued jobs for the set that
+/// nobody has acquired yet. Only the request ids are read; they are what `acquirejobs` takes.
+struct ScaleSetAcquirableJobs: Decodable, Sendable {
+    struct Job: Decodable, Sendable {
+        let runnerRequestID: Int64
+
+        private enum CodingKeys: String, CodingKey { case runnerRequestID = "runnerRequestId" }
+    }
+
+    let count: Int
+    let value: [Job]
+}
+
 /// The reply of `POST /actions/runner-registration`: the Actions service base URL and an
 /// admin JWT for it.
 struct ActionsServiceConnection: Decodable, Sendable {
@@ -267,6 +280,9 @@ struct ScaleSetMessage: Equatable, Sendable {
     /// Set (to the type, or "(unreadable)") for a message Ghast cannot read: it is only
     /// acknowledged, so it cannot block the queue.
     var unsupportedType: String?
+    /// The types (or "(unreadable)") of body elements that could not be decoded. They are
+    /// skipped one by one, so a job message beside them is never lost with them.
+    var undecodableElementTypes: [String] = []
 
     private struct Envelope: Decodable {
         let messageId: Int
@@ -278,8 +294,24 @@ struct ScaleSetMessage: Equatable, Sendable {
     private struct Identified: Decodable { let messageId: Int }
     private struct Typed: Decodable { let messageType: String }
 
+    /// One body element, decoded without ever throwing, so one bad element cannot fail the
+    /// array it sits in.
+    private struct Element: Decodable {
+        let job: Result<ScaleSetJobMessage, any Error>
+        let type: String
+
+        init(from decoder: Decoder) throws {
+            job = Result { try ScaleSetJobMessage(from: decoder) }
+            type = (try? Typed(from: decoder).messageType).map(Self.shortened) ?? "(unreadable)"
+        }
+
+        private static func shortened(_ type: String) -> String { String(type.filter { !$0.isNewline }.prefix(64)) }
+    }
+
     /// Decodes the envelope, then its `body`, which is a JSON string holding an array.
-    /// Element types Ghast does not know are skipped, as in the reference. A message whose
+    /// Element types Ghast does not know are skipped, as in the reference, and so is an
+    /// element that does not decode (its type is kept in `undecodableElementTypes`): the
+    /// rest of the batch, `JobAvailable` above all, still counts. A message whose
     /// own type Ghast cannot read comes back with only its id and `unsupportedType`, so it
     /// can be acknowledged instead of blocking every later message.
     static func decode(_ data: Data) throws -> ScaleSetMessage {
@@ -306,17 +338,21 @@ struct ScaleSetMessage: Equatable, Sendable {
         }
         var message = ScaleSetMessage(messageID: envelope.messageId, statistics: envelope.statistics)
         guard let body = envelope.body, !body.isEmpty else { return message }
-        guard let elements = try? JSONDecoder().decode([ScaleSetJobMessage].self, from: Data(body.utf8)) else {
+        guard let elements = try? JSONDecoder().decode([Element].self, from: Data(body.utf8)) else {
             var skipped = ScaleSetMessage(messageID: id, statistics: nil)
             skipped.unsupportedType = "\(jobMessagesType) (unreadable body)"
             return skipped
         }
         for element in elements {
-            switch element.messageType {
-            case "JobAvailable": message.jobsAvailable.append(element)
-            case "JobAssigned": message.jobsAssigned.append(element)
-            case "JobStarted": message.jobsStarted.append(element)
-            case "JobCompleted": message.jobsCompleted.append(element)
+            guard case let .success(job) = element.job else {
+                message.undecodableElementTypes.append(element.type)
+                continue
+            }
+            switch job.messageType {
+            case "JobAvailable": message.jobsAvailable.append(job)
+            case "JobAssigned": message.jobsAssigned.append(job)
+            case "JobStarted": message.jobsStarted.append(job)
+            case "JobCompleted": message.jobsCompleted.append(job)
             default: continue
             }
         }

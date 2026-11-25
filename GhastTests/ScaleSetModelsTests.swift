@@ -125,4 +125,34 @@ import Foundation
         #expect(message.unsupportedType == type)
         #expect(message.statistics == nil && message.jobsAvailable.isEmpty)
     }
+
+    @Test("an undecodable element does not take its decodable neighbours with it")
+    func undecodableElementKeepsTheRest() throws {
+        let body = #"[{"messageType":"JobAvailable","runnerRequestId":11},{"messageType":"JobAssigned","runnerRequestId":"oops"},{"messageType":"JobStarted"},{"messageType":"JobAvailable","runnerRequestId":12}]"#
+        let encoded = String(data: try JSONEncoder().encode(body), encoding: .utf8)!
+        let json = #"{"messageId":4,"messageType":"RunnerScaleSetJobMessages","body":\#(encoded),"statistics":{"totalAssignedJobs":3,"totalAvailableJobs":2}}"#
+        let message = try ScaleSetMessage.decode(Data(json.utf8))
+        #expect(message.unsupportedType == nil)
+        #expect(message.jobsAvailable.map(\.runnerRequestID) == [11, 12])
+        #expect(message.jobsStarted.count == 1)
+        #expect(message.statistics?.totalAssignedJobs == 3)
+        #expect(message.statistics?.totalAvailableJobs == 2)
+        #expect(message.undecodableElementTypes == ["JobAssigned"])
+    }
+
+    @Test("an element with no readable type is reported as unreadable")
+    func undecodableElementWithoutType() throws {
+        let encoded = String(data: try JSONEncoder().encode(#"[7,{"messageType":"JobAvailable","runnerRequestId":11}]"#), encoding: .utf8)!
+        let json = #"{"messageId":4,"messageType":"RunnerScaleSetJobMessages","body":\#(encoded)}"#
+        let message = try ScaleSetMessage.decode(Data(json.utf8))
+        #expect(message.jobsAvailable.map(\.runnerRequestID) == [11])
+        #expect(message.undecodableElementTypes == ["(unreadable)"])
+    }
+
+    @Test("the acquirable-jobs reply lists request ids, ignoring the fields Ghast does not read")
+    func acquirableJobs() throws {
+        let json = #"{"count":2,"value":[{"runnerRequestId":21,"acquireJobUrl":"u","messageType":"JobRequest","requestLabels":["mac-vm"]},{"runnerRequestId":22}]}"#
+        let jobs = try JSONDecoder().decode(ScaleSetAcquirableJobs.self, from: Data(json.utf8))
+        #expect(jobs.value.map(\.runnerRequestID) == [21, 22])
+    }
 }
