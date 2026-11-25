@@ -13,6 +13,8 @@ import SnapshotTesting
 struct FocusMainSnapshotTests {
     enum State: String, CaseIterable {
         case running, idle, stopped, starting, error, remote, empty, configuration
+        /// The errored runner Ghast will start again in 30 s (second of three attempts).
+        case restarting
         /// A VM runner in each on-demand phase, and its Configuration tab. `vmWaitingForJobs`
         /// is a runner saved before on-demand VMs, so it shows the one-time note.
         case vmBooting, vmPulling, vmConfiguration
@@ -94,6 +96,40 @@ struct FocusMainSnapshotTests {
         }
     }
 
+    /// The sidebar rows with the errored runner waiting to restart, beside the kit's other runners.
+    @Test(arguments: [false, true])
+    func sidebarRestarting(isDark: Bool) async throws {
+        let fixture = FixtureDependencies.make(for: FixtureLaunch(screen: .main, isDark: isDark), scratchRoot: makeTemporaryDirectory())
+        defer { fixture.tearDown() }
+        await fixture.seedProcessStates()
+        let runner = try #require(fixture.appDependencies.runnerService.localRunners.first { $0.name == "ghast-release" })
+        let processState = try restartingState(for: runner, fixture: fixture)
+        let catalog = catalog(fixture, overriding: runner.id, processState, RunnerActivity())
+        let size = CGSize(width: FocusMetrics.sidebarColumnWidth, height: 160)
+
+        // The rows, not the `List`: a sidebar-style List draws nothing outside a window.
+        let time = fixture.appDependencies.focusContext.displayTime
+        let view = VStack(alignment: .leading, spacing: 0) {
+            ForEach(catalog.thisMac) { RunnerRow(item: $0, time: time) }
+        }
+        .padding(.horizontal, 12)
+        .environment(\.focusContext, fixture.appDependencies.focusContext)
+        .environment(\.colorScheme, isDark ? .dark : .light)
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        let host = NSHostingController(rootView: view)
+        host.view.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutSubtreeIfNeeded()
+        for _ in 0..<20 { await Task.yield() }
+        host.view.layoutSubtreeIfNeeded()
+
+        let record: SnapshotTestingConfiguration.Record = SnapshotTestHelpers.isRecordingSnapshots ? .all : .missing
+        withSnapshotTesting(record: record) {
+            assertSnapshot(of: host, as: .image, named: "sidebarRestarting-\(isDark ? "dark" : "light")")
+        }
+    }
+
     /// The fixture's flow services with the offline image list, so the image row renders as it
     /// did before the form read flow services, and the fixture's fixed host capacity.
     private func flowServices(_ fixture: FixtureDependencies, for state: State) -> RunnerFlowServices {
@@ -124,7 +160,7 @@ struct FocusMainSnapshotTests {
             case .configuration: ("dionysus-xcode", .configuration)
             case .vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache:
                 ("dionysus-arm64", .configuration)
-            case .error: ("ghast-release", .output)
+            case .error, .restarting: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
             }
             let runner = try runningInVM(state, #require(service.localRunners.first { $0.name == runnerName }))
@@ -153,6 +189,8 @@ struct FocusMainSnapshotTests {
         switch state {
         case .stopped:
             return (.stopped, OutputParser.consume(log, into: .initial).activity)
+        case .restarting:
+            return (try restartingState(for: runner, fixture: fixture), OutputParser.consume(log, into: .initial).activity)
         case .vmBooting:
             return (onDemand(fixture, booting: 1), OutputParser.consume(vmLog(booting: true), into: .initial).activity)
         case .vmWaitingForJobs:
@@ -175,6 +213,18 @@ struct FocusMainSnapshotTests {
             return (processState, OutputParser.consume(log, into: .initial).activity)
         }
     }
+
+    /// The kit's errored runner, waiting 30 s to restart after its second failure.
+    private func restartingState(for runner: LocalRunner, fixture: FixtureDependencies) throws -> RunnerProcessState {
+        let service = fixture.appDependencies.runnerService
+        guard case let .exited(exit)? = service.processStates[runner.id] else {
+            throw SnapshotSetupError.runnerNotErrored(runner.name)
+        }
+        let dueAt = fixture.appDependencies.clock.now().addingTimeInterval(30)
+        return .waitingToRetry(RetryWait(attempt: 2, maxAttempts: 3, dueAt: dueAt, lastExit: exit))
+    }
+
+    private enum SnapshotSetupError: Error { case runnerNotErrored(String) }
 
     /// The fixture world has only host runners; a VM state shows one of them as a VM runner.
     private func runningInVM(_ state: State, _ runner: LocalRunner) -> LocalRunner {
