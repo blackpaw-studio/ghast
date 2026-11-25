@@ -261,4 +261,50 @@ struct RunnerRecoveryTests {
         #expect(launcher.launchCount == 1)
         #expect(waiting?.attempt == 1)
     }
+
+    // MARK: - Announcements
+
+    @Test("a retried exit announces nothing; giving up announces once, after three restarts")
+    func announcesOnlyTheGiveUp() async throws {
+        var announced: [RunnerProcessExit] = []
+        let drain = Task { @MainActor in
+            for await exit in service.processExits { announced.append(exit) }
+        }
+        defer { drain.cancel() }
+
+        try await service.startRunner(id: runnerID)
+        for _ in 1...3 {
+            await crash()
+            #expect(announced.isEmpty)
+            await retryNow()
+        }
+        await crash()
+
+        #expect(announced.count == 1)
+        #expect(announced.first?.gaveUpAfter == 3)
+        #expect(announced.first?.runnerID == runnerID)
+    }
+
+    @Test("giving up after failed starts is announced too")
+    func startFailureGiveUpAnnounces() async throws {
+        var announced: [RunnerProcessExit] = []
+        let drain = Task { @MainActor in
+            for await exit in service.processExits { announced.append(exit) }
+        }
+        defer { drain.cancel() }
+        service.updateRunner(id: runnerID) { $0.shouldBeRunning = true }
+        // Every retry's start throws: the runner's folder is gone.
+        try FileManager.default.removeItem(at: folder)
+
+        service.recordStartFailure(id: runnerID)
+        for _ in 1...3 {
+            await settle()
+            #expect(announced.isEmpty)
+            await retryNow()
+        }
+        await settle()
+
+        #expect(announced.map(\.gaveUpAfter) == [3])
+        #expect(announced.first?.exit.code == RunnerExit.launchFailureCode)
+    }
 }

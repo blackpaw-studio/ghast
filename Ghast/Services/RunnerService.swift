@@ -261,9 +261,10 @@ class RunnerService {
             recovery.schedule(id: id, wait: wait, after: delay) { [weak self] id, wait in
                 await self?.retry(id: id, wait: wait)
             }
-        case .giveUp:
+        case let .giveUp(attempts):
+            // Announced even after a failed start: this is the one notice a retried runner gets.
             processStates[id] = .exited(exit)
-            processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit))
+            processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit, gaveUpAfter: attempts))
         }
     }
     

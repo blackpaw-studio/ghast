@@ -56,6 +56,46 @@ struct NotificationPolicyTests {
         )])
     }
 
+    @Test("giving up on a runner notifies once, saying how many restarts were tried")
+    func giveUpNotifies() async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+
+        await h.service.handle(.processExited(RunnerProcessExit(runnerID: "r1", exit: exit(1), gaveUpAfter: 3)))
+
+        #expect(h.center.posted == [RunnerNotice(
+            kind: .unexpectedStop,
+            runnerID: "r1",
+            title: "ghast-release stopped after 3 restart attempts",
+            body: "The runner exited with code 1. Click to see its output."
+        )])
+    }
+
+    @Test("giving up after a start failure says Ghast couldn't start it")
+    func giveUpAfterStartFailure() async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+
+        await h.service.handle(.processExited(RunnerProcessExit(
+            runnerID: "r1", exit: exit(RunnerExit.launchFailureCode), gaveUpAfter: 3
+        )))
+
+        #expect(h.center.posted.first?.body == "Ghast couldn't start it. Click to see its output.")
+    }
+
+    @Test("giving up notifies even after a self-update exit code, and honours the toggle", arguments: [Int32(0), 2])
+    func giveUpIgnoresSelfUpdateCodes(code: Int32) async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+
+        await h.service.handle(.processExited(RunnerProcessExit(runnerID: "r1", exit: exit(code), gaveUpAfter: 3)))
+        #expect(h.center.posted.count == 1)
+
+        h.settings.notifyUnexpectedStop = false
+        await h.service.handle(.processExited(RunnerProcessExit(runnerID: "r1", exit: exit(code), gaveUpAfter: 3)))
+        #expect(h.center.posted.count == 1)
+    }
+
     @Test("requested stops and quits never notify", arguments: [Int32(143), 137, 1])
     func requestedStopIsSilent(code: Int32) async {
         let h = makeHarness()

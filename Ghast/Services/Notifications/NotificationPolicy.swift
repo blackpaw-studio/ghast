@@ -4,6 +4,14 @@ import Foundation
 struct RunnerProcessExit: Sendable, Equatable {
     let runnerID: String
     let exit: RunnerExit
+    /// Set when Ghast stopped retrying the runner after this many restart attempts.
+    let gaveUpAfter: Int?
+
+    init(runnerID: String, exit: RunnerExit, gaveUpAfter: Int? = nil) {
+        self.runnerID = runnerID
+        self.exit = exit
+        self.gaveUpAfter = gaveUpAfter
+    }
 }
 
 /// Something that happened to a runner which might deserve a notification.
@@ -42,9 +50,17 @@ enum NotificationPolicy {
     ) -> RunnerNotice? {
         switch trigger {
         case let .processExited(ended):
-            guard notifyUnexpectedStop,
-                  !ended.exit.wasRequested,
-                  !selfUpdateExitCodes.contains(ended.exit.code) else { return nil }
+            guard notifyUnexpectedStop, !ended.exit.wasRequested else { return nil }
+            if let attempts = ended.gaveUpAfter {
+                // Ghast stopped retrying: the self-update exit codes don't apply, the runner stayed down.
+                return RunnerNotice(
+                    kind: .unexpectedStop,
+                    runnerID: ended.runnerID,
+                    title: "\(runnerName) stopped after \(attempts) restart attempts",
+                    body: giveUpBody(for: ended.exit)
+                )
+            }
+            guard !selfUpdateExitCodes.contains(ended.exit.code) else { return nil }
             return RunnerNotice(
                 kind: .unexpectedStop,
                 runnerID: ended.runnerID,
@@ -62,5 +78,11 @@ enum NotificationPolicy {
         case .live(.exited):
             return nil
         }
+    }
+
+    private static func giveUpBody(for exit: RunnerExit) -> String {
+        exit.code == RunnerExit.launchFailureCode
+            ? "Ghast couldn't start it. Click to see its output."
+            : "The runner exited with code \(exit.code). Click to see its output."
     }
 }
