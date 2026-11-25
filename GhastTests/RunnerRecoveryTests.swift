@@ -325,4 +325,42 @@ struct RunnerRecoveryTests {
         #expect(!shouldBeRunning)
         #expect(launcher.launchCount == 1)
     }
+
+    @Test("a runner Ghast gave up on can be stopped: Stop All counts it, clears the intent and reads stopped")
+    func stopAllCoversGivenUpRunners() async throws {
+        let actions = RunnerActions(runnerService: service)
+        try await service.startRunner(id: runnerID)
+        for _ in 1...3 {
+            await crash()
+            await retryNow()
+        }
+        await crash()
+        guard case .exited? = state else {
+            Issue.record("expected exited, got \(String(describing: state))")
+            return
+        }
+        #expect(shouldBeRunning)
+        #expect(actions.canStopAll)
+
+        actions.stopAll()
+        await settle()
+
+        #expect(state == .stopped)
+        #expect(!shouldBeRunning)
+        #expect(service.localRunners.first?.lastExit?.wasRequested == true)
+        #expect(!actions.canStopAll)
+    }
+
+    @Test("an exited runner without a run intent has nothing to stop")
+    func exitedWithoutIntentIsNotStoppable() async throws {
+        try await service.startRunner(id: runnerID)
+        for _ in 1...3 {
+            await crash()
+            await retryNow()
+        }
+        await crash()
+        service.updateRunner(id: runnerID) { $0.shouldBeRunning = false }
+
+        #expect(!RunnerActions(runnerService: service).canStopAll)
+    }
 }

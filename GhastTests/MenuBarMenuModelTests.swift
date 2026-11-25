@@ -149,4 +149,20 @@ struct MenuBarMenuModelTests {
         let menu = MenuBarMenuModel.make(runners: [local("a", .restarting(wait))], isSignedIn: true, time: Self.time)
         #expect(menu.contains(.command(.stopAll, isEnabled: true)))
     }
+
+    @Test("an error that holds its run intent offers Stop and counts for Stop All; one without doesn't")
+    func gaveUpRunner() {
+        let holding = MenuBarMenuModel.make(runners: [local("a", .error(code: 1, at: Self.now, holdsRunIntent: true))], isSignedIn: true, time: Self.time)
+        guard case let .runner(entry)? = holding.dropFirst().first else {
+            Issue.record("expected a runner entry second, got \(holding)")
+            return
+        }
+        #expect(entry.submenu == [.showOutput, .separator, .start, .stop])
+        #expect(holding.contains(.command(.stopAll, isEnabled: true)))
+
+        let plain = MenuBarMenuModel.make(runners: [local("a", .error(code: 1, at: Self.now))], isSignedIn: true, time: Self.time)
+        guard case let .runner(plainEntry)? = plain.dropFirst().first else { return }
+        #expect(plainEntry.submenu == stoppedSubmenu)
+        #expect(plain.contains(.command(.stopAll, isEnabled: false)))
+    }
 }

@@ -87,7 +87,8 @@ struct RunnerCatalog: Equatable, Sendable {
                 status: RunnerDisplayStatus.make(
                     processState: processStates[runner.id] ?? .stopped,
                     lastExit: runner.lastExit,
-                    activity: activities[runner.id] ?? RunnerActivity()
+                    activity: activities[runner.id] ?? RunnerActivity(),
+                    hasRunIntent: runner.shouldBeRunning
                 ),
                 imageLabel: runner.imageLabel
             )

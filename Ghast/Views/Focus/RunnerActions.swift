@@ -52,13 +52,18 @@ struct RunnerActions {
     }
 
     var canStartAll: Bool { runnerService.localRunners.contains { !isRunning($0.id) } }
-    var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) || isWaitingToRetry($0.id) } }
+    var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) || isWaitingToRetry($0.id) || holdsRunIntentAfterExit($0) } }
 
     func isRunning(_ localID: String) -> Bool {
         switch runnerService.processStates[localID] {
         case .running?, .onDemand?: return true
         default: return false
         }
+    }
+
+    /// Ghast gave up restarting it, but the user hasn't stopped it: Stop ends the intent.
+    private func holdsRunIntentAfterExit(_ runner: LocalRunner) -> Bool {
+        if case .exited? = runnerService.processStates[runner.id] { runner.shouldBeRunning } else { false }
     }
 
     /// Down after an unexpected exit, with a retry pending that Stop cancels.

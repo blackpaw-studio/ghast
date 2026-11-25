@@ -416,4 +416,28 @@ struct RunnerDisplayStatusTests {
         let stats = RunnerDisplayStatus.localStats(processState: .waitingToRetry(wait), lastExit: exit, activity: idleActivity, time: displayTime())
         #expect(stats.first?.label == "Last Run")
     }
+
+    // MARK: Gave up (error with the run intent kept)
+
+    @Test("an exit whose run intent is kept reads as an error that holds it; without intent it doesn't")
+    func gaveUpDerivation() {
+        let exit = makeError()
+        #expect(RunnerDisplayStatus.make(processState: .exited(exit), lastExit: exit, activity: idleActivity, hasRunIntent: true)
+            == .error(code: 1, at: at("10:05"), holdsRunIntent: true))
+        #expect(RunnerDisplayStatus.make(processState: .exited(exit), lastExit: exit, activity: idleActivity, hasRunIntent: false)
+            == .error(code: 1, at: at("10:05"), holdsRunIntent: false))
+    }
+
+    @Test("an error that holds its run intent offers Stop beside Start; one without stays Start-only")
+    func gaveUpToolbar() {
+        let holding = RunnerDisplayStatus.error(code: 1, at: at("10:05"), holdsRunIntent: true)
+        #expect(holding.toolbarButtons(location: .thisMac) == [
+            RunnerToolbarButton(action: .start, isEnabled: true),
+            RunnerToolbarButton(action: .stop, isEnabled: true),
+        ])
+        #expect(RunnerDisplayStatus.error(code: 1, at: at("10:05")).toolbarButtons(location: .thisMac) == [
+            RunnerToolbarButton(action: .start, isEnabled: true),
+            RunnerToolbarButton(action: .restart, isEnabled: false),
+        ])
+    }
 }

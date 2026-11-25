@@ -110,7 +110,9 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     /// Asked to stop; waiting for the runner to sign out of GitHub.
     case stopping
     case stopped(at: Date?)
-    case error(code: Int32, at: Date)
+    /// `holdsRunIntent`: Ghast gave up restarting it but the user hasn't stopped it, so it tries
+    /// again at the next launch; Stop ends that.
+    case error(code: Int32, at: Date, holdsRunIntent: Bool = false)
     /// Remote only.
     case offline
     /// Remote only.
@@ -125,12 +127,12 @@ enum RunnerDisplayStatus: Sendable, Equatable {
     /// A runner on this Mac: the process decides stopped, error and running; while it runs, the
     /// output parser decides connecting, idle or running a job. A local runner never takes its
     /// status from GitHub.
-    static func make(processState: RunnerProcessState, lastExit: RunnerExit?, activity: RunnerActivity) -> RunnerDisplayStatus {
+    static func make(processState: RunnerProcessState, lastExit: RunnerExit?, activity: RunnerActivity, hasRunIntent: Bool = false) -> RunnerDisplayStatus {
         switch processState {
         case .stopped:
             return .stopped(at: lastExit?.at)
         case let .exited(exit):
-            return .error(code: exit.code, at: exit.at)
+            return .error(code: exit.code, at: exit.at, holdsRunIntent: hasRunIntent)
         case let .waitingToRetry(wait):
             return .restarting(wait)
         case .starting:
@@ -184,7 +186,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .cleaningUp: return "Cleaning up…"
         case .stopping: return "Stopping…"
         case .stopped: return "Stopped"
-        case let .error(code, _): return "Exited with code \(code)"
+        case let .error(code, _, _): return "Exited with code \(code)"
         case .offline: return "Offline"
         case let .onDemand(phase): return phase.title
         case let .restarting(wait): return Self.restartingText(wait, time: time)
@@ -212,7 +214,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return "Waiting for the runner to sign out of GitHub…"
         case let .stopped(at):
             return at.map { "Stopped at \(time.timeOfDay.format($0))" } ?? "Not started yet"
-        case let .error(_, at):
+        case let .error(_, at, _):
             return "Stopped unexpectedly at \(time.timeOfDay.format(at))"
         case let .restarting(wait):
             return "Stopped unexpectedly at \(time.timeOfDay.format(wait.lastExit.at))"
@@ -253,7 +255,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .cleaningUp: return "Cleaning up…"
         case .stopping: return "Stopping…"
         case .stopped: return "Stopped · \(detail)"
-        case let .error(code, _): return "Exited with code \(code)"
+        case let .error(code, _, _): return "Exited with code \(code)"
         case .offline: return "Offline · \(detail)"
         case .remoteBusy: return "Running a job · \(detail)"
         case let .restarting(wait): return Self.restartingText(wait, time: time)
@@ -274,11 +276,12 @@ enum RunnerDisplayStatus: Sendable, Equatable {
             return [RunnerToolbarButton(action: .stop, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: true)]
         case .stopping:
             return [RunnerToolbarButton(action: .start, isEnabled: false), RunnerToolbarButton(action: .restart, isEnabled: false)]
+        case .error(_, _, holdsRunIntent: true), .restarting:
+            // Start tries now; Stop ends the retry, or the run intent a given-up runner still holds.
+            // Restart means nothing for a runner that is down.
+            return [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .stop, isEnabled: true)]
         case .stopped, .error, .offline, .remoteBusy:
             return [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .restart, isEnabled: false)]
-        case .restarting:
-            // Start retries now; Stop cancels the retry. Restart means nothing for a runner that is down.
-            return [RunnerToolbarButton(action: .start, isEnabled: true), RunnerToolbarButton(action: .stop, isEnabled: true)]
         }
     }
 
@@ -311,7 +314,7 @@ enum RunnerDisplayStatus: Sendable, Equatable {
         case .cleaningUp: return "cleaning up"
         case .stopping: return "stopping"
         case .stopped: return "stopped"
-        case let .error(code, at): return "error, exited with code \(code) at \(time.timeOfDay.format(at))"
+        case let .error(code, at, _): return "error, exited with code \(code) at \(time.timeOfDay.format(at))"
         case .offline: return "offline"
         case let .onDemand(phase): return phase.title.lowercased()
         case let .restarting(wait): return "restarting, \(Self.restartingText(wait, time: time, spoken: true).lowercased())"

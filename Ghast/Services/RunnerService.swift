@@ -184,16 +184,23 @@ class RunnerService {
     func stopRunner(id: String) async {
         recovery.cancel(id: id)
         recovery.resetAttempts(id: id)
-        let wasWaiting = isWaitingToRetry(id: id)
+        let hadNoProcess = isWaitingToRetry(id: id) || isGivenUp(id: id)
+        let before = processStates[id]
         await backend(for: id).stop(id: id)
         // No process to end, so no backend settles the state: record the stop here.
-        if wasWaiting, isWaitingToRetry(id: id) {
+        if hadNoProcess, processStates[id] == before {
             recordExit(id: id, code: Self.requestedStopCode, wasRequested: true, announces: false)
         }
     }
     
     /// The code recorded for a stop Ghast made on request (128 + SIGTERM).
     private static let requestedStopCode: Int32 = 143
+    
+    /// Exited after Ghast gave up, with the run intent still set: nothing runs, but Stop applies.
+    private func isGivenUp(id: String) -> Bool {
+        guard case .exited? = processStates[id] else { return false }
+        return runner(id: id)?.shouldBeRunning == true
+    }
     
     private func isWaitingToRetry(id: String) -> Bool {
         if case .waitingToRetry? = processStates[id] { true } else { false }

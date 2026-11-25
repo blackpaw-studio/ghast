@@ -83,15 +83,18 @@ enum MenuBarMenuModel {
 
     private static func submenu(for status: RunnerDisplayStatus) -> [MenuBarSubmenuItem] {
         switch status {
-        case .restarting: [.showOutput, .separator, .start, .stop]
+        case .restarting, .error(_, _, holdsRunIntent: true): [.showOutput, .separator, .start, .stop]
         default: isRunning(status) ? [.showOutput, .separator, .restart, .stop] : [.showOutput, .separator, .start]
         }
     }
 
-    /// Stop does something: the process is up, or a retry waits that Stop would cancel.
+    /// Stop does something: the process is up, a retry waits that Stop would cancel, or a given-up
+    /// runner still holds its run intent.
     static func isStoppable(_ status: RunnerDisplayStatus) -> Bool {
-        if case .restarting = status { return true }
-        return isRunning(status)
+        switch status {
+        case .restarting, .error(_, _, holdsRunIntent: true): true
+        default: isRunning(status)
+        }
     }
 
     /// The process is up: listening, running a job, or still connecting.
