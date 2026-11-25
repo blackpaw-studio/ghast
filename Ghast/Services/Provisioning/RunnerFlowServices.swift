@@ -24,6 +24,8 @@ struct RunnerFlowServices {
     var xcodeVersions: any TartXcodeVersionProviding = GHCRXcodeVersionProvider()
     /// What this Mac has to give its VMs, for the Configuration tab's oversubscription warning.
     var hostCapacity: any HostCapacity = SystemHostCapacity()
+    /// The image's own CPU, memory and disk, for the Configuration tab's placeholders.
+    var imageDefaults: any TartImageDefaultsProviding = NoImageDefaults()
 
     var remover: RunnerRemover {
         RunnerRemover(api: api, runnerService: runnerService, registrar: registrar, trasher: trasher, demandSources: demandSources)

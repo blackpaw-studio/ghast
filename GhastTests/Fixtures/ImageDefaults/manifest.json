@@ -1,0 +1,39 @@
+{
+  "annotations": {
+    "org.cirruslabs.tart.uncompressed-disk-size": "140000000000",
+    "org.cirruslabs.tart.upload-time": "2026-11-20T15:18:58Z"
+  },
+  "config": {
+    "digest": "sha256:3a6cb4eb6201aa00136781f9d350858ca23054fdda419893193af3e3a044b3a8",
+    "mediaType": "application/vnd.oci.image.config.v1+json",
+    "size": 100
+  },
+  "layers": [
+    {
+      "annotations": {},
+      "digest": "sha256:5daded8342f5e42cd7130dd2614f04f201b89a0325a934bb1f93cb98b328d351",
+      "mediaType": "application/vnd.cirruslabs.tart.config.v1",
+      "size": 509
+    },
+    {
+      "annotations": {
+        "org.cirruslabs.tart.uncompressed-content-digest": "sha256:86976fea714d2861f2595f3b2f9874de0d553381b78948c2eea6d03919d0b1ac",
+        "org.cirruslabs.tart.uncompressed-size": "536870912"
+      },
+      "digest": "sha256:7cf858ff059b873190641fb574cf30876056c2ddf4d2f0faaecb2ce560803eda",
+      "mediaType": "application/vnd.cirruslabs.tart.disk.v2",
+      "size": 3352125
+    },
+    {
+      "annotations": {
+        "org.cirruslabs.tart.uncompressed-content-digest": "sha256:0b8a3e0e0f0c8b6a1e7c0f0f6b5d3a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+        "org.cirruslabs.tart.uncompressed-size": "536870912"
+      },
+      "digest": "sha256:9e0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5061728394a5b6c7d8e",
+      "mediaType": "application/vnd.cirruslabs.tart.disk.v2",
+      "size": 2951230
+    }
+  ],
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "schemaVersion": 2
+}

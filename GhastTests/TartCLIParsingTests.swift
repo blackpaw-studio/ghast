@@ -34,6 +34,27 @@ struct TartCLIParsingTests {
         #expect(try TartJSON.decodeOS(Data(json.utf8)) == "darwin")
     }
 
+    @Test("get decodes CPU, memory in MB and disk for the image defaults")
+    func getInfo() throws {
+        let json = #"{"Running":false,"State":"stopped","DiskFormat":"raw","Disk":140,"CPU":4,"MACAddress":"9e:df:0d:1a:6f:d2","Memory":8192,"OS":"darwin","Size":"32.673","Display":"1024x768"}"#
+
+        let info = try TartJSON.decodeInfo(Data(json.utf8))
+
+        #expect(info == TartVMInfo(cpuCount: 4, memoryMB: 8192, diskGB: 140))
+    }
+
+    @Test("get without a Disk still decodes CPU and memory")
+    func getInfoWithoutDisk() throws {
+        let json = #"{"OS":"darwin","CPU":2,"Memory":4096}"#
+
+        #expect(try TartJSON.decodeInfo(Data(json.utf8)) == TartVMInfo(cpuCount: 2, memoryMB: 4096, diskGB: nil))
+    }
+
+    @Test("get without CPU or Memory throws")
+    func getInfoMissing() {
+        #expect(throws: (any Error).self) { try TartJSON.decodeInfo(Data(#"{"OS":"darwin","Disk":50}"#.utf8)) }
+    }
+
     /// Live Step 0b shape: a pulled image is listed by tag and again by digest (digest value is
     /// illustrative; the real one only differs in the hex).
     @Test("a pulled image listed by tag and by digest decodes as two OCI entries")

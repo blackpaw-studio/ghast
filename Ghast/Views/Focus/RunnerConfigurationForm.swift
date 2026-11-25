@@ -17,13 +17,15 @@ struct RunnerConfigurationForm: View {
     @State private var selectedVariable: EnvironmentVariableDraft.ID?
     @FocusState private var focusedVariable: EnvironmentVariableDraft.ID?
 
-    init(item: RunnerItem, runner: LocalRunner, isRunning: Bool, runnerService: RunnerService, actions: RunnerActions, sleeper: @escaping Sleeper, hostCapacity: any HostCapacity) {
+    init(item: RunnerItem, runner: LocalRunner, isRunning: Bool, runnerService: RunnerService, actions: RunnerActions, sleeper: @escaping Sleeper, hostCapacity: any HostCapacity, imageDefaults: any TartImageDefaultsProviding) {
         self.item = item
         self.runner = runner
         self.isRunning = isRunning
         self.runnerService = runnerService
         self.actions = actions
-        _draft = State(initialValue: RunnerConfigurationDraft(runnerService: runnerService, sleeper: sleeper, hostCapacity: hostCapacity))
+        _draft = State(initialValue: RunnerConfigurationDraft(
+            runnerService: runnerService, sleeper: sleeper, hostCapacity: hostCapacity, imageDefaults: imageDefaults
+        ))
     }
 
     var body: some View {
@@ -53,9 +55,14 @@ struct RunnerConfigurationForm: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .focusContentLayer()
-        .task(id: runner.id) {
-            draft.load(runner)
-            onDraftLoaded?(runner.id)
+        .task(id: LoadKey(runnerID: runner.id, image: savedImage)) {
+            // The key also changes with the saved image, which only needs the image's values
+            // read again; the draft's typed edits stay.
+            if draft.runnerID != runner.id {
+                draft.load(runner)
+                onDraftLoaded?(runner.id)
+            }
+            if let savedImage { await draft.loadImageDefaults(for: savedImage) }
         }
         .onDisappear { draft.flush() }
     }
@@ -89,6 +96,18 @@ struct RunnerConfigurationForm: View {
                     .buttonBorderShape(.capsule)
             }
         }
+    }
+
+    private struct LoadKey: Hashable {
+        let runnerID: String
+        let image: String?
+    }
+
+    /// The VM image this runner has saved (not the text being typed), whose values the blank
+    /// Resources fields show.
+    private var savedImage: String? {
+        if case let .tart(image) = runner.backend { return image }
+        return nil
     }
 
     private var isVM: Bool {
@@ -187,6 +206,7 @@ struct RunnerConfigurationForm: View {
                 resourceField("Memory (GB)", field: .memory, text: $draft.vmMemory)
                 FocusFormDivider()
                 resourceField("Disk (GB)", field: .disk, text: $draft.vmDisk)
+                if let note = draft.diskNote { diskNoteRow(note) }
                 FocusFormDivider()
                 FocusFormRow(label: "Isolate network", height: FocusMetrics.formToggleRowHeight) {
                     Toggle("Isolate network", isOn: $draft.vmIsolated)
@@ -258,7 +278,7 @@ struct RunnerConfigurationForm: View {
 
     private func resourceField(_ label: String, field: ResourceField, text: Binding<String>) -> some View {
         let hasIssue = draft.resourceIssue(for: field) != nil
-        return vmField(label, prompt: "Image default", text: text)
+        return vmField(label, prompt: draft.placeholder(for: field), text: text)
             .overlay(alignment: .trailing) {
                 if hasIssue {
                     RoundedRectangle(cornerRadius: FocusMetrics.fieldRadius)
@@ -268,6 +288,17 @@ struct RunnerConfigurationForm: View {
                         .allowsHitTesting(false)
                 }
             }
+    }
+
+    /// Advisory, grey: the typed disk is no larger than the image's, so it changes nothing.
+    private func diskNoteRow(_ note: String) -> some View {
+        Text(note)
+            .font(FocusType.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, FocusMetrics.formRowInset)
+            .padding(.bottom, FocusMetrics.formHelpTop)
     }
 
     private var oversubscriptionWarning: some View {

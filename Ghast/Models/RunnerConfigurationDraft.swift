@@ -28,15 +28,24 @@ final class RunnerConfigurationDraft {
     /// Set by a saved edit: it applies the next time the runner starts.
     var needsRestart = false
     private(set) var runnerID: String?
+    /// The image's own CPU, memory and disk, once read; nil while loading or when unreadable.
+    private(set) var image: TartImageDefaults?
 
     @ObservationIgnored private let runnerService: RunnerService
     @ObservationIgnored private let hostCapacity: any HostCapacity
+    @ObservationIgnored private let imageDefaults: any TartImageDefaultsProviding
     /// One for the draft's lifetime: a pending save always belongs to the runner it captured.
     @ObservationIgnored private let debouncer: SaveDebouncer
 
-    init(runnerService: RunnerService, sleeper: @escaping Sleeper, hostCapacity: any HostCapacity = SystemHostCapacity()) {
+    init(
+        runnerService: RunnerService,
+        sleeper: @escaping Sleeper,
+        hostCapacity: any HostCapacity = SystemHostCapacity(),
+        imageDefaults: any TartImageDefaultsProviding = NoImageDefaults()
+    ) {
         self.runnerService = runnerService
         self.hostCapacity = hostCapacity
+        self.imageDefaults = imageDefaults
         debouncer = SaveDebouncer(sleeper: sleeper)
     }
 
@@ -136,9 +145,38 @@ final class RunnerConfigurationDraft {
         return VMResources(cpuCount: value(.cpu), memoryGB: value(.memory), diskGB: value(.disk))
     }
 
-    /// Typed sizes two VMs couldn't both have on this Mac.
+    /// Sizes two VMs couldn't both have on this Mac: typed values, and the image's for blank fields.
     var overages: [VMResourcesWarning.Overage] {
-        VMResourcesWarning.overages(typedSizes, capacity: hostCapacity)
+        VMResourcesWarning.overages(typedSizes, image: image, capacity: hostCapacity)
+    }
+
+    private static let unknownImageValue = "Image default"
+
+    /// What a blank field shows: the image's own value, or a generic label while it is unknown.
+    func placeholder(for field: ResourceField) -> String {
+        let value: Int? = switch field {
+        case .cpu: image?.cpuCount
+        case .memory: image?.memoryGB
+        case .disk: image?.diskGB
+        }
+        return value.map { "Image: \($0)" } ?? Self.unknownImageValue
+    }
+
+    /// Shown under Disk when the typed size is valid and not larger than the image's, because a
+    /// disk only grows. Advisory: saving still works.
+    var diskNote: String? {
+        guard case let .value(typed) = input(for: .disk), let imageDisk = image?.diskGB, typed <= imageDisk else { return nil }
+        return "The image's disk is \(imageDisk) GB. A disk only grows, so this has no effect."
+    }
+
+    /// Reads the image's values for the placeholders and the warning. The result is dropped when
+    /// the load was cancelled or another runner was shown meanwhile.
+    func loadImageDefaults(for imageRef: String) async {
+        image = nil
+        let id = runnerID
+        let loaded = await imageDefaults.defaults(for: imageRef)
+        guard !Task.isCancelled, runnerID == id else { return }
+        image = loaded
     }
 
     /// Blank clears a size, a valid value sets it, an invalid one keeps what was saved.

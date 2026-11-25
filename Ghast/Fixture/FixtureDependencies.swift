@@ -144,6 +144,7 @@ struct FixtureDependencies {
             tartLocator: TartLocator(environment: FixtureTartEnvironment(.installed)),
             xcodeVersions: FixtureXcodeVersions(),
             hostCapacity: FixtureHostCapacity(),
+            imageDefaults: FixtureImageDefaults(),
             softnetHelper: .fixture(),
             loginItemService: InertLoginItemService(status: .enabled),
             cacheStats: FixtureCacheStats()

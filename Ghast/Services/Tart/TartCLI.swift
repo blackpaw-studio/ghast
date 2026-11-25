@@ -24,6 +24,8 @@ protocol TartCLI: Sendable {
     func clone(_ source: String, _ name: String) async throws
     /// The VM's disk size in whole GB.
     func diskSizeGB(of vm: String) async throws -> Int
+    /// The VM's CPU cores, memory (MB) and disk (GB).
+    func info(of vm: String) async throws -> TartVMInfo
     /// Applies the size settings that are set; does nothing when none is.
     func set(_ vm: String, resources: VMResources) async throws
     /// Boots a VM headless. The process lives as long as the VM; `onExit` fires when it ends.
@@ -114,6 +116,10 @@ struct ProcessTartCLI: TartCLI {
 
     func diskSizeGB(of vm: String) async throws -> Int {
         try TartJSON.decodeDiskSize(Data(try await checked(TartArguments.get(vm)).output.utf8))
+    }
+
+    func info(of vm: String) async throws -> TartVMInfo {
+        try TartJSON.decodeInfo(Data(try await checked(TartArguments.get(vm)).output.utf8))
     }
 
     func set(_ vm: String, resources: VMResources) async throws {

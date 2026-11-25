@@ -29,30 +29,13 @@ struct GHCRXcodeVersionProvider: TartXcodeVersionProviding {
         return releases.isEmpty ? fallback : TartXcodeVersions(tags: releases, source: .loaded)
     }
 
-    private struct Token: Decodable { let token: String }
     private struct TagList: Decodable { let tags: [String] }
 
     private func fetchTags(repository: String) async throws -> [String] {
-        let tokenURL = try url("https://ghcr.io/token?scope=repository:cirruslabs/\(repository):pull")
-        let token = try JSONDecoder().decode(Token.self, from: try await get(tokenURL, bearer: nil)).token
-        let tagsURL = try url("https://ghcr.io/v2/cirruslabs/\(repository)/tags/list?n=1000")
-        return try JSONDecoder().decode(TagList.self, from: try await get(tagsURL, bearer: token)).tags
-    }
-
-    private func url(_ string: String) throws -> URL {
-        guard let url = URL(string: string) else { throw URLError(.badURL) }
-        return url
-    }
-
-    /// Short, so a bad network falls back to the built-in list instead of holding Create disabled.
-    private static let requestTimeout: TimeInterval = 10
-
-    private func get(_ url: URL, bearer: String?) async throws -> Data {
-        var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
-        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
-        let (data, response) = try await transport.send(request)
-        guard (200..<300).contains(response.statusCode) else { throw URLError(.badServerResponse) }
-        return data
+        let client = GHCRClient(transport: transport)
+        let token = try await client.token(repository: "cirruslabs/\(repository)")
+        let tagsURL = try GHCRClient.url("https://\(GHCRClient.registryHost)/v2/cirruslabs/\(repository)/tags/list?n=1000")
+        return try JSONDecoder().decode(TagList.self, from: try await client.get(tagsURL, bearer: token)).tags
     }
 }
 

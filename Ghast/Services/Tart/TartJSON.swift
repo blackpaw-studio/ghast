@@ -8,6 +8,13 @@ struct TartVMEntry: Equatable, Sendable {
     let isRunning: Bool
 }
 
+/// A local VM's size as `tart get` reports it. Memory is in MB, disk in whole GB.
+struct TartVMInfo: Equatable, Sendable {
+    let cpuCount: Int
+    let memoryMB: Int
+    let diskGB: Int?
+}
+
 /// Decodes `tart list --format json` and `tart get --format json`.
 enum TartJSON {
     private struct ListRow: Decodable {
@@ -25,6 +32,20 @@ enum TartJSON {
         let disk: Int?
 
         enum CodingKeys: String, CodingKey { case os = "OS", disk = "Disk" }
+    }
+
+    private struct InfoReply: Decodable {
+        let cpu: Int
+        let memory: Int
+        let disk: Int?
+
+        enum CodingKeys: String, CodingKey { case cpu = "CPU", memory = "Memory", disk = "Disk" }
+    }
+
+    /// CPU, memory (MB) and disk (GB, absent while a running VM holds its disk open).
+    static func decodeInfo(_ data: Data) throws -> TartVMInfo {
+        let reply = try JSONDecoder().decode(InfoReply.self, from: data)
+        return TartVMInfo(cpuCount: reply.cpu, memoryMB: reply.memory, diskGB: reply.disk)
     }
 
     static func decodeList(_ data: Data) throws -> [TartVMEntry] {

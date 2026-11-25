@@ -91,6 +91,15 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return diskSizeByVM[vm] ?? 50
     }
 
+    /// What `info(of:)` reports per VM; a VM not listed throws, as `tart get` does for an unknown name.
+    var infoByVM: [String: TartVMInfo] = [:]
+
+    func info(of vm: String) async throws -> TartVMInfo {
+        log.append("info \(vm)")
+        guard let info = infoByVM[vm] else { throw TartError.commandFailed(command: "get", status: 1, detail: nil) }
+        return info
+    }
+
     func set(_ vm: String, resources: VMResources) async throws {
         guard let arguments = TartArguments.set(vm, resources: resources) else { return }
         log.append("set \(vm) \(arguments.dropFirst(2).joined(separator: " "))")
