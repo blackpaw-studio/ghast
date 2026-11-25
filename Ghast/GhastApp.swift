@@ -237,6 +237,8 @@ struct AppDependencies {
         )
         let softnetChecker = SoftnetHelperChecker()
         let localCache = LocalCache.live(clock: clock, sleeper: sleeper)
+        // One source for the VM queue sessions and the retry timers: both react to wake.
+        let power = WorkspacePowerEvents()
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
@@ -246,11 +248,11 @@ struct AppDependencies {
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
             sleeper: sleeper,
-            power: WorkspacePowerEvents(),
+            power: power,
             cacheProvider: { [weak localCache] in localCache?.server() }
         )
         let dependencies = AppDependencies(
-            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend),
+            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend, recoveryPolicy: .standard, power: power),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
