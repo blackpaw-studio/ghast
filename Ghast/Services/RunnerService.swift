@@ -13,6 +13,7 @@ class RunnerService {
     @ObservationIgnored private let clock: any AppClock
     @ObservationIgnored private let bareMetal: BareMetalBackend
     @ObservationIgnored private let tart: TartBackend
+    @ObservationIgnored private let recovery: RunnerRecovery
     
     var localRunners: [LocalRunner] = []
     /// Runtime process state per runner id. A runner with no entry is stopped.
@@ -32,6 +33,9 @@ class RunnerService {
     ///   - signaling: How runner processes are signalled and probed.
     ///   - scanner: How leftover `Runner.Listener` processes from an earlier Ghast are found.
     ///   - tartBackend: Runs VM runners; the default cannot find Tart, so a VM runner reads as an error.
+    ///   - recoveryPolicy: The backoff and healthy-run timings for automatic restarts.
+    ///   - recoverySleeper: Waits out a retry delay; the service's `sleeper` when nil.
+    ///   - power: Wake events, which run a retry that came due during sleep.
     init(
         defaults: UserDefaults = .standard,
         runnersDirectory: URL = RunnerService.defaultRunnersDirectory,
@@ -41,7 +45,10 @@ class RunnerService {
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) },
         signaling: any ProcessSignaling = SystemProcessSignaling(),
         scanner: any RunnerProcessScanning = PSRunnerProcessScanner(),
-        tartBackend: TartBackend? = nil
+        tartBackend: TartBackend? = nil,
+        recoveryPolicy: RecoveryPolicy = .standard,
+        recoverySleeper: Sleeper? = nil,
+        power: any PowerEventSource = NoPowerEvents()
     ) {
         self.store = RunnerStore(defaults: defaults)
         self.clock = clock
@@ -54,6 +61,7 @@ class RunnerService {
             scanner: scanner
         )
         self.tart = tartBackend ?? TartBackend.unavailable(defaults: defaults, clock: clock, sleeper: sleeper)
+        self.recovery = RunnerRecovery(policy: recoveryPolicy, clock: clock, sleeper: recoverySleeper ?? sleeper, power: power)
         self.runnersBaseDirectory = runnersDirectory
         (processExits, processExitSink) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         bareMetal.host = self
@@ -127,6 +135,8 @@ class RunnerService {
     }
     
     func removeLocalRunner(id: String) {
+        recovery.cancel(id: id)
+        recovery.resetAttempts(id: id)
         backend(for: id).requestStop(id: id, keepingRunIntent: false)
         localRunners.removeAll { $0.id == id }
         processStates.removeValue(forKey: id)
@@ -136,6 +146,7 @@ class RunnerService {
     /// Removes all local runners and persists the empty state
     /// This is useful for testing or resetting the app state
     func removeAllLocalRunners() {
+        recovery.cancelAll()
         // Stop all running runners first
         for runner in localRunners {
             backend(for: runner.id).requestStop(id: runner.id, keepingRunIntent: false)
@@ -151,15 +162,48 @@ class RunnerService {
     /// Starts a runner. The runner reads as starting at once, even while the start waits for a
     /// pending stop or a leftover listener to end, and a second start for it is ignored until
     /// this one is done.
+    ///
+    /// Starting a runner that waits to retry runs that retry now and keeps its attempt count;
+    /// any other start begins the count over. The run intent is set before the start, so a start
+    /// that fails keeps it (and is retried, see `recordStartFailure`).
     func startRunner(id: String) async throws {
+        if let wait = recovery.takePending(id: id), processStates[id] == .waitingToRetry(wait) {
+            // Keep the attempt count: this is the retry, early.
+        } else {
+            recovery.resetAttempts(id: id)
+        }
+        updateRunner(id: id) { $0.shouldBeRunning = true }
         try await backend(for: id).start(id: id)
     }
     
     /// Stops a runner and returns once its process group has ended, so a start right after
     /// succeeds. Bounded: SIGTERM, SIGKILL after `stopGracePeriod`, then Ghast records the stop
     /// itself after `killWait` if the exit is never reported.
+    ///
+    /// Stopping a runner that waits to retry cancels the retry.
     func stopRunner(id: String) async {
+        recovery.cancel(id: id)
+        recovery.resetAttempts(id: id)
+        let hadNoProcess = isWaitingToRetry(id: id) || isGivenUp(id: id)
+        let before = processStates[id]
         await backend(for: id).stop(id: id)
+        // No process to end, so no backend settles the state: record the stop here.
+        if hadNoProcess, processStates[id] == before {
+            recordExit(id: id, code: Self.requestedStopCode, wasRequested: true, announces: false)
+        }
+    }
+    
+    /// The code recorded for a stop Ghast made on request (128 + SIGTERM).
+    private static let requestedStopCode: Int32 = 143
+    
+    /// Exited after Ghast gave up, with the run intent still set: nothing runs, but Stop applies.
+    private func isGivenUp(id: String) -> Bool {
+        guard case .exited? = processStates[id] else { return false }
+        return runner(id: id)?.shouldBeRunning == true
+    }
+    
+    private func isWaitingToRetry(id: String) -> Bool {
+        if case .waitingToRetry? = processStates[id] { true } else { false }
     }
     
     /// The backend that runs this runner; the host backend for an id with no runner.
@@ -182,15 +226,18 @@ class RunnerService {
         BareMetalBackend.canSignalGroup(pgid, ownGroup: ownGroup)
     }
     
-    /// Shows a runner Ghast could not launch as an error, like an unexpected exit.
+    /// Shows a runner Ghast could not launch as an error, like an unexpected exit, and retries it
+    /// while the run intent stands.
     func recordStartFailure(id: String) {
         guard !backend(for: id).isActive(id: id) else { return }
         // Not a process exit: the runner never ran, so nothing announces it.
         recordExit(id: id, code: RunnerExit.launchFailureCode, wasRequested: false, announces: false)
     }
     
-    /// Updates state for a process that has ended. A requested stop leaves the runner `.stopped`;
-    /// an unexpected exit leaves it `.exited` and clears the intent to keep running.
+    /// Updates state for a process that has ended. A requested stop leaves the runner `.stopped`.
+    /// An unexpected exit keeps the intent to keep running, and the runner waits to be retried
+    /// (`RecoveryPolicy`) until the retries run out, then reads `.exited`; only the user ends the
+    /// intent.
     private func recordExit(id: String, code: Int32, wasRequested: Bool, announces: Bool) {
         guard let index = localRunners.firstIndex(where: { $0.id == id }) else {
             // The runner was removed while it stopped: nothing to record.
@@ -204,19 +251,52 @@ class RunnerService {
         default: break
         }
         let exit = RunnerExit(code: code, startedAt: startedAt, at: clock.now(), wasRequested: wasRequested)
-        // A start queued behind this stop keeps reading as starting.
-        processStates[id] = wasRequested ? (processStates[id] == .starting ? .starting : .stopped) : .exited(exit)
         localRunners[index].lastExit = exit
         localRunners[index].status = .stopped
-        if !wasRequested { localRunners[index].shouldBeRunning = false }
-        saveRunners()
-        if announces { processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit)) }
+        defer { saveRunners() }
+        
+        guard !wasRequested, localRunners[index].shouldBeRunning else {
+            // A start queued behind this stop keeps reading as starting.
+            processStates[id] = wasRequested ? (processStates[id] == .starting ? .starting : .stopped) : .exited(exit)
+            if announces { processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit)) }
+            return
+        }
+        switch recovery.decide(id: id, exit: exit) {
+        case let .retry(attempt, delay):
+            let wait = recovery.wait(for: exit, attempt: attempt, after: delay)
+            processStates[id] = .waitingToRetry(wait)
+            recovery.schedule(id: id, wait: wait, after: delay) { [weak self] id, wait in
+                await self?.retry(id: id, wait: wait)
+            }
+        case let .giveUp(attempts):
+            // Announced even after a failed start: this is the one notice a retried runner gets.
+            processStates[id] = .exited(exit)
+            processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit, gaveUpAfter: attempts))
+        }
+    }
+    
+    /// Starts a runner whose retry came due. Goes to the backend directly, so the attempt count
+    /// is kept; does nothing if the runner was stopped, removed or started meanwhile.
+    private func retry(id: String, wait: RetryWait) async {
+        guard runner(id: id)?.shouldBeRunning == true, processStates[id] == .waitingToRetry(wait) else { return }
+        do {
+            try await backend(for: id).start(id: id)
+        } catch {
+            recordStartFailure(id: id)
+        }
+    }
+    
+    /// Drops every pending retry and keeps the run intent, so the restart at the next launch
+    /// handles those runners. For a quit, which may still be waiting on running runners.
+    func cancelPendingRestarts() {
+        recovery.cancelAll()
     }
     
     /// Stops every runner for a quit and returns once they have ended, or after the same
     /// bounded grace period a single stop gets. Keeps `shouldBeRunning`, so the next launch can
     /// start them again.
     func stopAllRunners() async {
+        cancelPendingRestarts()
         // Together, so a quit waits as long as the slower kind, not the sum.
         async let hostRunners: Void = bareMetal.stopAll()
         async let vmRunners: Void = tart.stopAll()

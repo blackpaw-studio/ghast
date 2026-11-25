@@ -56,6 +56,46 @@ struct NotificationPolicyTests {
         )])
     }
 
+    @Test("giving up on a runner notifies once, saying how many restarts were tried")
+    func giveUpNotifies() async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+
+        await h.service.handle(.processExited(RunnerProcessExit(runnerID: "r1", exit: exit(1), gaveUpAfter: 3)))
+
+        #expect(h.center.posted == [RunnerNotice(
+            kind: .unexpectedStop,
+            runnerID: "r1",
+            title: "ghast-release stopped after 3 restart attempts",
+            body: "The runner exited with code 1. Click to see its output."
+        )])
+    }
+
+    @Test("giving up after a start failure says Ghast couldn't start it")
+    func giveUpAfterStartFailure() async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+
+        await h.service.handle(.processExited(RunnerProcessExit(
+            runnerID: "r1", exit: exit(RunnerExit.launchFailureCode), gaveUpAfter: 3
+        )))
+
+        #expect(h.center.posted.first?.body == "Ghast couldn't start it. Click to see its output.")
+    }
+
+    @Test("giving up notifies even after a self-update exit code, and honours the toggle", arguments: [Int32(0), 2])
+    func giveUpIgnoresSelfUpdateCodes(code: Int32) async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+
+        await h.service.handle(.processExited(RunnerProcessExit(runnerID: "r1", exit: exit(code), gaveUpAfter: 3)))
+        #expect(h.center.posted.count == 1)
+
+        h.settings.notifyUnexpectedStop = false
+        await h.service.handle(.processExited(RunnerProcessExit(runnerID: "r1", exit: exit(code), gaveUpAfter: 3)))
+        #expect(h.center.posted.count == 1)
+    }
+
     @Test("requested stops and quits never notify", arguments: [Int32(143), 137, 1])
     func requestedStopIsSilent(code: Int32) async {
         let h = makeHarness()
@@ -132,7 +172,7 @@ struct NotificationPolicyTests {
 
     // MARK: Sources
 
-    @Test("a requested stop through the runner service never notifies; an unexpected exit does")
+    @Test("a requested stop or a retried exit never notifies; giving up after the retries does")
     func serviceExitsDriveNotifications() async throws {
         let h = makeHarness(names: [:])
         defer { h.cleanup() }
@@ -141,12 +181,14 @@ struct NotificationPolicyTests {
         let runner = LocalRunner(name: "ghast-release", scope: .organization(login: "blackpaw-studio"), path: folder.path)
         let isolated = makeIsolatedDefaults()
         defer { isolated.cleanup() }
+        let retries = ManualSleeper()
         let runnerService = RunnerService(
             defaults: isolated.defaults,
             runnersDirectory: makeTemporaryDirectory(),
             launcher: launcher,
             sleeper: { _ in },
-            scanner: NoRunnerProcessScanner()
+            scanner: NoRunnerProcessScanner(),
+            recoverySleeper: retries.sleeper
         )
         runnerService.addLocalRunner(runner)
         let service = NotificationService(
@@ -165,6 +207,14 @@ struct NotificationPolicyTests {
         await stopping.value
 
         try await runnerService.startRunner(id: runner.id)
+        // Three retries each fail again; only the exit after the last one is announced.
+        for _ in 0..<3 {
+            launcher.exit(folder.lastPathComponent, code: 1)
+            for _ in 0..<12 { await Task.yield() }
+            #expect(h.center.posted.isEmpty)
+            retries.wakeAll()
+            for _ in 0..<12 { await Task.yield() }
+        }
         launcher.exit(folder.lastPathComponent, code: 1)
 
         let notice = await h.center.nextPost()

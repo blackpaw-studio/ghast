@@ -16,6 +16,7 @@ struct RunnerActions {
                 try await runnerService.startRunner(id: localID)
             } catch {
                 Self.logger.error("Couldn't start runner \(localID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                runnerService.recordStartFailure(id: localID)
             }
         }
     }
@@ -31,6 +32,7 @@ struct RunnerActions {
                 try await runnerService.startRunner(id: localID)
             } catch {
                 Self.logger.error("Couldn't restart runner \(localID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                runnerService.recordStartFailure(id: localID)
             }
         }
     }
@@ -50,13 +52,23 @@ struct RunnerActions {
     }
 
     var canStartAll: Bool { runnerService.localRunners.contains { !isRunning($0.id) } }
-    var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) } }
+    var canStopAll: Bool { runnerService.localRunners.contains { isRunning($0.id) || isWaitingToRetry($0.id) || holdsRunIntentAfterExit($0) } }
 
     func isRunning(_ localID: String) -> Bool {
         switch runnerService.processStates[localID] {
         case .running?, .onDemand?: return true
         default: return false
         }
+    }
+
+    /// Ghast gave up restarting it, but the user hasn't stopped it: Stop ends the intent.
+    private func holdsRunIntentAfterExit(_ runner: LocalRunner) -> Bool {
+        if case .exited? = runnerService.processStates[runner.id] { runner.shouldBeRunning } else { false }
+    }
+
+    /// Down after an unexpected exit, with a retry pending that Stop cancels.
+    func isWaitingToRetry(_ localID: String) -> Bool {
+        if case .waitingToRetry? = runnerService.processStates[localID] { true } else { false }
     }
 
     func showInFinder(_ localID: String) {

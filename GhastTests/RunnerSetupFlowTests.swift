@@ -53,7 +53,8 @@ struct FlowHarness {
             launcher: launcher,
             sleeper: { _ in },
             scanner: NoRunnerProcessScanner(),
-            tartBackend: tartBackend
+            tartBackend: tartBackend,
+            recoverySleeper: parkedSleeper
         )
     }
 

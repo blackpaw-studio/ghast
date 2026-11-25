@@ -24,6 +24,8 @@ enum RunnerProcessState: Sendable, Equatable {
     case exited(RunnerExit)
     /// A started on-demand VM runner: its VMs, if any, and whether the VM budget is full.
     case onDemand(OnDemandState)
+    /// An unexpected exit or failed start that Ghast will retry at `dueAt`.
+    case waitingToRetry(RetryWait)
 
     /// The state a runner starts a session in, from what was persisted: an unexpected exit
     /// stays visible across a relaunch, a requested stop does not.
@@ -31,6 +33,15 @@ enum RunnerProcessState: Sendable, Equatable {
         guard let lastExit, !lastExit.wasRequested else { return .stopped }
         return .exited(lastExit)
     }
+}
+
+/// A pending automatic restart: which retry it is, when it is due, and what ended the run.
+struct RetryWait: Sendable, Equatable {
+    /// 1-based number of the retry that is waiting.
+    let attempt: Int
+    let maxAttempts: Int
+    let dueAt: Date
+    let lastExit: RunnerExit
 }
 
 /// What a started on-demand VM runner holds: VMs booting for queued jobs, VMs whose guest

@@ -131,7 +131,10 @@ struct FixtureDependencies {
                 runnersDirectory: runners,
                 clock: clock,
                 launcher: launcher,
-                scanner: NoRunnerProcessScanner()
+                scanner: NoRunnerProcessScanner(),
+                // No retries: the kit's errored runner stays on its error screen instead of
+                // restarting itself a few seconds into a capture.
+                recoveryPolicy: RecoveryPolicy(delays: [])
             ),
             apiService: api,
             authService: GitHubAuthService(apiService: api, deviceFlow: FixtureDeviceFlowClient(), tokenStore: tokenStore),

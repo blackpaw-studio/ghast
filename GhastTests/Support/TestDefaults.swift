@@ -23,6 +23,10 @@ func makeTemporaryDirectory() -> URL {
     return url
 }
 
+/// A recovery sleeper that never returns, so no automatic retry launches anything later in a
+/// suite. A test of recovery itself injects its own.
+let parkedSleeper: Sleeper = { _ in try await Task.sleep(for: .seconds(1_000_000)) }
+
 /// A `RunnerService` backed by an isolated defaults suite and an empty temp runners directory,
 /// pre-seeded with `runners`. It never touches `UserDefaults.standard` or `~/.ghast/runners`.
 @MainActor
@@ -31,7 +35,7 @@ func makeTestRunnerService(
     defaults: UserDefaults = makeIsolatedDefaults().defaults,
     runnersDirectory: URL = makeTemporaryDirectory()
 ) -> RunnerService {
-    let service = RunnerService(defaults: defaults, runnersDirectory: runnersDirectory, scanner: NoRunnerProcessScanner())
+    let service = RunnerService(defaults: defaults, runnersDirectory: runnersDirectory, scanner: NoRunnerProcessScanner(), recoverySleeper: parkedSleeper)
     runners.forEach { service.addLocalRunner($0) }
     return service
 }

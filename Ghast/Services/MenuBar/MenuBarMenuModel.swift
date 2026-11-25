@@ -52,14 +52,15 @@ enum MenuBarEntry: Sendable, Equatable {
 ///
 /// Signed out, the runners stay listed and controllable; only New Runner needs an account.
 enum MenuBarMenuModel {
-    static func make(runners: [RunnerItem], isSignedIn: Bool, busyRunnerIDs: Set<String> = []) -> [MenuBarEntry] {
+    /// `time` is what a restart countdown in a badge is written against.
+    static func make(runners: [RunnerItem], isSignedIn: Bool, busyRunnerIDs: Set<String> = [], time: DisplayTime) -> [MenuBarEntry] {
         let runnerEntries: [MenuBarEntry] = runners.isEmpty
             ? [.placeholder("No runners on this Mac")]
-            : runners.map { .runner(entry(for: $0, isBusy: busyRunnerIDs.contains($0.id))) }
+            : runners.map { .runner(entry(for: $0, isBusy: busyRunnerIDs.contains($0.id), time: time)) }
         return [.sectionHeader("This Mac")] + runnerEntries + [
             .separator,
             .command(.startAll, isEnabled: runners.contains { !isRunning($0.status) }),
-            .command(.stopAll, isEnabled: runners.contains { isRunning($0.status) }),
+            .command(.stopAll, isEnabled: runners.contains { isStoppable($0.status) }),
             .separator,
             .command(.newRunner, isEnabled: isSignedIn),
             .command(.openGhast, isEnabled: true),
@@ -69,24 +70,38 @@ enum MenuBarMenuModel {
         ]
     }
 
-    private static func entry(for runner: RunnerItem, isBusy: Bool) -> MenuBarRunnerEntry {
+    private static func entry(for runner: RunnerItem, isBusy: Bool, time: DisplayTime) -> MenuBarRunnerEntry {
         MenuBarRunnerEntry(
             id: runner.id,
             name: runner.name,
             dot: dot(for: runner.status),
-            badge: badge(for: runner.status),
-            submenu: isRunning(runner.status)
-                ? [.showOutput, .separator, .restart, .stop]
-                : [.showOutput, .separator, .start],
+            badge: badge(for: runner.status, time: time),
+            submenu: submenu(for: runner.status),
             canControl: !isBusy && runner.status != .stopping
         )
+    }
+
+    private static func submenu(for status: RunnerDisplayStatus) -> [MenuBarSubmenuItem] {
+        switch status {
+        case .restarting, .error(_, _, holdsRunIntent: true): [.showOutput, .separator, .start, .stop]
+        default: isRunning(status) ? [.showOutput, .separator, .restart, .stop] : [.showOutput, .separator, .start]
+        }
+    }
+
+    /// Stop does something: the process is up, a retry waits that Stop would cancel, or a given-up
+    /// runner still holds its run intent.
+    static func isStoppable(_ status: RunnerDisplayStatus) -> Bool {
+        switch status {
+        case .restarting, .error(_, _, holdsRunIntent: true): true
+        default: isRunning(status)
+        }
     }
 
     /// The process is up: listening, running a job, or still connecting.
     static func isRunning(_ status: RunnerDisplayStatus) -> Bool {
         switch status {
         case .idle, .runningJob, .starting, .pulling, .booting, .cleaningUp, .remoteBusy, .onDemand: return true
-        case .stopping, .stopped, .error, .offline: return false
+        case .stopping, .stopped, .error, .offline, .restarting: return false
         }
     }
 
@@ -94,14 +109,14 @@ enum MenuBarMenuModel {
         switch status {
         case .idle, .onDemand(.waitingForJobs): return .idle
         case .runningJob, .remoteBusy, .onDemand(.running): return .running
-        case .error, .onDemand(.needsIsolationSetup): return .error
+        case .error, .restarting, .onDemand(.needsIsolationSetup): return .error
         case .onDemand(.standingBy), .onDemand(.handingOff): return .standby
         case .starting, .pulling, .booting, .cleaningUp, .stopping, .stopped, .offline, .onDemand: return .hollow
         }
     }
 
     /// One word, matching the sidebar's meaning: an errored runner reads "Exited".
-    private static func badge(for status: RunnerDisplayStatus) -> String {
+    private static func badge(for status: RunnerDisplayStatus, time: DisplayTime) -> String {
         switch status {
         case .idle: return "Idle"
         case .runningJob, .remoteBusy: return "Running"
@@ -112,6 +127,7 @@ enum MenuBarMenuModel {
         case .stopping: return "Stopping"
         case .stopped: return "Stopped"
         case .error: return "Exited"
+        case .restarting: return status.title(time: time)
         case .offline: return "Offline"
         case .onDemand(.waitingForJobs): return "Waiting"
         case .onDemand(.booting): return "Booting"

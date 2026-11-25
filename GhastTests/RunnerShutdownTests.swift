@@ -23,7 +23,8 @@ struct RunnerShutdownTests {
             launcher: launcher,
             sleeper: sleeper.sleeper,
             signaling: signaling,
-            scanner: scanner
+            scanner: scanner,
+            recoverySleeper: parkedSleeper
         )
         folder = root.appendingPathComponent("mac", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

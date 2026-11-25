@@ -26,7 +26,8 @@ struct RunnerWrapperTests {
             runnersDirectory: root,
             clock: clock,
             launcher: ProcessRunnerLauncher(),
-            restartDelay: 0
+            restartDelay: 0,
+            recoverySleeper: parkedSleeper
         )
         let folder = root.appendingPathComponent(folderName, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -92,7 +93,7 @@ struct RunnerWrapperTests {
 
     // MARK: -
 
-    @Test("a failing runner ends the process with its exit code and records an unexpected exit")
+    @Test("a failing runner ends the process with its exit code, records an unexpected exit and waits to retry")
     func exitOne() async throws {
         let harness = try makeRunner(runScript: "echo hello\nexit 1")
         let (service, runner, folder) = (harness.service, harness.runner, harness.folder)
@@ -102,16 +103,20 @@ struct RunnerWrapperTests {
         try await waitUntil("exit") { !isRunning(service.processStates[runner.id]) }
 
         let expected = RunnerExit(code: 1, startedAt: clock.now(), at: clock.now(), wasRequested: false)
-        #expect(service.processStates[runner.id] == .exited(expected))
+        guard case let .waitingToRetry(wait)? = service.processStates[runner.id] else {
+            Issue.record("expected .waitingToRetry, got \(String(describing: service.processStates[runner.id]))")
+            return
+        }
+        #expect(wait.lastExit == expected)
         #expect(service.localRunners[0].lastExit == expected)
-        #expect(!service.localRunners[0].shouldBeRunning)
+        #expect(service.localRunners[0].shouldBeRunning)
 
         let lines = try logLines(folder)
         #expect(lines.allSatisfy(isISOStamped))
         #expect(texts(lines) == ["ghast: start", "hello", "ghast: exit code=1"])
     }
 
-    @Test("exit 0 restarts the runner once, then the error ends it")
+    @Test("exit 0 restarts the runner once, then the error is an unexpected exit that waits to retry")
     func restartOnZero() async throws {
         let harness = try makeRunner(runScript: "if [ ! -f .ran ]; then touch .ran; exit 0; fi\nexit 1")
         let (service, runner, folder) = (harness.service, harness.runner, harness.folder)
@@ -120,12 +125,12 @@ struct RunnerWrapperTests {
         try await waitUntil("exit") { !isRunning(service.processStates[runner.id]) }
 
         #expect(texts(try logLines(folder)) == ["ghast: start", "ghast: exit code=0", "ghast: start", "ghast: exit code=1"])
-        guard case let .exited(exit)? = service.processStates[runner.id] else {
-            Issue.record("expected .exited, got \(String(describing: service.processStates[runner.id]))")
+        guard case let .waitingToRetry(wait)? = service.processStates[runner.id] else {
+            Issue.record("expected .waitingToRetry, got \(String(describing: service.processStates[runner.id]))")
             return
         }
-        #expect(exit.code == 1)
-        #expect(!exit.wasRequested)
+        #expect(wait.lastExit.code == 1)
+        #expect(!wait.lastExit.wasRequested)
     }
 
     @Test("an uncaught signal maps to 128 plus the signal number")
@@ -157,14 +162,15 @@ struct RunnerWrapperTests {
         // The wrapper leads its group, and its `sleep` outlives it; clean up.
         kill(-wrapperPID, SIGKILL)
 
-        guard case let .exited(exit)? = service.processStates[runner.id] else {
-            Issue.record("expected .exited, got \(String(describing: service.processStates[runner.id]))")
+        guard case let .waitingToRetry(wait)? = service.processStates[runner.id] else {
+            Issue.record("expected .waitingToRetry, got \(String(describing: service.processStates[runner.id]))")
             return
         }
+        let exit = wait.lastExit
         #expect(exit.code == 143)
         #expect(!exit.wasRequested)
         #expect(service.localRunners[0].lastExit == exit)
-        #expect(!service.localRunners[0].shouldBeRunning)
+        #expect(service.localRunners[0].shouldBeRunning)
         #expect(RunnerDisplayStatus.make(processState: .exited(exit), lastExit: exit, activity: RunnerActivity()) == .error(code: 143, at: exit.at))
     }
 
@@ -250,7 +256,8 @@ struct RunnerWrapperTests {
             runnersDirectory: root,
             clock: clock,
             launcher: StuckRunnerLauncher(),
-            sleeper: { _ in }
+            sleeper: { _ in },
+            recoverySleeper: parkedSleeper
         )
         let folder = root.appendingPathComponent("stuck", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

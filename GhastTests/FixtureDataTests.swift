@@ -61,7 +61,7 @@ struct FixtureDataTests {
         let all = built.catalog.thisMac + built.catalog.otherMachines
         func subtitle(_ name: String) throws -> String {
             let found = try item(name, in: all)
-            return found.status.sidebarSubtitle(scope: found.scope.displayName)
+            return found.status.sidebarSubtitle(scope: found.scope.displayName, time: .current(now: Date()))
         }
 
         #expect(try subtitle("dionysus-arm64") == "Idle · blackpaw-studio")
@@ -79,7 +79,7 @@ struct FixtureDataTests {
         let service = built.fixture.appDependencies.runnerService
         let local = try #require(service.localRunners.first { $0.name == "dionysus-xcode" })
 
-        #expect(xcode.status.title == "Running a job")
+        #expect(xcode.status.title(time: .current(now: Date())) == "Running a job")
         #expect(xcode.status.secondaryLine(location: .thisMac, time: built.time) == "build-and-notarize · started 4 min ago")
         let stats = RunnerDisplayStatus.localStats(
             processState: try #require(service.processStates[local.id]), lastExit: local.lastExit,
@@ -98,7 +98,7 @@ struct FixtureDataTests {
         let service = built.fixture.appDependencies.runnerService
         let local = try #require(service.localRunners.first { $0.name == "ghast-release" })
 
-        #expect(release.status.title == "Exited with code 1")
+        #expect(release.status.title(time: .current(now: Date())) == "Exited with code 1")
         #expect(release.status.secondaryLine(location: .thisMac, time: built.time).hasPrefix("Stopped unexpectedly at 10:05"))
         let stats = RunnerDisplayStatus.localStats(
             processState: try #require(service.processStates[local.id]), lastExit: local.lastExit,

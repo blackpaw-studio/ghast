@@ -15,7 +15,7 @@ struct LocalRunnerDetail: View {
     @Environment(\.runnerFlowServices) private var flowServices
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: FocusMetrics.headerRefreshInterval)) { _ in
+        TimelineView(.periodic(from: .now, by: FocusMetrics.refreshInterval(for: item.status))) { _ in
             let time = context.displayTime
             switch tab {
             case .output:
@@ -74,6 +74,7 @@ struct LocalRunnerDetail: View {
     private func header(time: DisplayTime) -> some View {
         RunnerStatusHeader(
             status: item.status,
+            time: time,
             secondaryLine: item.status.secondaryLine(location: .thisMac, time: time, imageLabel: imageLabel),
             stats: RunnerDisplayStatus.localStats(processState: processState, lastExit: runner.lastExit, activity: activity, time: time),
             // A VM runner takes jobs by name (`runs-on: <name>`); its labels pick nothing.
@@ -110,6 +111,7 @@ struct RemoteRunnerDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             RunnerStatusHeader(
                 status: item.status,
+                time: context.displayTime,
                 secondaryLine: item.status.secondaryLine(location: .otherMachine, time: context.displayTime),
                 stats: RunnerDisplayStatus.remoteStats(for: runner),
                 labels: item.labels

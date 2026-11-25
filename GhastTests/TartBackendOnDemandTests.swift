@@ -148,7 +148,7 @@ struct TartBackendOnDemandTests {
         #expect(!h.backend.isActive(id: runner.id))
     }
 
-    @Test("a transient demand failure retries with backoff; a config error stops the runner")
+    @Test("a transient demand failure retries with backoff; a config error stops the loop and the service retries it")
     func demandFailures() async throws {
         let h = TartHarness(initialDemand: 0)
         defer { h.cleanup() }
@@ -164,9 +164,9 @@ struct TartBackendOnDemandTests {
 
         source.failRun(TartBackendError.scaleSetAuthRejected)
         #expect(await h.settled { !h.backend.isActive(id: runner.id) })
-        guard case .exited? = h.state(runner) else { Issue.record("expected an error state, got \(String(describing: h.state(runner)))"); return }
+        guard case .waitingToRetry? = h.state(runner) else { Issue.record("expected a waiting-to-retry state, got \(String(describing: h.state(runner)))"); return }
         #expect(source.closeCount == 1)
-        #expect(h.service.localRunners.first?.shouldBeRunning == false)
+        #expect(h.service.localRunners.first?.shouldBeRunning == true)
     }
 
     @Test("Booting for a queued job shows while the VM boots")

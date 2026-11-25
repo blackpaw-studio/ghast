@@ -182,7 +182,7 @@ struct AppDependencies {
     /// The menu bar extra over `host`: this Mac's runners (never GitHub's), following the setting.
     func makeMenuBarController(host: any StatusItemHosting) -> MenuBarController {
         let runnerService = runnerService, activityStore = activityStore, authService = authService
-        let settings = settings, router = router
+        let settings = settings, router = router, clock = clock
         let actions = RunnerActions(runnerService: runnerService, flows: flowCoordinator)
         return MenuBarController(
             host: host,
@@ -196,7 +196,7 @@ struct AppDependencies {
                 let busy = Set(runnerService.localRunners.map(\.id).filter(actions.isFlowBusy))
                 return MenuBarState(
                     isShown: settings.showMenuBarExtra,
-                    entries: MenuBarMenuModel.make(runners: catalog.thisMac, isSignedIn: authService.isAuthenticated, busyRunnerIDs: busy)
+                    entries: MenuBarMenuModel.make(runners: catalog.thisMac, isSignedIn: authService.isAuthenticated, busyRunnerIDs: busy, time: .current(now: clock.now()))
                 )
             },
             perform: { action in
@@ -237,6 +237,8 @@ struct AppDependencies {
         )
         let softnetChecker = SoftnetHelperChecker()
         let localCache = LocalCache.live(clock: clock, sleeper: sleeper)
+        // One source for the VM queue sessions and the retry timers: both react to wake.
+        let power = WorkspacePowerEvents()
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
@@ -246,11 +248,11 @@ struct AppDependencies {
             logAppender: FileRunnerLogAppender(clock: clock),
             clock: clock,
             sleeper: sleeper,
-            power: WorkspacePowerEvents(),
+            power: power,
             cacheProvider: { [weak localCache] in localCache?.server() }
         )
         let dependencies = AppDependencies(
-            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend),
+            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend, recoveryPolicy: .standard, power: power),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
@@ -558,6 +560,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// stuck runner delays the quit by at most the grace period.
     /// The local cache stops after the runners, so a job's last save lands first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A runner waiting to retry must not start while the quit waits on the others; its run
+        // intent stays, so the next launch restarts it.
+        builtDependencies?.runnerService.cancelPendingRestarts()
         guard stopsRunnersOnQuit || builtDependencies?.localCache != nil else { return .terminateNow }
         Task { @MainActor in
             await prepareForQuit()

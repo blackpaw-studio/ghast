@@ -118,7 +118,8 @@ struct RestartAtLaunchTests {
             runnersDirectory: root,
             launcher: ControllableLauncher(log: launches),
             sleeper: { _ in },
-            scanner: NoRunnerProcessScanner()
+            scanner: NoRunnerProcessScanner(),
+            recoverySleeper: parkedSleeper
         )
         for name in ["a", "b", "c"] {
             let folder = root.appendingPathComponent(name, isDirectory: true)
@@ -143,8 +144,8 @@ struct RestartAtLaunchTests {
         #expect(service.localRunners.allSatisfy { !$0.shouldBeRunning })
     }
 
-    @Test("a recorded start failure shows the runner as an error and ends its run intent")
-    func recordedFailureIsError() throws {
+    @Test("a recorded start failure keeps the run intent and waits to retry")
+    func recordedFailureWaitsToRetry() throws {
         let isolated = makeIsolatedDefaults()
         defer { isolated.cleanup() }
         let service = makeTestRunnerService(runners: [runner("a", shouldBeRunning: true)], defaults: isolated.defaults)
@@ -152,13 +153,13 @@ struct RestartAtLaunchTests {
 
         service.recordStartFailure(id: id)
 
-        guard case let .exited(exit)? = service.processStates[id] else {
-            Issue.record("expected an exited state, got \(String(describing: service.processStates[id]))")
+        guard case let .waitingToRetry(wait)? = service.processStates[id] else {
+            Issue.record("expected a waiting-to-retry state, got \(String(describing: service.processStates[id]))")
             return
         }
-        #expect(exit.code == RunnerExit.launchFailureCode)
-        #expect(!exit.wasRequested)
-        #expect(service.localRunners.first?.shouldBeRunning == false)
-        #expect(service.localRunners.first?.lastExit == exit)
+        #expect(wait.lastExit.code == RunnerExit.launchFailureCode)
+        #expect(!wait.lastExit.wasRequested)
+        #expect(service.localRunners.first?.shouldBeRunning == true)
+        #expect(service.localRunners.first?.lastExit == wait.lastExit)
     }
 }
