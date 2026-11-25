@@ -218,12 +218,13 @@ final class TartBackend: RunnerBackend {
         }
     }
 
-    /// Shows who holds the job queue, and logs each change once.
+    /// A line from the demand source for the runner's log.
     private func demandLog(_ entry: OnDemandEntry, _ line: String) {
         guard isCurrent(entry), !entry.isStopRequested, let runner = host?.runner(id: entry.runnerID) else { return }
         log(line, runner: runner)
     }
 
+    /// Shows who holds the job queue, and logs each change once.
     private func queueChanged(_ entry: OnDemandEntry, to status: JobQueueStatus) {
         guard isCurrent(entry), !entry.isStopRequested, !entry.isAsleep, entry.queue != status else { return }
         entry.queue = status

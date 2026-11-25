@@ -161,7 +161,7 @@ final class ScaleSetDemandSource: JobDemandSource {
                 // carried them was lost or unreadable.
                 if statistics.totalAvailableJobs > available.count {
                     lastRecovery = clock.now()
-                    await recover(session, context, assigned: assigned + available.count)
+                    await recover(session, context, assigned: assigned + available.count, logsToRunner: false)
                 }
             }
             lastMessageID = message.messageID
@@ -175,7 +175,7 @@ final class ScaleSetDemandSource: JobDemandSource {
     /// the capacity `assigned` jobs leave. Best effort: a failure is logged and the next
     /// trigger tries again, since the messages keep flowing (acquiring is idempotent, so
     /// overlap with a `JobAvailable` is harmless). Never throws, so Stop still acknowledges.
-    private func recover(_ session: ScaleSetMessageSession, _ context: DemandRunContext, assigned: Int) async {
+    private func recover(_ session: ScaleSetMessageSession, _ context: DemandRunContext, assigned: Int, logsToRunner: Bool = true) async {
         let room = ScaleSetMessageSession.maxCapacity - assigned
         guard room > 0 else { return }
         do {
@@ -183,6 +183,12 @@ final class ScaleSetDemandSource: JobDemandSource {
             guard !ids.isEmpty else { return }
             let acquired = try await session.acquire(requestIDs: Array(ids.prefix(room)))
             guard !acquired.isEmpty else { return }
+            // Statistics can run ahead of the messages (a matrix announces its jobs in separate
+            // ones), so only the session start and the timer can say "wasn't announced".
+            guard logsToRunner else {
+                Self.logger.notice("Acquired \(acquired.count) job(s) the statistics counted as available")
+                return
+            }
             let jobs = acquired.count == 1 ? "1 queued job that wasn't" : "\(acquired.count) queued jobs that weren't"
             context.onLog("Picked up \(jobs) announced")
         } catch {

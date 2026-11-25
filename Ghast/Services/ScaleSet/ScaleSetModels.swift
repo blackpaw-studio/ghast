@@ -205,7 +205,8 @@ struct ScaleSetAcquirableJobs: Decodable, Sendable {
         private enum CodingKeys: String, CodingKey { case runnerRequestID = "runnerRequestId" }
     }
 
-    let count: Int
+    /// Not read: a reply without it still decodes.
+    let count: Int?
     let value: [Job]
 }
 

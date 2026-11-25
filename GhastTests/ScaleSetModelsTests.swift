@@ -149,6 +149,12 @@ import Foundation
         #expect(message.undecodableElementTypes == ["(unreadable)"])
     }
 
+    @Test("an acquirable-jobs reply without a count still decodes")
+    func acquirableJobsWithoutCount() throws {
+        let jobs = try JSONDecoder().decode(ScaleSetAcquirableJobs.self, from: Data(#"{"value":[{"runnerRequestId":5}]}"#.utf8))
+        #expect(jobs.value.map(\.runnerRequestID) == [5])
+    }
+
     @Test("the acquirable-jobs reply lists request ids, ignoring the fields Ghast does not read")
     func acquirableJobs() throws {
         let json = #"{"count":2,"value":[{"runnerRequestId":21,"acquireJobUrl":"u","messageType":"JobRequest","requestLabels":["mac-vm"]},{"runnerRequestId":22}]}"#

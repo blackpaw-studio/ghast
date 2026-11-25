@@ -247,6 +247,8 @@ import Foundation
         ])
         await run(source, transport, until: 8)
         #expect(try await acquiredIDs(transport) == [[51]])
+        // Statistics can run ahead of a matrix's messages, so "wasn't announced" is not claimed here.
+        #expect(demand.logs.isEmpty)
         let calls = await paths(transport)
         // Recovery runs before the message is acknowledged.
         let acquire = try #require(calls.firstIndex(of: Self.acquirePath))
