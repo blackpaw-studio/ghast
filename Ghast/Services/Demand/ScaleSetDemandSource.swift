@@ -4,7 +4,9 @@ import os
 /// Demand from a runner scale set named after the runner (github.com/actions/scaleset
 /// `listener.go`): find or create the set, open a message session, report
 /// `totalAssignedJobs` from the session and each message, acquire available jobs (which is
-/// what assigns them to the set), and acknowledge every message.
+/// what assigns them to the set), and acknowledge every message. A job whose `JobAvailable`
+/// never arrived is still found: the listing of acquirable jobs is read when the session
+/// starts or the statistics show unannounced jobs, and every `reconcileInterval` while holding.
 @MainActor
 final class ScaleSetDemandSource: JobDemandSource {
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "scaleset")
@@ -72,9 +74,9 @@ final class ScaleSetDemandSource: JobDemandSource {
         let id = try await ensureScaleSet()
         context.onQueue(.connecting)
         while true {
-            let (session, heldSince) = try await takeQueue(id, context)
+            let (session, heldSince, statistics) = try await takeQueue(id, context)
             do {
-                try await listen(session, context, heldSince: heldSince)
+                try await listen(session, context, heldSince: heldSince, initial: statistics)
             } catch {
                 await cleanUp(after: error, session: session)
                 throw error
@@ -88,7 +90,7 @@ final class ScaleSetDemandSource: JobDemandSource {
 
     /// Opens the message session, retrying while another Mac holds it. A primary retries at a
     /// fixed pace, a standby backs off. Reports `.heldElsewhere` once per streak of conflicts.
-    private func takeQueue(_ scaleSetID: Int, _ context: DemandRunContext) async throws -> (ScaleSetMessageSession, heldSince: Date) {
+    private func takeQueue(_ scaleSetID: Int, _ context: DemandRunContext) async throws -> (ScaleSetMessageSession, heldSince: Date, statistics: ScaleSetStatistics) {
         var conflicts = 0
         while true {
             try Task.checkCancellation()
@@ -99,7 +101,7 @@ final class ScaleSetDemandSource: JobDemandSource {
                 guard let statistics = created.statistics else { throw ScaleSetError.badResponse("session statistics missing") }
                 context.onQueue(.holding)
                 context.onDemand(statistics.totalAssignedJobs)
-                return (session, clock.now())
+                return (session, clock.now(), statistics)
             } catch ScaleSetError.conflict {
                 self.session = nil
                 if conflicts == 0 { context.onQueue(.heldElsewhere) }
@@ -121,12 +123,21 @@ final class ScaleSetDemandSource: JobDemandSource {
     }
 
     /// Polls until cancelled or a failure; returns early only when a standby yields the queue.
-    private func listen(_ session: ScaleSetMessageSession, _ context: DemandRunContext, heldSince: Date) async throws {
+    private func listen(_ session: ScaleSetMessageSession, _ context: DemandRunContext, heldSince: Date, initial: ScaleSetStatistics) async throws {
         var lastMessageID = 0
+        var assigned = initial.totalAssignedJobs
+        var lastRecovery = clock.now()
+        if initial.totalAvailableJobs > 0 {
+            await recover(session, context, assigned: assigned)
+        }
         while true {
             try Task.checkCancellation()
             let shouldYield = timing.shouldYield(role: context.role(), idleSince: context.idleSince(), heldSince: heldSince, now: clock.now())
             if shouldYield { return }
+            if clock.now().timeIntervalSince(lastRecovery) >= timing.reconcileInterval.seconds {
+                lastRecovery = clock.now()
+                await recover(session, context, assigned: assigned)
+            }
             guard let message = try await poll(session, lastID: lastMessageID) else { continue }
             if let type = message.unsupportedType {
                 // Only the type is logged: the body may hold anything.
@@ -136,17 +147,53 @@ final class ScaleSetDemandSource: JobDemandSource {
                 try await Task { try await session.ack(id: messageID) }.value
                 continue
             }
+            if !message.undecodableElementTypes.isEmpty {
+                Self.logger.error("Skipped undecodable message elements of type \(message.undecodableElementTypes.joined(separator: ", "), privacy: .public)")
+            }
             let available = message.jobsAvailable.map(\.runnerRequestID)
             if !available.isEmpty {
                 _ = try await session.acquire(requestIDs: available)
             }
             if let statistics = message.statistics {
+                assigned = statistics.totalAssignedJobs
                 context.onDemand(statistics.totalAssignedJobs)
+                // Jobs the statistics count but no element announced: the message that
+                // carried them was lost or unreadable.
+                if statistics.totalAvailableJobs > available.count {
+                    lastRecovery = clock.now()
+                    await recover(session, context, assigned: assigned + available.count, logsToRunner: false)
+                }
             }
             lastMessageID = message.messageID
             // Acknowledged even when Stop cancels this task, as the reference does.
             let messageID = message.messageID
             try await Task { try await session.ack(id: messageID) }.value
+        }
+    }
+
+    /// Acquires the queued jobs the service lists for this set that no message announced, up to
+    /// the capacity `assigned` jobs leave. Best effort: a failure is logged and the next
+    /// trigger tries again, since the messages keep flowing (acquiring is idempotent, so
+    /// overlap with a `JobAvailable` is harmless). Never throws, so Stop still acknowledges.
+    private func recover(_ session: ScaleSetMessageSession, _ context: DemandRunContext, assigned: Int, logsToRunner: Bool = true) async {
+        let room = ScaleSetMessageSession.maxCapacity - assigned
+        guard room > 0 else { return }
+        do {
+            let ids = try await session.acquirableJobIDs()
+            guard !ids.isEmpty else { return }
+            let acquired = try await session.acquire(requestIDs: Array(ids.prefix(room)))
+            guard !acquired.isEmpty else { return }
+            // Statistics can run ahead of the messages (a matrix announces its jobs in separate
+            // ones), so only the session start and the timer can say "wasn't announced".
+            guard logsToRunner else {
+                Self.logger.notice("Acquired \(acquired.count) job(s) the statistics counted as available")
+                return
+            }
+            let jobs = acquired.count == 1 ? "1 queued job that wasn't" : "\(acquired.count) queued jobs that weren't"
+            context.onLog("Picked up \(jobs) announced")
+        } catch {
+            guard !error.isCancellation else { return }
+            Self.logger.notice("Could not pick up queued jobs: \(error.localizedDescription, privacy: .public)")
         }
     }
 

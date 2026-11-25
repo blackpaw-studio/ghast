@@ -91,6 +91,22 @@ final class ScaleSetMessageSession {
         }
     }
 
+    /// The request ids of queued jobs nobody has acquired (`GET <scale set>/acquirablejobs`,
+    /// as ARC's `GetAcquirableJobs` does, with the admin token). 204 means none.
+    func acquirableJobIDs() async throws -> [Int64] {
+        let path = "\(ActionsServiceClient.scaleSetsPath)/\(scaleSetID)/acquirablejobs"
+        let (data, response) = try await client.sendRaw("GET", path)
+        switch response.statusCode {
+        case 204: return []
+        case 200:
+            guard let jobs = try? JSONDecoder().decode(ScaleSetAcquirableJobs.self, from: data) else {
+                throw ScaleSetError.badResponse("acquirable jobs reply")
+            }
+            return jobs.value.map(\.runnerRequestID)
+        default: throw ActionsServiceClient.error(for: response, body: data, now: client.now())
+        }
+    }
+
     /// Deletes the session so another listener can take the scale set at once.
     func close() async throws {
         guard let session else { return }

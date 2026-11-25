@@ -144,6 +144,7 @@ final class TartBackend: RunnerBackend {
                         self?.demandChanged(entry, to: demand)
                     },
                     onQueue: { [weak self] status in self?.queueChanged(entry, to: status) },
+                    onLog: { [weak self] line in self?.demandLog(entry, line) },
                     role: { [weak self] in self?.host?.runner(id: entry.runnerID)?.queueRole ?? .primary },
                     idleSince: { entry.idleSince }
                 )
@@ -215,6 +216,12 @@ final class TartBackend: RunnerBackend {
             entry.mayRecheckIsolation = true
             reconcile(entry)
         }
+    }
+
+    /// A line from the demand source for the runner's log.
+    private func demandLog(_ entry: OnDemandEntry, _ line: String) {
+        guard isCurrent(entry), !entry.isStopRequested, let runner = host?.runner(id: entry.runnerID) else { return }
+        log(line, runner: runner)
     }
 
     /// Shows who holds the job queue, and logs each change once.
