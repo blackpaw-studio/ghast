@@ -68,7 +68,7 @@ struct FocusMainSnapshotTests {
         let view = try content(for: state, fixture: fixture)
             .environment(\.focusContext, fixture.appDependencies.focusContext)
             .environment(softnetHelper)
-            .environment(\.runnerFlowServices, flowServices(fixture))
+            .environment(\.runnerFlowServices, flowServices(fixture, for: state))
             .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
             .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
             .environment(\.colorScheme, isDark ? .dark : .light)
@@ -96,9 +96,12 @@ struct FocusMainSnapshotTests {
 
     /// The fixture's flow services with the offline image list, so the image row renders as it
     /// did before the form read flow services, and the fixture's fixed host capacity.
-    private func flowServices(_ fixture: FixtureDependencies) -> RunnerFlowServices {
+    private func flowServices(_ fixture: FixtureDependencies, for state: State) -> RunnerFlowServices {
         var services = fixture.appDependencies.flowServices
         services.xcodeVersions = FallbackXcodeVersionProvider()
+        // Only the two states about image values show them; the other Configuration tabs keep
+        // the generic "Image default" placeholder they were drawn with.
+        if state != .vmConfiguration, state != .vmResourcesWarning { services.imageDefaults = NoImageDefaults() }
         return services
     }
 
@@ -177,19 +180,24 @@ struct FocusMainSnapshotTests {
     private func runningInVM(_ state: State, _ runner: LocalRunner) -> LocalRunner {
         guard state.isVM else { return runner }
         var copy = runner
-        copy.backend = .tart(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:latest")
+        copy.backend = .tart(image: state == .vmResourcesWarning ? FixtureImageDefaults.largeImage : FixtureImageDefaults.xcodeImage)
         copy.showsOnDemandNote = state == .vmWaitingForJobs
         if state == .vmStandingBy || state == .vmHoldingStandby { copy.queueRole = .standby }
         if state == .vmCache { copy.usesLocalCache = false }
         if state == .vmResourcesWarning {
-            copy.vmResources = VMResources(cpuCount: 12, memoryGB: 48, diskGB: 200)
+            // Memory is blank: the warning counts the image's 40 GB.
+            copy.vmResources = VMResources(cpuCount: 12, diskGB: 200)
         }
         if state.isVMConfiguration {
             // Scripts and variables ride into each VM, so its Configuration tab shows them.
             copy.environmentVariables = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer", "FASTLANE_SKIP_UPDATE_CHECK": "1"]
             copy.preJobScript = "xcodebuild -runFirstLaunch"
         }
-        if state == .vmConfiguration || state == .vmIsolationSetup || state == .vmIsolationUnsafe || state == .vmIsolationOutdated {
+        if state == .vmConfiguration {
+            // CPU and memory blank show the image's values; disk 100 is under the image's 140.
+            copy.vmResources = VMResources(diskGB: 100, isNetworkIsolated: true)
+        }
+        if state == .vmIsolationSetup || state == .vmIsolationUnsafe || state == .vmIsolationOutdated {
             copy.vmResources = VMResources(cpuCount: 8, memoryGB: 16, diskGB: 150, isNetworkIsolated: true)
         }
         return copy
