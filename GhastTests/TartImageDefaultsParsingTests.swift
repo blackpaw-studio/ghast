@@ -125,6 +125,22 @@ struct TartImageDefaultsParsingTests {
             == TartImageRef(host: "registry.example.com:5000", repository: "a/b", tag: "v1_2-rc.1"))
     }
 
+    @Test("a single-label host is a host, as in Tart: the first component is always the registry")
+    func singleLabelHost() {
+        #expect(TartImageRef.parse("registry/team/image:v1")
+            == TartImageRef(host: "registry", repository: "team/image", tag: "v1"))
+        #expect(TartImageRef.parse("nas:5000/image")
+            == TartImageRef(host: "nas:5000", repository: "image", tag: "latest"))
+    }
+
+    @Test("hosts that break the host grammar are rejected", arguments: [
+        "-bad/team/image:v1", "bad-/team/image:v1", "a..b/team/image:v1", ".a/team/image:v1",
+        "nas:/team/image:v1", "nas:123456/team/image:v1", "nas:port/team/image:v1", "na_s/team/image:v1",
+    ])
+    func badHosts(ref: String) {
+        #expect(TartImageRef.parse(ref) == nil)
+    }
+
     @Test("a missing tag means latest, as in Tart")
     func missingTag() {
         #expect(TartImageRef.parse("ghcr.io/cirruslabs/macos-tahoe-base")?.tag == "latest")

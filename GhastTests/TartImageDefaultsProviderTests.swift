@@ -117,6 +117,25 @@ struct TartImageDefaultsProviderTests {
         #expect(await transport.requests.isEmpty)
     }
 
+    @Test("a cached image on a single-label host works without any request")
+    func cacheSingleLabelHost() async {
+        let cache = FakeImageCache(["registry/team/image/v1/config.json": Self.configBytes])
+        let transport = FakeTransport([])
+
+        let result = await provider(cache: cache, transport: transport).defaults(for: "registry/team/image:v1")
+
+        #expect(result?.cpuCount == 4)
+        #expect(await transport.requests.isEmpty)
+    }
+
+    @Test("a single-label host that isn't cached gives nil and makes no request")
+    func uncachedSingleLabelHost() async {
+        let transport = FakeTransport([])
+
+        #expect(await provider(transport: transport).defaults(for: "registry/team/image:v1") == nil)
+        #expect(await transport.requests.isEmpty)
+    }
+
     // MARK: - Registry
 
     private func registryReplies(

@@ -69,11 +69,10 @@ struct TartImageRef: Equatable, Sendable {
         return (String(component[..<colon]), String(component[component.index(after: colon)...]))
     }
 
-    /// Docker's rule: the first component is a host only when it has a dot, a port or is
-    /// `localhost`, which keeps `team/image` from reading as a host.
+    /// Tart's grammar: the first component is always the host (labels of letters, digits and
+    /// hyphens, an optional port), so `registry/team/image:v1` is a host `registry`.
     private static func isRegistryHost(_ host: String) -> Bool {
-        guard host.utf8.count <= maxHostLength, isHostGrammar(host) else { return false }
-        return host.contains(".") || host.contains(":") || host == "localhost"
+        host.utf8.count <= maxHostLength && isHostGrammar(host)
     }
 }
 
