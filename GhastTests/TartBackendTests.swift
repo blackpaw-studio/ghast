@@ -379,6 +379,21 @@ struct TartBackendTests {
         #expect(h.leases.all().isEmpty)
     }
 
+    @Test("a job VM that fails to come up leaves the runner on demand: no retry wait, no error")
+    func jobVMFailureDoesNotTriggerRunnerRecovery() async throws {
+        let h = TartHarness()
+        defer { h.cleanup() }
+        h.cli.failedProbesBeforeReady = .max
+        let runner = h.addRunner()
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { h.log.all.contains("probe \(h.vmName(runner, iteration: 2))") })
+
+        #expect(h.vms(runner) != nil)
+        #expect(h.service.localRunners.first?.shouldBeRunning == true)
+        await h.service.stopRunner(id: runner.id)
+    }
+
     @Test("two macOS VMs already running, Ghast's or not, leave the runner waiting for a slot with no clone")
     func vmLimit() async throws {
         let h = TartHarness(entries: [
