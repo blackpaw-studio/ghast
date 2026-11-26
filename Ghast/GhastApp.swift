@@ -61,6 +61,8 @@ struct AppDependencies {
     /// Settings › General › Cache.
     let cacheStats: any CacheStatsProviding
     let cacheSettings: CacheSettingsModel
+    /// Settings › General › Tart Storage.
+    let tartStorage: TartStorageModel
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -94,12 +96,20 @@ struct AppDependencies {
         loginItemService: any LoginItemService = InertLoginItemService(),
         updater: any UpdaterDriving = InertUpdater(),
         localCache: LocalCache? = nil,
-        cacheStats: (any CacheStatsProviding)? = nil
+        cacheStats: (any CacheStatsProviding)? = nil,
+        tartCLI: @escaping @Sendable () async throws -> any TartCLI = { throw TartBackendError.unavailable(.missing) },
+        tartStorage: TartStorageModel? = nil
     ) {
         self.localCache = localCache
         let resolvedCacheStats = cacheStats ?? localCache ?? NoLocalCache()
         self.cacheStats = resolvedCacheStats
         cacheSettings = CacheSettingsModel(stats: resolvedCacheStats, settings: settings)
+        self.tartStorage = tartStorage ?? TartStorageModel(
+            cli: tartCLI,
+            capacity: hostCapacity,
+            clock: clock,
+            usage: { runnerService.tartImageUsage }
+        )
         self.runnerService = runnerService
         self.remoteStore = remoteStore ?? RemoteRunnerStore(
             api: apiService,
@@ -280,7 +290,8 @@ struct AppDependencies {
             notificationCenter: SystemNotificationCenter(),
             loginItemService: MainAppLoginItemService(),
             updater: updater,
-            localCache: localCache
+            localCache: localCache,
+            tartCLI: TartBackend.systemCLIProvider(launcher: launcher)
         )
         let updateStatus = dependencies.updateStatus
         updateEvents.onEvent = { updateStatus.handle($0) }

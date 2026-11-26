@@ -33,7 +33,8 @@ struct FixtureScriptRunner: RunnerScriptRunner {
 }
 
 struct FixtureRefusal: LocalizedError {
-    var errorDescription: String? { "The design fixture doesn't download or register runners." }
+    var message = "The design fixture doesn't download or register runners."
+    var errorDescription: String? { message }
 }
 
 struct FixtureHostInfo: HostInfo {
@@ -150,7 +151,8 @@ struct FixtureDependencies {
             imageDefaults: FixtureImageDefaults(),
             softnetHelper: .fixture(),
             loginItemService: InertLoginItemService(status: .enabled),
-            cacheStats: FixtureCacheStats()
+            cacheStats: FixtureCacheStats(),
+            tartStorage: .fixture(clock: clock, capacity: FixtureHostCapacity())
         )
         // Settings.png: open at login is on and the last check found nothing new.
         dependencies.updateStatus.handle(.noUpdateFound)
