@@ -45,6 +45,9 @@ struct TartImageRef: Equatable, Sendable {
     let repository: String
     let tag: String
 
+    /// The full reference with its tag spelled out: `host/repository:tag`.
+    var reference: String { "\(host)/\(repository):\(tag)" }
+
     private static let maxHostLength = 253
     private static let maxRepositoryLength = 255
 

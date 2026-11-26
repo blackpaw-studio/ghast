@@ -34,7 +34,7 @@ final class TartBackend: RunnerBackend {
     nonisolated static let macOSVMLimit = 2
     /// VMs one runner entry runs at once.
     static let maxVMsPerRunner = 2
-    static let clonePrefix = "ghast-"
+    nonisolated static let clonePrefix = "ghast-"
     /// Under a VM runner's folder: one folder per VM boot with its scripts and `.env`.
     static let jobFoldersName = "vm-jobs"
     private static let maxRunnerNameLength = 64
