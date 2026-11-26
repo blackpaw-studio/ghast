@@ -26,6 +26,8 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     /// Each `list` throws the next of these before it succeeds.
     var listFailures: [Error] = []
     var deleteError: Error?
+    /// `delete` throws this for one name only.
+    var deleteErrors: [String: Error] = [:]
     /// While set, `pull` waits here (cancellable) after recording the call.
     var pullGate: HoldGate?
     /// Reported to `pull`'s progress callback before it waits on the gate.
@@ -196,6 +198,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func delete(_ vm: String) async throws {
         log.append("delete \(vm)")
         if let deleteError { throw deleteError }
+        if let failure = lock.withLock({ deleteErrors[vm] }) { throw failure }
         lock.withLock { table.removeAll { $0.name == vm } }
     }
 
