@@ -23,6 +23,9 @@ struct StoredImage: Identifiable, Equatable, Sendable {
     let isPulling: Bool
     let isRunning: Bool
     let isLocal: Bool
+    /// A runner (or a pull) uses a tag of this repository that Ghast can't resolve to a digest, so
+    /// it can't rule out that this image is the one the tag means.
+    let isHeldByUnresolvedTag: Bool
 
     /// `Used by ci-runner` or `Not used by any runner`.
     var usageText: String {
@@ -34,6 +37,7 @@ struct StoredImage: Identifiable, Equatable, Sendable {
         if isRunning { return "This VM is running." }
         if isPulling { return "This image is being pulled." }
         if !usedBy.isEmpty { return "Used by \(usedBy.joined(separator: ", "))." }
+        if isHeldByUnresolvedTag { return "A runner uses a tag of this image that Ghast can't match to a download." }
         return nil
     }
 }
@@ -66,20 +70,32 @@ struct TartStorageInventory: Equatable, Sendable {
         let visible = entries.filter { !$0.name.hasPrefix(TartBackend.clonePrefix) || $0.source != "local" }
         let pulled = pulledImages(
             visible.filter { $0.source != "local" },
-            digestForTag: digestForTag, runnerImages: runnerImages, pullingImages: pullingImages
+            digestForTag: digestForTag, runnerImages: runnerImages, pullingImages: pullingImages,
+            heldRepositories: unresolvedRepositories(
+                of: runnerImages.map(\.image) + pullingImages, digestForTag: digestForTag
+            )
         )
         let locals = visible.filter { $0.source == "local" }.map { entry in
             StoredImage(
                 id: entry.name, displayName: entry.name, deleteRef: entry.name,
                 sizeBytes: bytes(entry), accessed: entry.accessed,
                 usedBy: users(of: [entry.name], in: runnerImages, resolving: digestForTag),
-                isPulling: false, isRunning: entry.isRunning, isLocal: true
+                isPulling: false, isRunning: entry.isRunning, isLocal: true, isHeldByUnresolvedTag: false
             )
         }
         return TartStorageInventory(
             pulled: bySize(pulled), localVMs: bySize(locals),
             totalBytes: (pulled + locals).reduce(0) { $0 + $1.sizeBytes }
         )
+    }
+
+    /// `host/repository` of every tag in use that doesn't resolve to a digest: failing closed, no
+    /// image of those repositories may be removed.
+    private static func unresolvedRepositories(of images: [String], digestForTag: (TartImageRef) -> String?) -> Set<String> {
+        Set(images.compactMap { image in
+            guard let ref = TartImageRef.parse(image), digestForTag(ref) == nil else { return nil }
+            return "\(ref.host)/\(ref.repository)"
+        })
     }
 
     // MARK: - Pulled images
@@ -96,7 +112,8 @@ struct TartStorageInventory: Equatable, Sendable {
         _ rows: [TartVMEntry],
         digestForTag: (TartImageRef) -> String?,
         runnerImages: [RunnerImageUse],
-        pullingImages: Set<String>
+        pullingImages: Set<String>,
+        heldRepositories: Set<String>
     ) -> [StoredImage] {
         var order: [String] = []
         var groups: [String: Group] = [:]
@@ -120,7 +137,10 @@ struct TartStorageInventory: Equatable, Sendable {
             }
         }
         return order.compactMap { groups[$0] }.map { group in
-            stored(group, digestForTag: digestForTag, runnerImages: runnerImages, pullingImages: pullingImages)
+            stored(
+                group, digestForTag: digestForTag, runnerImages: runnerImages, pullingImages: pullingImages,
+                isHeld: heldRepositories.contains(group.repository)
+            )
         }
     }
 
@@ -128,7 +148,8 @@ struct TartStorageInventory: Equatable, Sendable {
         _ group: Group,
         digestForTag: (TartImageRef) -> String?,
         runnerImages: [RunnerImageUse],
-        pullingImages: Set<String>
+        pullingImages: Set<String>,
+        isHeld: Bool
     ) -> StoredImage {
         let digestRef = group.digest.map { group.repository + "@" + $0 }
         let deleteRef = digestRef ?? group.repository
@@ -145,7 +166,8 @@ struct TartStorageInventory: Equatable, Sendable {
             usedBy: users(of: names, in: runnerImages, resolving: digestForTag),
             isPulling: !users(of: names, in: pullingImages.map { RunnerImageUse(runnerName: $0, image: $0) }, resolving: digestForTag).isEmpty,
             isRunning: group.rows.contains(where: \.isRunning),
-            isLocal: false
+            isLocal: false,
+            isHeldByUnresolvedTag: isHeld
         )
     }
 

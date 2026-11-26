@@ -194,6 +194,35 @@ struct TartStorageInventoryTests {
         #expect(make([local("my-vm", size: 30)]).localVMs[0].removeBlockReason == nil)
     }
 
+    @Test("a runner on a tag Ghast can't resolve holds every image of that repository, but no other")
+    func unresolvableTagFailsClosed() {
+        let otherRepo = "ghcr.io/cirruslabs/macos-tahoe-base@\(Self.digest("dd"))"
+        let entries = xcode263 + [oci(Self.digestRef("cc"), size: 40), oci(otherRepo, size: 32)]
+        let inventory = make(entries, runners: [RunnerImageUse(runnerName: "ci", image: "\(Self.repo):27.9")])
+
+        let xcode = inventory.pulled.filter { $0.deleteRef.hasPrefix(Self.repo) }
+        #expect(xcode.count == 2)
+        #expect(xcode.allSatisfy { $0.removeBlockReason != nil })
+        #expect(inventory.pulled.first { $0.deleteRef == otherRepo }?.removeBlockReason == nil)
+        #expect(inventory.unusedPulled.map(\.deleteRef) == [otherRepo])
+    }
+
+    @Test("a pull of a tag Ghast can't resolve holds its repository too")
+    func unresolvablePullingTagFailsClosed() {
+        let inventory = make(xcode263, pulling: ["\(Self.repo):27.9"])
+
+        #expect(inventory.pulled[0].removeBlockReason != nil)
+        #expect(inventory.unusedPulled.isEmpty)
+    }
+
+    @Test("a runner on a tag that resolves holds only that image")
+    func resolvableTagDoesNotHoldTheRepository() {
+        let entries = xcode263 + [oci(Self.digestRef("cc"), size: 40)]
+        let inventory = make(entries, runners: [RunnerImageUse(runnerName: "ci", image: "\(Self.repo):26.3")])
+
+        #expect(inventory.unusedPulled.map(\.deleteRef) == [Self.digestRef("cc")])
+    }
+
     @Test("Remove Unused covers only pulled images nothing uses or pulls, never a local VM")
     func unusedPulled() {
         let entries = xcode263 + [
