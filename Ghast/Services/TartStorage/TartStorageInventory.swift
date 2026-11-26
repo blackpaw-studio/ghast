@@ -24,6 +24,11 @@ struct StoredImage: Identifiable, Equatable, Sendable {
     let isRunning: Bool
     let isLocal: Bool
 
+    /// `Used by ci-runner` or `Not used by any runner`.
+    var usageText: String {
+        usedBy.isEmpty ? "Not used by any runner" : "Used by \(usedBy.joined(separator: ", "))"
+    }
+
     /// Why Remove is off, or nil when the image can go.
     var removeBlockReason: String? {
         if isRunning { return "This VM is running." }

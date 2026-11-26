@@ -354,6 +354,7 @@ struct GhastApp: App {
                     .environment(dependencies.authService)
                     .environment(dependencies.softnetHelper)
                     .environment(dependencies.cacheSettings)
+                    .environment(dependencies.tartStorage)
                     .environment(\.focusContext, dependencies.focusContext)
                     .environment(\.appWindowRouter, dependencies.router)
                     .environment(\.settingsTabPreset, appDelegate.settingsTabPreset)

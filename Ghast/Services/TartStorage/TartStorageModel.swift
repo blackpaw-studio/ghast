@@ -77,10 +77,15 @@ final class TartStorageModel {
         if finished { await refresh() }
     }
 
+    /// A row's size, in decimal GB like the header.
+    func sizeText(_ image: StoredImage) -> String {
+        "\(Self.gigabytes(image.sizeBytes, rounding: .nearest)) GB"
+    }
+
     func lastUsedText(_ image: StoredImage) -> String {
         guard let accessed = image.accessed else { return "Never used" }
         let formatted = RelativeDateTimeFormatter().localizedString(for: accessed, relativeTo: clock.now())
-        return "Used \(formatted)"
+        return "Last used \(formatted)"
     }
 
     // MARK: - Confirmations

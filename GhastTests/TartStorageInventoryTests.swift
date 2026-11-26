@@ -142,6 +142,14 @@ struct TartStorageInventoryTests {
         #expect(used.pulled[0].usedBy == ["r"])
     }
 
+    @Test("the usage line names the runners, or says none uses it")
+    func usageText() {
+        let runners = [RunnerImageUse(runnerName: "ci", image: "\(Self.repo):26.3")]
+
+        #expect(make(xcode263, runners: runners).pulled[0].usageText == "Used by ci")
+        #expect(make(xcode263).pulled[0].usageText == "Not used by any runner")
+    }
+
     @Test("a runner uses a local VM by its name")
     func localUsedBy() {
         let inventory = make([local("my-vm", size: 30)], runners: [RunnerImageUse(runnerName: "r", image: "my-vm")])
