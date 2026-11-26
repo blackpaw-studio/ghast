@@ -26,6 +26,9 @@ struct StoredImage: Identifiable, Equatable, Sendable {
     /// A runner (or a pull) uses a tag of this repository that Ghast can't resolve to a digest, so
     /// it can't rule out that this image is the one the tag means.
     let isHeldByUnresolvedTag: Bool
+    /// `deleteRef` is a shape `tart delete` may be given: a digest ref of a registry image, or
+    /// the name of a local VM. Anything else is listed but never removed.
+    let isSafeToDelete: Bool
 
     /// `Used by ci-runner` or `Not used by any runner`.
     var usageText: String {
@@ -34,6 +37,7 @@ struct StoredImage: Identifiable, Equatable, Sendable {
 
     /// Why Remove is off, or nil when the image can go.
     var removeBlockReason: String? {
+        if !isSafeToDelete { return "Ghast can't safely remove this." }
         if isRunning { return "This VM is running." }
         if isPulling { return "This image is being pulled." }
         if !usedBy.isEmpty { return "Used by \(usedBy.joined(separator: ", "))." }
@@ -80,7 +84,8 @@ struct TartStorageInventory: Equatable, Sendable {
                 id: entry.name, displayName: entry.name, deleteRef: entry.name,
                 sizeBytes: bytes(entry), accessed: entry.accessed,
                 usedBy: users(of: [entry.name], in: runnerImages, resolving: digestForTag),
-                isPulling: false, isRunning: entry.isRunning, isLocal: true, isHeldByUnresolvedTag: false
+                isPulling: false, isRunning: entry.isRunning, isLocal: true, isHeldByUnresolvedTag: false,
+                isSafeToDelete: isSafeLocalName(entry.name)
             )
         }
         return TartStorageInventory(
@@ -167,7 +172,8 @@ struct TartStorageInventory: Equatable, Sendable {
             isPulling: !users(of: names, in: pullingImages.map { RunnerImageUse(runnerName: $0, image: $0) }, resolving: digestForTag).isEmpty,
             isRunning: group.rows.contains(where: \.isRunning),
             isLocal: false,
-            isHeldByUnresolvedTag: isHeld
+            isHeldByUnresolvedTag: isHeld,
+            isSafeToDelete: group.rows.allSatisfy { $0.source == "OCI" } && TartImageRef.isDigestRef(deleteRef)
         )
     }
 
@@ -187,6 +193,13 @@ struct TartStorageInventory: Equatable, Sendable {
             return digestForTag(ref).map { wanted.contains("\(ref.host)/\(ref.repository)@\($0)") } ?? false
         }
         return Array(Set(matching.map(\.runnerName))).sorted()
+    }
+
+    /// A local VM may be deleted by name only if tart can't read the name as an option or a path
+    /// and it isn't one of Ghast's own clones.
+    private static func isSafeLocalName(_ name: String) -> Bool {
+        !name.isEmpty && !name.hasPrefix("-") && !name.contains("/")
+            && !name.hasPrefix(TartBackend.clonePrefix) && !name.unicodeScalars.contains { $0.properties.generalCategory == .control }
     }
 
     private static func bytes(_ entry: TartVMEntry) -> Int64 {

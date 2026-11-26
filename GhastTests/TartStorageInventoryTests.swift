@@ -76,13 +76,16 @@ struct TartStorageInventoryTests {
         #expect(image.deleteRef == Self.digestRef("cc"))
     }
 
-    @Test("a tag that can't be resolved is its own row, deleted by tag")
+    @Test("a tag that can't be resolved is its own row, but Ghast won't delete it")
     func unresolvedTag() {
-        let image = make([oci("\(Self.repo):27.2", size: 83)]).pulled[0]
+        let inventory = make([oci("\(Self.repo):27.2", size: 83)])
 
+        let image = inventory.pulled[0]
         #expect(image.displayName == "macos-tahoe-xcode:27.2")
         #expect(image.deleteRef == "\(Self.repo):27.2")
         #expect(image.sizeBytes == 83_000_000_000)
+        #expect(image.removeBlockReason != nil)
+        #expect(inventory.unusedPulled.isEmpty)
     }
 
     @Test("Ghast's own clones are hidden and add no size")
@@ -221,6 +224,55 @@ struct TartStorageInventoryTests {
         let inventory = make(entries, runners: [RunnerImageUse(runnerName: "ci", image: "\(Self.repo):26.3")])
 
         #expect(inventory.unusedPulled.map(\.deleteRef) == [Self.digestRef("cc")])
+    }
+
+    // MARK: - What may reach `tart delete`
+
+    @Test("a registry row named like one of Ghast's clones is listed but never removable")
+    func ociRowNamedLikeAClone() {
+        let inventory = make([oci("ghast-victim-a1b2c3", size: 20), oci(Self.digestRef("cc"), size: 40)])
+
+        #expect(inventory.pulled.count == 2)
+        let fake = inventory.pulled.first { $0.deleteRef == "ghast-victim-a1b2c3" }
+        #expect(fake?.removeBlockReason != nil)
+        #expect(inventory.unusedPulled.map(\.deleteRef) == [Self.digestRef("cc")])
+    }
+
+    private static let goodHex = String(repeating: "ab", count: 32)
+    private static let malformedNames: [String] = [
+        "--help", "-rf", "../../victim",
+        "ghcr.io/Cirrus/Upper@sha256:\(goodHex)",
+        "ghcr.io/cirruslabs/x@sha256:\(String(repeating: "ab", count: 31))",
+        "ghcr.io/cirruslabs/x@sha256:\(String(repeating: "AB", count: 32))",
+        "ghcr.io/cirruslabs/x:tag@sha256:\(goodHex)",
+        "ghcr.io/cirruslabs/x@sha256:\(goodHex) --all",
+        "@sha256:\(goodHex)",
+        "-x/y@sha256:\(goodHex)",
+    ]
+
+    @Test("a registry row whose name isn't a digest ref of a valid repository is never removable", arguments: malformedNames)
+    func malformedRegistryNames(name: String) {
+        let inventory = make([oci(name, size: 5)])
+
+        #expect(inventory.pulled.count == 1)
+        #expect(inventory.pulled[0].removeBlockReason != nil)
+        #expect(inventory.unusedPulled.isEmpty)
+    }
+
+    @Test("a row from a source other than OCI or local is never removable")
+    func unknownSource() {
+        let row = TartVMEntry(name: Self.digestRef("cc"), source: "other", isRunning: false, sizeGB: 5, diskGB: nil, accessed: nil)
+        let inventory = make([row])
+
+        #expect(inventory.pulled.first?.removeBlockReason != nil)
+        #expect(inventory.unusedPulled.isEmpty)
+    }
+
+    @Test("a local VM name that tart would read as an option or a path is never removable", arguments: ["-rf", "--all", "a/b", ""])
+    func unsafeLocalNames(name: String) {
+        let inventory = make([local(name, size: 3)])
+
+        #expect(inventory.localVMs.first?.removeBlockReason != nil)
     }
 
     @Test("Remove Unused covers only pulled images nothing uses or pulls, never a local VM")

@@ -84,6 +84,17 @@ struct TartImageRef: Equatable, Sendable {
     private static let digestPrefix = "@sha256:"
     private static let shortDigestLength = 12
 
+    /// Whether `text` is exactly `<host>/<repository>@sha256:<64 lowercase hex>` with a valid
+    /// host and repository and no tag: the one shape `tart delete` is given for a pulled image.
+    static func isDigestRef(_ text: String) -> Bool {
+        guard let split = text.range(of: digestPrefix),
+              (try? /[0-9a-f]{64}/.wholeMatch(in: String(text[split.upperBound...]))) != nil,
+              case let repository = String(text[..<split.lowerBound]),
+              let ref = parse(repository)
+        else { return false }
+        return repository == "\(ref.host)/\(ref.repository)"
+    }
+
     /// How an image is named in the UI and in messages: the repository's last component with
     /// its tag (`macos-tahoe-xcode:26.3`), or with the first 12 hex digits of its digest
     /// (`macos-tahoe-xcode@sha256:923c98d32e40`). A local VM name stays as it is.
