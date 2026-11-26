@@ -239,6 +239,13 @@ struct AppDependencies {
         let localCache = LocalCache.live(clock: clock, sleeper: sleeper)
         // One source for the VM queue sessions and the retry timers: both react to wake.
         let power = WorkspacePowerEvents()
+        // One image-size lookup and one view of the disk, shared by the pull check and the UI.
+        let hostCapacity = SystemHostCapacity()
+        let imageDefaults = CachingImageDefaultsProvider(TartImageDefaultsProvider(
+            cli: TartBackend.systemCLIProvider(launcher: launcher),
+            cache: FileSystemImageCacheReader(),
+            transport: RestrictedRedirectTransport(allowedHosts: GHCRClient.blobHosts)
+        ))
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
@@ -249,7 +256,9 @@ struct AppDependencies {
             clock: clock,
             sleeper: sleeper,
             power: power,
-            cacheProvider: { [weak localCache] in localCache?.server() }
+            cacheProvider: { [weak localCache] in localCache?.server() },
+            imageDefaults: imageDefaults,
+            capacity: hostCapacity
         )
         let dependencies = AppDependencies(
             runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend, recoveryPolicy: .standard, power: power),
@@ -258,11 +267,8 @@ struct AppDependencies {
             clock: clock,
             processLauncher: launcher,
             settings: AppSettings(defaults: .standard),
-            imageDefaults: CachingImageDefaultsProvider(TartImageDefaultsProvider(
-                cli: TartBackend.systemCLIProvider(launcher: launcher),
-                cache: FileSystemImageCacheReader(),
-                transport: RestrictedRedirectTransport(allowedHosts: GHCRClient.blobHosts)
-            )),
+            hostCapacity: hostCapacity,
+            imageDefaults: imageDefaults,
             demandSources: demandSources,
             softnetHelper: SoftnetHelperModel(
                 checker: softnetChecker,
