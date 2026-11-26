@@ -49,9 +49,11 @@ struct TartImageDefaultsProvider: TartImageDefaultsProviding {
         let folder = [ref.host] + ref.repository.split(separator: "/").map(String.init) + [ref.tag]
         guard let config = cache.read(folder + ["config.json"], maxBytes: Limit.configBytes) else { return nil }
         let values = TartImageConfigParser.vmConfig(config)
-        let disk = cache.read(folder + ["manifest.json"], maxBytes: Limit.manifestBytes)
-            .flatMap(TartImageConfigParser.manifest)?.diskGB
-        return TartImageDefaults.validated(cpuCount: values.cpuCount, memoryGB: values.memoryGB, diskGB: disk)
+        let manifest = cache.read(folder + ["manifest.json"], maxBytes: Limit.manifestBytes)
+            .flatMap(TartImageConfigParser.manifest)
+        return TartImageDefaults.validated(
+            cpuCount: values.cpuCount, memoryGB: values.memoryGB, diskGB: manifest?.diskGB, diskBytes: manifest?.diskBytes
+        )
     }
 
     // MARK: - Registry
@@ -73,7 +75,7 @@ struct TartImageDefaultsProvider: TartImageDefaultsProviding {
         )
         guard Self.sha256Digest(of: blob) == manifest.vmConfigDigest else { return nil }
         let values = TartImageConfigParser.vmConfig(blob)
-        return TartImageDefaults.validated(cpuCount: values.cpuCount, memoryGB: values.memoryGB, diskGB: manifest.diskGB)
+        return TartImageDefaults.validated(cpuCount: values.cpuCount, memoryGB: values.memoryGB, diskGB: manifest.diskGB, diskBytes: manifest.diskBytes)
     }
 
     private static func sha256Digest(of data: Data) -> String {

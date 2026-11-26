@@ -239,4 +239,5 @@ struct FixtureHostCapacity: HostCapacity {
     let coreCount = 16
     let physicalMemoryGB = 64
     func freeDiskGB() -> Int? { 300 }
+    func freeDiskBytes() -> Int64? { 300 << 30 }
 }

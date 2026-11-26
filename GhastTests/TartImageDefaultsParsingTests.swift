@@ -77,6 +77,14 @@ struct TartImageDefaultsParsingTests {
         #expect(info.diskGB == gb)
     }
 
+    @Test("the exact annotation bytes are kept before rounding")
+    func exactDiskBytes() throws {
+        let info = try #require(TartImageConfigParser.manifest(manifest(disk: "150323855360")))
+
+        #expect(info.diskBytes == 150_323_855_360)
+        #expect(info.diskGB == 150)
+    }
+
     @Test("a bad disk annotation gives nil disk but keeps the layer", arguments: [
         "0", "-5", "abc", "999999999999999999",
     ] as [String?] + [nil])
@@ -84,6 +92,7 @@ struct TartImageDefaultsParsingTests {
         let info = try #require(TartImageConfigParser.manifest(manifest(disk: bytes)))
 
         #expect(info.diskGB == nil)
+        #expect(info.diskBytes == nil)
     }
 
     @Test("a manifest without a Tart config layer is rejected")
@@ -108,6 +117,7 @@ struct TartImageDefaultsParsingTests {
     @Test("defaults need valid CPU and memory; an invalid disk only drops the disk")
     func defaultsBounds() {
         #expect(TartImageDefaults.validated(cpuCount: 4, memoryGB: 8, diskGB: 140) == TartImageDefaults(cpuCount: 4, memoryGB: 8, diskGB: 140))
+        #expect(TartImageDefaults.validated(cpuCount: 4, memoryGB: 8, diskGB: 100_001, diskBytes: 5)?.diskBytes == nil)
         #expect(TartImageDefaults.validated(cpuCount: 4, memoryGB: 8, diskGB: 100_001)?.diskGB == nil)
         #expect(TartImageDefaults.validated(cpuCount: 4, memoryGB: 8, diskGB: nil)?.diskGB == nil)
         #expect(TartImageDefaults.validated(cpuCount: 0, memoryGB: 8, diskGB: 1) == nil)
