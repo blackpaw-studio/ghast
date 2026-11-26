@@ -293,7 +293,7 @@ final class TartBackend: RunnerBackend {
 
     private func launchVM(_ entry: OnDemandEntry, runner: LocalRunner, image: String) {
         let id = makeID()
-        let vm = VMRun(id: id, clone: "\(Self.clonePrefix)\(runner.id)-\(id)")
+        let vm = VMRun(id: id, clone: "\(Self.clonePrefix)\(runner.id)-\(id)", image: image)
         entry.vms.append(vm)
         vm.task = Task { @MainActor [weak self] in await self?.runVM(vm, entry: entry, runner: runner, image: image) }
     }
@@ -1014,6 +1014,21 @@ final class TartBackend: RunnerBackend {
     // MARK: - Liveness
 
     var hasActiveRunners: Bool { !entries.isEmpty }
+
+    /// The images the backend itself is using right now, from its own state rather than the
+    /// runners' config: one per VM from launch (pull, clone, boot, job) to cleanup, with
+    /// `isPulling` while the runner's image pull runs.
+    var activeImages: [ActiveImage] {
+        entries.values.flatMap { entry in
+            entry.vms.map { ActiveImage(runnerID: entry.runnerID, image: $0.image, isPulling: entry.isPulling) }
+        }
+    }
+
+    struct ActiveImage: Equatable, Sendable {
+        let runnerID: String
+        let image: String
+        let isPulling: Bool
+    }
 
     func isActive(id: String) -> Bool { entries[id] != nil }
 

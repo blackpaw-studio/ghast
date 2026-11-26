@@ -758,6 +758,9 @@ extension RunnerService: RunnerBackendHost {
         saveRunners()
     }
     
+    /// What the VM backend is pulling, cloning or running from right now.
+    var activeTartImages: [TartBackend.ActiveImage] { tart.activeImages }
+
     func processState(id: String) -> RunnerProcessState? {
         processStates[id]
     }
