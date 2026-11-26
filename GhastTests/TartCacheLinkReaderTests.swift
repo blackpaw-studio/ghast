@@ -85,6 +85,64 @@ struct TartCacheLinkReaderTests {
         #expect(reader(box).digest(forTag: ref) == nil)
     }
 
+    @Test("a repository folder that is a symlink out of the cache resolves to nothing")
+    func repoFolderIsSymlinkOutside() throws {
+        let box = try Sandbox()
+        defer { box.remove() }
+        let elsewhere = box.outside.appendingPathComponent("base")
+        _ = try box.folder(Self.digest, in: elsewhere)
+        try FileManager.default.createSymbolicLink(atPath: elsewhere.appendingPathComponent("latest").path, withDestinationPath: Self.digest)
+        try FileManager.default.removeItem(at: box.repo)
+        try FileManager.default.createSymbolicLink(atPath: box.repo.path, withDestinationPath: elsewhere.path)
+
+        #expect(reader(box).digest(forTag: ref) == nil)
+    }
+
+    @Test("a repository folder that is a symlink to another repository inside the cache resolves to nothing")
+    func repoFolderIsSymlinkInside() throws {
+        let box = try Sandbox()
+        defer { box.remove() }
+        let sibling = box.root.appendingPathComponent("ghcr.io/cirruslabs/other")
+        _ = try box.folder(Self.digest, in: sibling)
+        try FileManager.default.createSymbolicLink(atPath: sibling.appendingPathComponent("latest").path, withDestinationPath: Self.digest)
+        try FileManager.default.removeItem(at: box.repo)
+        try FileManager.default.createSymbolicLink(atPath: box.repo.path, withDestinationPath: sibling.path)
+
+        #expect(reader(box).digest(forTag: ref) == nil)
+    }
+
+    @Test("a link into a sibling repository inside the cache resolves to nothing")
+    func targetInSiblingRepo() throws {
+        let box = try Sandbox()
+        defer { box.remove() }
+        let sibling = box.root.appendingPathComponent("ghcr.io/cirruslabs/other")
+        let target = try box.folder(Self.digest, in: sibling)
+        try box.link("latest", to: target.path)
+
+        #expect(reader(box).digest(forTag: ref) == nil)
+    }
+
+    @Test("a chain of links resolves to nothing: only one hop is followed")
+    func chain() throws {
+        let box = try Sandbox()
+        defer { box.remove() }
+        let real = try box.folder("sha256:" + String(repeating: "cd", count: 32), in: box.repo)
+        try FileManager.default.createSymbolicLink(atPath: box.repo.appendingPathComponent(Self.digest).path, withDestinationPath: real.path)
+        try box.link("latest", to: box.repo.appendingPathComponent(Self.digest).path)
+
+        #expect(reader(box).digest(forTag: ref) == nil)
+    }
+
+    @Test("a target that climbs out with .. resolves to nothing")
+    func dotDotTarget() throws {
+        let box = try Sandbox()
+        defer { box.remove() }
+        _ = try box.folder(Self.digest, in: box.outside)
+        try box.link("latest", to: "../../../../outside/" + Self.digest)
+
+        #expect(reader(box).digest(forTag: ref) == nil)
+    }
+
     @Test("a tag with no entry resolves to nothing")
     func missing() throws {
         let box = try Sandbox()

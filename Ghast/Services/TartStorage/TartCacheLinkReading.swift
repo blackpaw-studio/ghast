@@ -9,7 +9,10 @@ protocol TartCacheLinkReading: Sendable {
 }
 
 /// Reads Tart's cache layout: `~/.tart/cache/OCIs/<host>/<repository>/<tag>` is a symlink to a
-/// sibling folder named by its digest. Only that shape counts; anything else resolves to nil.
+/// sibling folder named by its digest. Only that shape counts, and nothing outside the cache is
+/// ever followed: the repository folder must be a real path under the real root (no symlinked
+/// component), the link is followed one hop, and its target must be a real folder directly in
+/// that repository whose name is a digest. Anything else resolves to nil.
 struct FileSystemTartCacheLinkReader: TartCacheLinkReading {
     let root: URL
 
@@ -18,17 +21,21 @@ struct FileSystemTartCacheLinkReader: TartCacheLinkReading {
     }
 
     func digest(forTag tag: TartImageRef) -> String? {
-        let repository = ([tag.host] + tag.repository.split(separator: "/").map(String.init))
-            .reduce(root) { $0.appendingPathComponent($1) }
-        let link = repository.appendingPathComponent(tag.tag)
-        guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path) else { return nil }
-        let target = URL(fileURLWithPath: destination, relativeTo: repository).standardizedFileURL
-        let name = target.lastPathComponent
+        let components = [tag.host] + tag.repository.split(separator: "/").map(String.init)
+        guard let resolvedRoot = Self.realPath(root.path) else { return nil }
+        let expectedRepository = ([resolvedRoot] + components).joined(separator: "/")
+        let repositoryPath = components.reduce(root) { $0.appendingPathComponent($1, isDirectory: true) }.path
+        // The repository folder itself must not be (or sit behind) a link.
+        guard let resolvedRepository = Self.realPath(repositoryPath), resolvedRepository == expectedRepository else { return nil }
+
+        let linkPath = resolvedRepository + "/" + tag.tag
+        guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: linkPath) else { return nil }
+        let targetPath = destination.hasPrefix("/") ? destination : resolvedRepository + "/" + destination
+        let name = (targetPath as NSString).lastPathComponent
+        let parent = (targetPath as NSString).deletingLastPathComponent
         guard Self.isDigest(name),
-              let resolvedRepository = Self.realPath(repository.path),
-              let resolvedTarget = Self.realPath(target.path),
-              resolvedTarget == resolvedRepository + "/" + name,
-              Self.isDirectory(resolvedTarget)
+              Self.realPath(parent) == resolvedRepository,
+              Self.isRealDirectory(resolvedRepository + "/" + name)
         else { return nil }
         return name
     }
@@ -43,8 +50,9 @@ struct FileSystemTartCacheLinkReader: TartCacheLinkReading {
         return String(cString: resolved)
     }
 
-    private static func isDirectory(_ path: String) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    /// A directory that is not itself a link (`lstat`), so a chain of links stops here.
+    private static func isRealDirectory(_ path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
     }
 }
