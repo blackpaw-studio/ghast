@@ -16,20 +16,25 @@ Tart images are huge (Xcode images unpack to ~140 GB) and Ghast never shows or r
   - Local VMs (`Source: local`) are listed in their own group, labelled `Local VMs`. Ghast's own clones (`ghast-*`) are not listed.
 - **Remove** (per row, behind a confirmation naming the image and the space it frees):
   - Disabled with the reason as help text when a runner uses the image, or while it is being pulled.
-  - For a pulled image it deletes the tag and digest entries. For a local VM, the confirmation adds `This VM was made on this Mac and can't be downloaded again.`
+  - For a pulled image it runs `tart delete` on the **digest** ref (deleting a tag only removes its symlink; Tart's gc then drops the dangling tag links). For a local VM, the confirmation adds `This VM was made on this Mac and can't be downloaded again.`
 - **Remove Unused** (behind a confirmation listing the images and the total freed): removes every pulled image no runner uses. Never removes local VMs. Disabled when there is nothing to remove.
 - The list refreshes when the section appears, after a remove, and when a pull finishes. A failed remove shows its error inline and keeps the row.
 
 ### Free-space check before a pull
 
 - Before `tart pull`, Ghast estimates the space the image needs (the image's disk size from the same lookup as the image defaults: Tart cache, then ghcr.io) and compares it with free space on `~/.tart`'s volume (`HostCapacity`).
-- If it doesn't fit with a margin of 10 GB, the runner stops with an error and does **not** retry: `Not enough disk space to pull macos-tahoe-xcode:26.3: needs about 140 GB, 88 GB free. Free space in Settings › General › Tart Storage.` Its run intent is kept, so Start (or the next launch) tries again.
+- The estimate is the image's `Disk` (manifest `uncompressed-disk-size`) + 128 MiB, the same reservation Tart itself checks before a pull (it overstates real use by ~35% because `disk.img` is sparse, but it is what Tart enforces). If it doesn't fit, the runner stops with an error and does **not** retry: `Not enough disk space to pull macos-tahoe-xcode:26.3: needs about 140 GB, 88 GB free. Free space in Settings › General › Tart Storage.` Its run intent is kept, so Start (or the next launch) tries again.
 - If the size is unknown, the pull runs as today.
 - Clones are not checked (APFS clones share blocks).
+- Ghast runs `tart pull` with `TART_NO_AUTO_PRUNE=1`. Without it, a pull short of space makes Tart silently delete cached images (possibly one another runner uses) to make room. Freeing space stays the user's call, in Tart Storage.
 
-## Step 0 (before planning, read-only)
+## Step 0 results (2026-11-25, Dionysus, Tart 2.42.0, read-only)
 
-On Dionysus, compare one pulled image's on-disk usage (`du` of its `~/.tart/cache/OCIs/...` folder, following the digest folder) with the manifest's `org.cirruslabs.tart.uncompressed-disk-size` and with `tart list`'s `Size`. Use whichever matches real usage as the estimate (and the size shown in the list). Also confirm `tart delete <oci-ref>` removes a cache entry, and what it does to the tag↔digest pair. Record results here.
+- Tags (`latest`, `26.3`, …) are symlinks to digest folders under `~/.tart/cache/OCIs/<host>/<repo>/`. All bytes live in the digest folders; `du ~/.tart` equals their sum. Summing `tart list` `Size` over tag and digest rows double counts (596 vs ~290 GB).
+- `tart list` `Size` = allocated bytes (config + disk + nvram), floored to decimal GB; matches `du`. `Disk` = logical disk size = manifest uncompressed size. Real use is 59–72% of `Disk` (sparse `disk.img`).
+- `tart delete <tag>` removes the symlink only; explicitly pulled digests are never garbage-collected. `tart delete <digest>` removes the folder and gc drops dangling tags (`VMStorageOCI.swift:222-262`).
+- Pull writes into `~/.tart/tmp`, `disk.img` pre-truncated and streamed with zero-skipping; no separate compressed copy. Before pulling Tart requires uncompressed + 128 MiB and otherwise calls `Prune.reclaimIfNeeded`, which deletes cached images unless `TART_NO_AUTO_PRUNE` is set (`VMStorageOCI.swift:478-484`, `Prune.swift:114-152`).
+- Row size and header total use `Size` of digest rows (each image once). Dionysus: 4 images, ~290 GB, 25 GiB free.
 
 ## Out of scope
 
