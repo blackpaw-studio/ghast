@@ -78,6 +78,25 @@ struct TartImageRef: Equatable, Sendable {
         return TartImageRef(host: host, repository: repository, tag: tag)
     }
 
+    private static let digestPrefix = "@sha256:"
+    private static let shortDigestLength = 12
+
+    /// How an image is named in the UI and in messages: the repository's last component with
+    /// its tag (`macos-tahoe-xcode:26.3`), or with the first 12 hex digits of its digest
+    /// (`macos-tahoe-xcode@sha256:923c98d32e40`). A local VM name stays as it is.
+    static func shortName(of image: String) -> String {
+        if let range = image.range(of: digestPrefix) {
+            let digest = image[range.upperBound...].prefix(shortDigestLength)
+            return leaf(of: String(image[..<range.lowerBound])) + digestPrefix + digest
+        }
+        guard let ref = parse(image) else { return image }
+        return leaf(of: ref.repository) + ":" + ref.tag
+    }
+
+    private static func leaf(of repository: String) -> String {
+        repository.split(separator: "/").last.map(String.init) ?? repository
+    }
+
     private static func splitTag(_ component: String) -> (name: String, tag: String) {
         guard let colon = component.firstIndex(of: ":") else { return (component, "latest") }
         return (String(component[..<colon]), String(component[component.index(after: colon)...]))

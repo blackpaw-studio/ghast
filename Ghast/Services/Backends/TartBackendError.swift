@@ -12,6 +12,8 @@ enum TartBackendError: LocalizedError, Equatable {
     /// GitHub's runner scale-set service refused the token for an organization runner,
     /// which has no REST fallback.
     case scaleSetAuthRejected
+    /// The image's disk won't fit in the free space; Tart's pull would fail or auto-prune.
+    case insufficientSpace(image: String, neededBytes: Int64, freeBytes: Int64)
 
     var errorDescription: String? {
         switch self {
@@ -32,9 +34,16 @@ enum TartBackendError: LocalizedError, Equatable {
             "Runner group \"\(name)\" does not exist in this organization."
         case let .runnerExited(code):
             "The runner exited with code \(code)."
+        case let .insufficientSpace(image, needed, free):
+            "Not enough disk space to pull \(TartImageRef.shortName(of: image)): needs about \(Self.gigabytes(needed, roundingUp: true)) GB, \(Self.gigabytes(free, roundingUp: false)) GB free. Free space in Settings › General › Tart Storage."
         case .scaleSetAuthRejected:
             "GitHub did not let Ghast manage runner scale sets for this organization. Sign out and in again, or check that you own the organization."
         }
+    }
+
+    private static func gigabytes(_ bytes: Int64, roundingUp: Bool) -> Int64 {
+        let unit: Int64 = 1_000_000_000
+        return roundingUp ? (bytes + unit - 1) / unit : bytes / unit
     }
 }
 
@@ -55,7 +64,7 @@ extension TartBackend {
         if let error = error as? TartBackendError {
             switch error {
             case .bootTimedOut, .vmExitedDuringBoot, .runnerExited: return true
-            case .unavailable, .localImageMissing, .runnerGroupNotFound, .scaleSetAuthRejected: return false
+            case .unavailable, .localImageMissing, .runnerGroupNotFound, .scaleSetAuthRejected, .insufficientSpace: return false
             }
         }
         if let error = error as? ScaleSetError {
