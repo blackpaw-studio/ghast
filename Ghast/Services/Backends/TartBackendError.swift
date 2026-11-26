@@ -48,6 +48,12 @@ enum TartBackendError: LocalizedError, Equatable {
 }
 
 extension TartBackend {
+    /// The reason a failed runner must not be retried, if the failure has one.
+    nonisolated static func exitBlock(for failure: (any Error)?) -> RunnerExitBlock? {
+        guard case let .insufficientSpace(image, _, _)? = failure as? TartBackendError else { return nil }
+        return .insufficientDiskSpace(image: image)
+    }
+
     /// How long the server asked Ghast to wait before trying again, if it did.
     nonisolated static func retryAfter(_ error: any Error) -> Duration? {
         if let error = error as? DemandSourceError { return retryAfter(error.underlying) }

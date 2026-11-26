@@ -859,7 +859,8 @@ final class TartBackend: RunnerBackend {
         host?.recordExit(
             id: entry.runnerID,
             code: failure == nil ? 0 : RunnerExit.launchFailureCode,
-            wasRequested: failure == nil
+            wasRequested: failure == nil,
+            block: Self.exitBlock(for: failure)
         )
         vmSlotFreed()
         for waiter in entry.waiters { waiter.resume() }

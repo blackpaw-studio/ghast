@@ -29,6 +29,31 @@ struct TartBackendPullSpaceTests {
         #expect(!h.log.all.contains { $0.hasPrefix("pull ") })
     }
 
+    @Test("a blocked pull is not retried: the runner reads exited, keeps its intent and announces once")
+    func blockedDoesNotRetry() async throws {
+        let h = harness(sizes: [Self.image: Self.needs], freeBytes: 88_000_000_000)
+        defer { h.cleanup() }
+        let runner = h.addRunner()
+        var announced: [RunnerProcessExit] = []
+        let drain = Task { @MainActor in
+            for await exit in h.service.processExits { announced.append(exit) }
+        }
+        defer { drain.cancel() }
+
+        try await h.service.startRunner(id: runner.id)
+        #expect(await h.settled { announced.count == 1 })
+        for _ in 0..<50 { await Task.yield() }
+
+        guard case .exited? = h.state(runner) else {
+            Issue.record("expected exited, got \(String(describing: h.state(runner)))")
+            return
+        }
+        #expect(h.service.localRunners.first { $0.id == runner.id }?.shouldBeRunning == true)
+        #expect(announced.first?.blocked == .insufficientDiskSpace(image: Self.image))
+        #expect(h.log.all.filter { $0 == "list" }.count == 1)
+        #expect(!h.log.all.contains { $0.hasPrefix("pull ") })
+    }
+
     @Test("an image that fits is pulled")
     func fits() async throws {
         let h = harness(sizes: [Self.image: Self.needs], freeBytes: 300_000_000_000)

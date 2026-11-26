@@ -238,7 +238,10 @@ class RunnerService {
     /// An unexpected exit keeps the intent to keep running, and the runner waits to be retried
     /// (`RecoveryPolicy`) until the retries run out, then reads `.exited`; only the user ends the
     /// intent.
-    private func recordExit(id: String, code: Int32, wasRequested: Bool, announces: Bool) {
+    ///
+    /// A `block` skips the retries: the runner reads `.exited` with its intent kept (Start, or the
+    /// next launch, tries again) and is announced once.
+    private func recordExit(id: String, code: Int32, wasRequested: Bool, announces: Bool, block: RunnerExitBlock? = nil) {
         guard let index = localRunners.firstIndex(where: { $0.id == id }) else {
             // The runner was removed while it stopped: nothing to record.
             processStates.removeValue(forKey: id)
@@ -259,6 +262,12 @@ class RunnerService {
             // A start queued behind this stop keeps reading as starting.
             processStates[id] = wasRequested ? (processStates[id] == .starting ? .starting : .stopped) : .exited(exit)
             if announces { processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit)) }
+            return
+        }
+        if let block {
+            recovery.cancel(id: id)
+            processStates[id] = .exited(exit)
+            if announces { processExitSink.yield(RunnerProcessExit(runnerID: id, exit: exit, blocked: block)) }
             return
         }
         switch recovery.decide(id: id, exit: exit) {
@@ -757,7 +766,7 @@ extension RunnerService: RunnerBackendHost {
         processStates[id] = state
     }
     
-    func recordExit(id: String, code: Int32, wasRequested: Bool) {
-        recordExit(id: id, code: code, wasRequested: wasRequested, announces: true)
+    func recordExit(id: String, code: Int32, wasRequested: Bool, block: RunnerExitBlock?) {
+        recordExit(id: id, code: code, wasRequested: wasRequested, announces: true, block: block)
     }
 }

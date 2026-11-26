@@ -71,6 +71,30 @@ struct NotificationPolicyTests {
         )])
     }
 
+    @Test("a pull blocked for lack of disk space notifies once, naming the image and where to free space")
+    func blockedPullNotifies() async {
+        let h = makeHarness()
+        defer { h.cleanup() }
+        let blocked = RunnerExitBlock.insufficientDiskSpace(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:26.3")
+
+        await h.service.handle(.processExited(RunnerProcessExit(
+            runnerID: "r1", exit: exit(RunnerExit.launchFailureCode), blocked: blocked
+        )))
+
+        #expect(h.center.posted == [RunnerNotice(
+            kind: .unexpectedStop,
+            runnerID: "r1",
+            title: "ghast-release can't pull macos-tahoe-xcode:26.3: not enough disk space",
+            body: "Free space in Settings › General › Tart Storage, then start it again. Click to see its output."
+        )])
+
+        h.settings.notifyUnexpectedStop = false
+        await h.service.handle(.processExited(RunnerProcessExit(
+            runnerID: "r1", exit: exit(RunnerExit.launchFailureCode), blocked: blocked
+        )))
+        #expect(h.center.posted.count == 1)
+    }
+
     @Test("giving up after a start failure says Ghast couldn't start it")
     func giveUpAfterStartFailure() async {
         let h = makeHarness()
