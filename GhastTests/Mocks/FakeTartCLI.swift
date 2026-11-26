@@ -214,7 +214,11 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     // Caller holds the lock.
     private func setRunning(_ vm: String, _ running: Bool) {
         guard let index = table.firstIndex(where: { $0.name == vm }) else { return }
-        table[index] = TartVMEntry(name: vm, source: table[index].source, isRunning: running)
+        let old = table[index]
+        table[index] = TartVMEntry(
+            name: vm, source: old.source, isRunning: running,
+            sizeGB: old.sizeGB, diskGB: old.diskGB, accessed: old.accessed
+        )
     }
 }
 

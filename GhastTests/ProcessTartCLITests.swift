@@ -148,6 +148,19 @@ struct ProcessTartCLITests {
         #expect(!spec.arguments.contains("--net-softnet"))
     }
 
+    @Test("a pull runs with TART_NO_AUTO_PRUNE so Tart never deletes cached images to make room")
+    func pullDisablesAutoPrune() async throws {
+        let launcher = RecordingLauncher()
+
+        try await ProcessTartCLI(
+            executable: tart, launcher: launcher, logAppender: LineRecorder(), baseEnvironment: ["HOME": "/Users/x"]
+        ).pull("ghcr.io/x/y:latest", log: log, onProgress: { _ in })
+
+        let spec = try #require(launcher.specs.first)
+        #expect(spec.environment?["TART_NO_AUTO_PRUNE"] == "1")
+        #expect(spec.environment?["HOME"] == "/Users/x")
+    }
+
     /// A stand-in `tart` that prints `output` and exits with `status` only when called as
     /// `get <vm> --format json`; any other argv exits 99. Nothing real runs.
     private func scriptedTart(vm: String, output: String, status: Int32 = 0) throws -> URL {
