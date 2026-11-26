@@ -162,6 +162,36 @@ struct TartStorageModelTests {
         #expect(r.model.rowErrors[image.id] == "Used by ci.")
     }
 
+    @Test("a runner that takes the image while the CLI is being found stops the delete")
+    func recheckAfterCLILookup() async {
+        final class Lookup: @unchecked Sendable { var gate: HoldGate? }
+        let log = CallLog()
+        let cli = FakeTartCLI(log: log, entries: threeImages)
+        let lookup = Lookup()
+        let usage = Usage()
+        let model = TartStorageModel(
+            cli: { try await lookup.gate?.wait(); return cli },
+            capacity: FakeHostCapacity(freeDisk: nil, freeBytes: 1),
+            links: FakeTartCacheLinks(),
+            clock: FakeClock(),
+            usage: { usage.value }
+        )
+        await model.refresh()
+        let image = model.inventory.pulled[0]
+        model.requestRemove(image)
+        let gate = HoldGate()
+        lookup.gate = gate
+
+        let removal = Task { await model.confirmRemove() }
+        for _ in 0..<50 { await Task.yield() }
+        usage.value = TartImageUsage(runnerImages: [RunnerImageUse(runnerName: "ci", image: image.deleteRef)], pullingImages: [])
+        await gate.open()
+        await removal.value
+
+        #expect(!log.all.contains { $0.hasPrefix("delete ") })
+        #expect(model.rowErrors[image.id] == "Used by ci.")
+    }
+
     @Test("a successful remove clears that row's earlier error")
     func successClearsError() async {
         let r = rig(threeImages)

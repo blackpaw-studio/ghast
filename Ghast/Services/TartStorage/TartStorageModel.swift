@@ -144,15 +144,24 @@ final class TartStorageModel {
     }
 
     /// Deletes each image unless a runner has taken it since the list was read; a failure stays
-    /// on its row and the rest carry on.
+    /// on its row and the rest carry on. The CLI is found first and the block reason is read
+    /// again with no suspension before `delete`, so a runner can't take the image in between.
     private func delete(_ images: [StoredImage]) async {
+        let tart: any TartCLI
+        do {
+            tart = try await cli()
+        } catch {
+            for image in images { rowErrors[image.id] = "Couldn’t remove it: \(error.localizedDescription)" }
+            await refresh()
+            return
+        }
         for image in images {
             if let reason = currentBlockReason(of: image) {
                 rowErrors[image.id] = reason
                 continue
             }
             do {
-                try await cli().delete(image.deleteRef)
+                try await tart.delete(image.deleteRef)
                 rowErrors[image.id] = nil
             } catch {
                 rowErrors[image.id] = "Couldn’t remove it: \(error.localizedDescription)"
