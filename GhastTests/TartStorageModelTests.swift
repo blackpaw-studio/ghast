@@ -192,6 +192,47 @@ struct TartStorageModelTests {
         #expect(model.rowErrors[image.id] == "Used by ci.")
     }
 
+    @Test("a list that started before a delete can't put the deleted image back")
+    func staleRefreshIsDropped() async {
+        let r = rig(threeImages)
+        await r.model.refresh()
+        let image = r.model.inventory.pulled[0]
+        let gate = HoldGate()
+        r.cli.listSnapshotsBeforeGate = true
+        r.cli.listGate = gate
+        let stale = Task { await r.model.refresh() }
+        for _ in 0..<5_000 where r.log.all.filter({ $0 == "list" }).count < 2 { await Task.yield() }
+        #expect(r.log.all.filter { $0 == "list" }.count == 2)
+        r.cli.listGate = nil
+
+        r.model.requestRemove(image)
+        await r.model.confirmRemove()
+        #expect(!r.model.inventory.pulled.contains { $0.id == image.id })
+        await gate.open()
+        await stale.value
+
+        #expect(!r.model.inventory.pulled.contains { $0.id == image.id })
+        #expect(r.model.inventory.pulled.count == 2)
+    }
+
+    @Test("the latest refresh wins when two overlap")
+    func latestRefreshWins() async {
+        let r = rig(threeImages)
+        let gate = HoldGate()
+        r.cli.listSnapshotsBeforeGate = true
+        r.cli.listGate = gate
+        let first = Task { await r.model.refresh() }
+        for _ in 0..<5_000 where r.log.all.filter({ $0 == "list" }).count < 1 { await Task.yield() }
+        r.cli.listGate = nil
+        try? await r.cli.delete(Self.refA)
+
+        await r.model.refresh()
+        await gate.open()
+        await first.value
+
+        #expect(r.model.inventory.pulled.count == 2)
+    }
+
     @Test("a successful remove clears that row's earlier error")
     func successClearsError() async {
         let r = rig(threeImages)

@@ -21,6 +21,9 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var stopError: Error?
     /// While set, `list` waits here (cancellable) after recording the call.
     var listGate: HoldGate?
+    /// When set, `list` reads the table before it waits on `listGate`, as a real `tart list`
+    /// that was already running would.
+    var listSnapshotsBeforeGate = false
     /// While set, `exec pkill` waits here (cancellable) as a hung guest agent would.
     var pkillGate: HoldGate?
     /// Each `list` throws the next of these before it succeeds.
@@ -62,8 +65,9 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func list() async throws -> [TartVMEntry] {
         log.append("list")
         if let failure = lock.withLock({ listFailures.isEmpty ? nil : listFailures.removeFirst() }) { throw failure }
+        let snapshot = listSnapshotsBeforeGate ? entries : nil
         try await listGate?.wait()
-        return entries
+        return snapshot ?? entries
     }
 
     func os(of vm: String) async throws -> String {

@@ -22,6 +22,9 @@ final class TartStorageModel {
     @ObservationIgnored private var isRemoveUnusedRequested = false
     @ObservationIgnored private var entries: [TartVMEntry] = []
     @ObservationIgnored private var lastPulling: Set<String> = []
+    /// Bumped when a refresh starts and when a delete starts. A list that finishes after either
+    /// is stale (it may still show an image that has since been deleted) and is dropped.
+    @ObservationIgnored private var generation = 0
 
     @ObservationIgnored private let cli: @Sendable () async throws -> any TartCLI
     @ObservationIgnored private let capacity: any HostCapacity
@@ -58,12 +61,18 @@ final class TartStorageModel {
     var canRemoveUnused: Bool { !inventory.unusedPulled.isEmpty }
 
     func refresh() async {
+        generation += 1
+        let mine = generation
+        var listed: [TartVMEntry]?
+        var failure: String?
         do {
-            entries = try await cli().list()
-            errorMessage = nil
+            listed = try await cli().list()
         } catch {
-            errorMessage = "Ghast couldn’t read Tart’s images: \(error.localizedDescription)"
+            failure = "Ghast couldn’t read Tart’s images: \(error.localizedDescription)"
         }
+        guard mine == generation else { return }
+        if let listed { entries = listed }
+        errorMessage = failure
         lastPulling = usage().pullingImages
         inventory = makeInventory()
         freeBytes = capacity.freeDiskBytes()
@@ -147,6 +156,7 @@ final class TartStorageModel {
     /// on its row and the rest carry on. The CLI is found first and the block reason is read
     /// again with no suspension before `delete`, so a runner can't take the image in between.
     private func delete(_ images: [StoredImage]) async {
+        generation += 1
         let tart: any TartCLI
         do {
             tart = try await cli()
