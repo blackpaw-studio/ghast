@@ -262,6 +262,44 @@ struct RunnerRecoveryTests {
         #expect(waiting?.attempt == 1)
     }
 
+    // MARK: - Blocked exits
+
+    private let blocked = RunnerExitBlock.insufficientDiskSpace(image: "ghcr.io/cirruslabs/macos-tahoe-xcode:26.3")
+
+    @Test("a blocked exit reads exited, keeps the intent, schedules no retry and announces once")
+    func blockedExitDoesNotRetry() async {
+        var announced: [RunnerProcessExit] = []
+        let drain = Task { @MainActor in
+            for await exit in service.processExits { announced.append(exit) }
+        }
+        defer { drain.cancel() }
+        service.updateRunner(id: runnerID) { $0.shouldBeRunning = true }
+
+        service.recordExit(id: runnerID, code: RunnerExit.launchFailureCode, wasRequested: false, block: blocked)
+        await settle()
+
+        guard case .exited? = state else {
+            Issue.record("expected exited, got \(String(describing: state))")
+            return
+        }
+        #expect(shouldBeRunning)
+        #expect(retrySleeper.requested.isEmpty)
+        #expect(announced.map(\.blocked) == [blocked])
+        #expect(announced.first?.gaveUpAfter == nil)
+    }
+
+    @Test("Start after a blocked exit runs the runner and a later crash is retried from attempt 1")
+    func startAfterBlockedExit() async throws {
+        service.updateRunner(id: runnerID) { $0.shouldBeRunning = true }
+        service.recordExit(id: runnerID, code: RunnerExit.launchFailureCode, wasRequested: false, block: blocked)
+
+        try await service.startRunner(id: runnerID)
+        #expect(launcher.launchCount == 1)
+        await crash()
+
+        #expect(waiting?.attempt == 1)
+    }
+
     // MARK: - Announcements
 
     @Test("a retried exit announces nothing; giving up announces once, after three restarts")

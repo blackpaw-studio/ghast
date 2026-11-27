@@ -93,7 +93,7 @@ struct ProcessTartCLI: TartCLI {
 
     func pull(_ image: String, log: URL, onProgress: @escaping @Sendable (TartPullProgress) -> Void) async throws {
         let box = HandleBox()
-        let spec = launchSpec(TartArguments.pull(image), log: log)
+        let spec = launchSpec(TartArguments.pull(image), log: log, environment: pullEnvironment)
         let sink = PullSink(log: log, appender: logAppender, onProgress: onProgress)
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -195,6 +195,12 @@ struct ProcessTartCLI: TartCLI {
             appendOutputTo: log,
             environment: environment
         )
+    }
+
+    /// Without this a pull short of space makes Tart delete cached images, possibly one another
+    /// runner uses. Freeing space is the user's call, in Tart Storage.
+    private var pullEnvironment: [String: String] {
+        baseEnvironment.merging(["TART_NO_AUTO_PRUNE": "1"]) { _, new in new }
     }
 
     /// Tart finds softnet only through `PATH`, so an isolated boot gets the helper folder and the

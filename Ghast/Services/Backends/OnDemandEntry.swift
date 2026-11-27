@@ -77,6 +77,9 @@ final class VMRun {
     /// Booting covers everything before the guest job starts, including a retry's backoff.
     var phase = Phase.booting
     let clone: String
+    /// The image this VM was started from, captured at launch: a later edit of the runner's
+    /// image doesn't change what this VM pulls, clones or boots.
+    let image: String
     var task: Task<Void, Never>?
     var cli: (any TartCLI)?
     /// True from the budget reservation until cleanup, while the clone counts against it.
@@ -94,9 +97,10 @@ final class VMRun {
     /// This VM's registration with the local cache, unregistered at cleanup.
     var cacheRegistration: (id: String, cache: any LocalCacheServing)?
 
-    init(id: String, clone: String) {
+    init(id: String, clone: String, image: String) {
         self.id = id
         self.clone = clone
+        self.image = image
     }
 
     /// Marks this VM's lines in the runner's shared log: `[vm a1b2c3] `.

@@ -25,6 +25,7 @@ struct FocusSettingsSnapshotTests {
         if pane != .accountNotGranted { await authService.checkExistingAuth() }
         await dependencies.softnetHelper.refresh()
         await dependencies.cacheSettings.refresh()
+        await dependencies.tartStorage.refresh()
 
         let view = content(for: pane)
             .frame(width: FocusMetrics.settingsWidth)
@@ -36,6 +37,7 @@ struct FocusSettingsSnapshotTests {
             .environment(dependencies.remoteStore)
             .environment(dependencies.softnetHelper)
             .environment(dependencies.cacheSettings)
+            .environment(dependencies.tartStorage)
             .environment(authService)
             .environment(\.focusContext, dependencies.focusContext)
             .environment(\.appWindowRouter, dependencies.router)

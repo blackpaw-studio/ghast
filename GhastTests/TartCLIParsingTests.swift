@@ -13,10 +13,43 @@ struct TartCLIParsingTests {
 
         let entries = try TartJSON.decodeList(Data(json.utf8))
 
-        #expect(entries == [
-            TartVMEntry(name: "ghast-r1-a1b2c3", source: "local", isRunning: true),
-            TartVMEntry(name: "ghcr.io/cirruslabs/macos-tahoe-base:latest", source: "OCI", isRunning: false),
-        ])
+        #expect(entries.map(\.name) == ["ghast-r1-a1b2c3", "ghcr.io/cirruslabs/macos-tahoe-base:latest"])
+        #expect(entries.map(\.source) == ["local", "OCI"])
+        #expect(entries.map(\.isRunning) == [true, false])
+    }
+
+    /// Live format (Tart 2.42.0): ISO 8601 with a `Z` and no fractional seconds.
+    @Test("list decodes size, disk and the last-used time")
+    func listSizes() throws {
+        let json = """
+        [{"Name":"ghcr.io/cirruslabs/macos-tahoe-xcode@sha256:923c98d32e40ffadb6e6815a9722124b7a57bdf7d7763a708a2b28d1970831bd","Disk":140,"Size":87,"Accessed":"2026-11-26T00:21:01Z","Running":false,"Source":"OCI","State":"stopped"}]
+        """
+
+        let entry = try #require(try TartJSON.decodeList(Data(json.utf8)).first)
+
+        #expect(entry.sizeGB == 87)
+        #expect(entry.diskGB == 140)
+        #expect(entry.accessed == Date(timeIntervalSince1970: 1_795_652_461))
+    }
+
+    @Test("a list row without Size, Disk or Accessed still decodes")
+    func listWithoutSizes() throws {
+        let json = #"[{"Source":"local","Name":"dev","Running":false}]"#
+
+        let entry = try #require(try TartJSON.decodeList(Data(json.utf8)).first)
+
+        #expect(entry == TartVMEntry(name: "dev", source: "local", isRunning: false))
+        #expect(entry.sizeGB == nil && entry.diskGB == nil && entry.accessed == nil)
+    }
+
+    @Test("an unreadable Accessed leaves the date empty instead of failing the list")
+    func listBadAccessed() throws {
+        let json = #"[{"Source":"OCI","Name":"x","Size":3,"Accessed":"yesterday","Running":false}]"#
+
+        let entry = try #require(try TartJSON.decodeList(Data(json.utf8)).first)
+
+        #expect(entry.accessed == nil)
+        #expect(entry.sizeGB == 3)
     }
 
     @Test("get decodes the guest OS")

@@ -10,8 +10,15 @@ protocol RunnerBackendHost: AnyObject {
     func processState(id: String) -> RunnerProcessState?
     /// Sets a runner's runtime state; `nil` forgets it.
     func setProcessState(_ state: RunnerProcessState?, id: String)
-    /// Records that a runner's process ended (see `RunnerService.recordExit`).
-    func recordExit(id: String, code: Int32, wasRequested: Bool)
+    /// Records that a runner's process ended (see `RunnerService.recordExit`). A `block` ends the
+    /// runner without a retry, because only the user can fix its cause.
+    func recordExit(id: String, code: Int32, wasRequested: Bool, block: RunnerExitBlock?)
+}
+
+extension RunnerBackendHost {
+    func recordExit(id: String, code: Int32, wasRequested: Bool) {
+        recordExit(id: id, code: code, wasRequested: wasRequested, block: nil)
+    }
 }
 
 /// Where and how a runner's jobs execute. One instance serves every runner of its kind; it

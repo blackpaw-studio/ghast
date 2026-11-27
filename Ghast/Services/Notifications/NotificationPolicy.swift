@@ -6,12 +6,21 @@ struct RunnerProcessExit: Sendable, Equatable {
     let exit: RunnerExit
     /// Set when Ghast stopped retrying the runner after this many restart attempts.
     let gaveUpAfter: Int?
+    /// Set when the runner stopped for a reason a retry can't fix.
+    let blocked: RunnerExitBlock?
 
-    init(runnerID: String, exit: RunnerExit, gaveUpAfter: Int? = nil) {
+    init(runnerID: String, exit: RunnerExit, gaveUpAfter: Int? = nil, blocked: RunnerExitBlock? = nil) {
         self.runnerID = runnerID
         self.exit = exit
         self.gaveUpAfter = gaveUpAfter
+        self.blocked = blocked
     }
+}
+
+/// Why a runner stopped without being retried: only the user can fix it.
+enum RunnerExitBlock: Sendable, Equatable {
+    /// The VM image won't fit in the free disk space.
+    case insufficientDiskSpace(image: String)
 }
 
 /// Something that happened to a runner which might deserve a notification.
@@ -51,6 +60,14 @@ enum NotificationPolicy {
         switch trigger {
         case let .processExited(ended):
             guard notifyUnexpectedStop, !ended.exit.wasRequested else { return nil }
+            if case let .insufficientDiskSpace(image)? = ended.blocked {
+                return RunnerNotice(
+                    kind: .unexpectedStop,
+                    runnerID: ended.runnerID,
+                    title: "\(runnerName) can't pull \(TartImageRef.shortName(of: image)): not enough disk space",
+                    body: "Free space in Settings › General › Tart Storage, then start it again. Click to see its output."
+                )
+            }
             if let attempts = ended.gaveUpAfter {
                 // Ghast stopped retrying: the self-update exit codes don't apply, the runner stayed down.
                 return RunnerNotice(

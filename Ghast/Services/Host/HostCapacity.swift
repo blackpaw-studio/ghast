@@ -7,6 +7,8 @@ protocol HostCapacity: Sendable {
     var physicalMemoryGB: Int { get }
     /// Free space in whole GB on the volume that holds the Tart VMs; nil when it can't be read.
     func freeDiskGB() -> Int?
+    /// Free bytes on the same volume; nil when it can't be read.
+    func freeDiskBytes() -> Int64?
 }
 
 struct SystemHostCapacity: HostCapacity {
@@ -27,9 +29,13 @@ struct SystemHostCapacity: HostCapacity {
     var physicalMemoryGB: Int { Int(ProcessInfo.processInfo.physicalMemory / Self.bytesPerGB) }
 
     func freeDiskGB() -> Int? {
+        freeDiskBytes().map { Int($0 / Int64(Self.bytesPerGB)) }
+    }
+
+    func freeDiskBytes() -> Int64? {
         let folder = FileManager.default.fileExists(atPath: tartHome.path) ? tartHome : fallback
         let values = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        return values?.volumeAvailableCapacityForImportantUsage.map { Int($0 / Int64(Self.bytesPerGB)) }
+        return values?.volumeAvailableCapacityForImportantUsage
     }
 }
 

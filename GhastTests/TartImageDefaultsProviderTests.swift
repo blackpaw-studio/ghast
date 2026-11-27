@@ -34,7 +34,7 @@ struct TartImageDefaultsProviderTests {
         TartImageDefaultsProvider(cli: cli ?? noCLI(), cache: cache, transport: transport)
     }
 
-    private let expected = TartImageDefaults(cpuCount: 4, memoryGB: 8, diskGB: 140)
+    private let expected = TartImageDefaults(cpuCount: 4, memoryGB: 8, diskGB: 140, diskBytes: 140_000_000_000)
 
     // MARK: - Local VM
 

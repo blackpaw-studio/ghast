@@ -21,11 +21,16 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     var stopError: Error?
     /// While set, `list` waits here (cancellable) after recording the call.
     var listGate: HoldGate?
+    /// When set, `list` reads the table before it waits on `listGate`, as a real `tart list`
+    /// that was already running would.
+    var listSnapshotsBeforeGate = false
     /// While set, `exec pkill` waits here (cancellable) as a hung guest agent would.
     var pkillGate: HoldGate?
     /// Each `list` throws the next of these before it succeeds.
     var listFailures: [Error] = []
     var deleteError: Error?
+    /// `delete` throws this for one name only.
+    var deleteErrors: [String: Error] = [:]
     /// While set, `pull` waits here (cancellable) after recording the call.
     var pullGate: HoldGate?
     /// Reported to `pull`'s progress callback before it waits on the gate.
@@ -60,8 +65,9 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func list() async throws -> [TartVMEntry] {
         log.append("list")
         if let failure = lock.withLock({ listFailures.isEmpty ? nil : listFailures.removeFirst() }) { throw failure }
+        let snapshot = listSnapshotsBeforeGate ? entries : nil
         try await listGate?.wait()
-        return entries
+        return snapshot ?? entries
     }
 
     func os(of vm: String) async throws -> String {
@@ -196,6 +202,7 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     func delete(_ vm: String) async throws {
         log.append("delete \(vm)")
         if let deleteError { throw deleteError }
+        if let failure = lock.withLock({ deleteErrors[vm] }) { throw failure }
         lock.withLock { table.removeAll { $0.name == vm } }
     }
 
@@ -214,7 +221,11 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
     // Caller holds the lock.
     private func setRunning(_ vm: String, _ running: Bool) {
         guard let index = table.firstIndex(where: { $0.name == vm }) else { return }
-        table[index] = TartVMEntry(name: vm, source: table[index].source, isRunning: running)
+        let old = table[index]
+        table[index] = TartVMEntry(
+            name: vm, source: old.source, isRunning: running,
+            sizeGB: old.sizeGB, diskGB: old.diskGB, accessed: old.accessed
+        )
     }
 }
 

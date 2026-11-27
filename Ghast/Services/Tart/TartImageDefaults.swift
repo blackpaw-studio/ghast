@@ -6,6 +6,16 @@ struct TartImageDefaults: Equatable, Sendable {
     let memoryGB: Int
     /// Nil when the disk size isn't known or isn't plausible; CPU and memory still are.
     let diskGB: Int?
+    /// The image's exact uncompressed disk size from its manifest, for the pull's space check.
+    /// Nil whenever `diskGB` is, and for a local VM (`tart get` reports whole GB).
+    let diskBytes: Int64?
+
+    init(cpuCount: Int, memoryGB: Int, diskGB: Int?, diskBytes: Int64? = nil) {
+        self.cpuCount = cpuCount
+        self.memoryGB = memoryGB
+        self.diskGB = diskGB
+        self.diskBytes = diskBytes
+    }
 
     /// Sane limits for values read from a registry or a cache file.
     enum Bounds {
@@ -16,11 +26,15 @@ struct TartImageDefaults: Equatable, Sendable {
 
     /// CPU and memory must both be in bounds or there is no result; an out-of-bounds disk only
     /// drops the disk.
-    static func validated(cpuCount: Int?, memoryGB: Int?, diskGB: Int?) -> TartImageDefaults? {
+    static func validated(cpuCount: Int?, memoryGB: Int?, diskGB: Int?, diskBytes: Int64? = nil) -> TartImageDefaults? {
         guard let cpuCount, Bounds.cpuCount.contains(cpuCount),
               let memoryGB, Bounds.memoryGB.contains(memoryGB)
         else { return nil }
-        return TartImageDefaults(cpuCount: cpuCount, memoryGB: memoryGB, diskGB: diskGB.flatMap { Bounds.diskGB.contains($0) ? $0 : nil })
+        let plausibleDisk = diskGB.flatMap { Bounds.diskGB.contains($0) ? $0 : nil }
+        return TartImageDefaults(
+            cpuCount: cpuCount, memoryGB: memoryGB, diskGB: plausibleDisk,
+            diskBytes: plausibleDisk == nil ? nil : diskBytes
+        )
     }
 }
 
@@ -30,6 +44,9 @@ struct TartImageRef: Equatable, Sendable {
     let host: String
     let repository: String
     let tag: String
+
+    /// The full reference with its tag spelled out: `host/repository:tag`.
+    var reference: String { "\(host)/\(repository):\(tag)" }
 
     private static let maxHostLength = 253
     private static let maxRepositoryLength = 255
@@ -64,6 +81,36 @@ struct TartImageRef: Equatable, Sendable {
         return TartImageRef(host: host, repository: repository, tag: tag)
     }
 
+    private static let digestPrefix = "@sha256:"
+    private static let shortDigestLength = 12
+
+    /// Whether `text` is exactly `<host>/<repository>@sha256:<64 lowercase hex>` with a valid
+    /// host and repository and no tag: the one shape `tart delete` is given for a pulled image.
+    static func isDigestRef(_ text: String) -> Bool {
+        guard let split = text.range(of: digestPrefix),
+              (try? /[0-9a-f]{64}/.wholeMatch(in: String(text[split.upperBound...]))) != nil,
+              case let repository = String(text[..<split.lowerBound]),
+              let ref = parse(repository)
+        else { return false }
+        return repository == "\(ref.host)/\(ref.repository)"
+    }
+
+    /// How an image is named in the UI and in messages: the repository's last component with
+    /// its tag (`macos-tahoe-xcode:26.3`), or with the first 12 hex digits of its digest
+    /// (`macos-tahoe-xcode@sha256:923c98d32e40`). A local VM name stays as it is.
+    static func shortName(of image: String) -> String {
+        if let range = image.range(of: digestPrefix) {
+            let digest = image[range.upperBound...].prefix(shortDigestLength)
+            return leaf(of: String(image[..<range.lowerBound])) + digestPrefix + digest
+        }
+        guard let ref = parse(image) else { return image }
+        return leaf(of: ref.repository) + ":" + ref.tag
+    }
+
+    private static func leaf(of repository: String) -> String {
+        repository.split(separator: "/").last.map(String.init) ?? repository
+    }
+
     private static func splitTag(_ component: String) -> (name: String, tag: String) {
         guard let colon = component.firstIndex(of: ":") else { return (component, "latest") }
         return (String(component[..<colon]), String(component[component.index(after: colon)...]))
@@ -88,6 +135,8 @@ struct TartManifestInfo: Equatable, Sendable {
     let vmConfigDigest: String
     let vmConfigSize: Int
     let diskGB: Int?
+    /// The annotation's exact value; nil whenever `diskGB` is.
+    let diskBytes: Int64?
 }
 
 /// Reads the two untrusted documents an image carries. Every value is checked against
@@ -142,11 +191,13 @@ enum TartImageConfigParser {
               isSHA256Digest(layer.digest),
               layer.size >= 0
         else { return nil }
-        let disk = manifest.annotations?[diskAnnotation].flatMap { Int($0) }.map { $0 / bytesPerGB }
+        let bytes = manifest.annotations?[diskAnnotation].flatMap { Int($0) }
+        let disk = bytes.map { $0 / bytesPerGB }.flatMap { TartImageDefaults.Bounds.diskGB.contains($0) ? $0 : nil }
         return TartManifestInfo(
             vmConfigDigest: layer.digest,
             vmConfigSize: layer.size,
-            diskGB: disk.flatMap { TartImageDefaults.Bounds.diskGB.contains($0) ? $0 : nil }
+            diskGB: disk,
+            diskBytes: disk == nil ? nil : bytes.map(Int64.init)
         )
     }
 }

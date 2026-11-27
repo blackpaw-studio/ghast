@@ -34,7 +34,7 @@ final class TartBackend: RunnerBackend {
     nonisolated static let macOSVMLimit = 2
     /// VMs one runner entry runs at once.
     static let maxVMsPerRunner = 2
-    static let clonePrefix = "ghast-"
+    nonisolated static let clonePrefix = "ghast-"
     /// Under a VM runner's folder: one folder per VM boot with its scripts and `.env`.
     static let jobFoldersName = "vm-jobs"
     private static let maxRunnerNameLength = 64
@@ -54,6 +54,10 @@ final class TartBackend: RunnerBackend {
     private let bootGate = BootGate()
     /// The local cache server, made on first use; nil when there is none (tests, the fixture).
     private let cacheProvider: @MainActor () -> (any LocalCacheServing)?
+    /// Where an image's disk size comes from for the space check before a pull.
+    private let imageDefaults: any TartImageDefaultsProviding
+    /// Free space on Tart's volume; nil skips the check (tests, the fixture).
+    private let capacity: (any HostCapacity)?
 
     private var entries: [String: OnDemandEntry] = [:]
 
@@ -64,6 +68,8 @@ final class TartBackend: RunnerBackend {
     ///   - makeID: A short unique id (6 hex digits) for a clone and its JIT runner name.
     ///   - power: Sleep and wake: a sleeping Mac gives up its job queue so another Mac can use it.
     ///   - cacheProvider: The local Actions cache server, asked for only when a VM uses it.
+    ///   - imageDefaults: Looks up an image's disk size for the free-space check before a pull.
+    ///   - capacity: Reads the free space; without it a pull is never checked.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
@@ -77,7 +83,9 @@ final class TartBackend: RunnerBackend {
         makeID: @escaping @Sendable () -> String = TartBackend.randomID,
         timing: Timing = .standard,
         power: any PowerEventSource = NoPowerEvents(),
-        cacheProvider: @escaping @MainActor () -> (any LocalCacheServing)? = { nil }
+        cacheProvider: @escaping @MainActor () -> (any LocalCacheServing)? = { nil },
+        imageDefaults: any TartImageDefaultsProviding = NoImageDefaults(),
+        capacity: (any HostCapacity)? = nil
     ) {
         self.cliProvider = cliProvider
         self.api = api
@@ -91,6 +99,8 @@ final class TartBackend: RunnerBackend {
         self.makeID = makeID
         self.timing = timing
         self.cacheProvider = cacheProvider
+        self.imageDefaults = imageDefaults
+        self.capacity = capacity
         power.observe(
             willSleep: { [weak self] in self?.systemWillSleep() },
             didWake: { [weak self] in self?.systemDidWake() }
@@ -283,7 +293,7 @@ final class TartBackend: RunnerBackend {
 
     private func launchVM(_ entry: OnDemandEntry, runner: LocalRunner, image: String) {
         let id = makeID()
-        let vm = VMRun(id: id, clone: "\(Self.clonePrefix)\(runner.id)-\(id)")
+        let vm = VMRun(id: id, clone: "\(Self.clonePrefix)\(runner.id)-\(id)", image: image)
         entry.vms.append(vm)
         vm.task = Task { @MainActor [weak self] in await self?.runVM(vm, entry: entry, runner: runner, image: image) }
     }
@@ -531,6 +541,7 @@ final class TartBackend: RunnerBackend {
         let present = try await cli.list().contains { $0.name == image }
         guard !present else { return }
         guard TartImageCatalog.isOCIRef(image) else { throw TartBackendError.localImageMissing(image) }
+        try await checkSpace(for: image)
         entry.isPulling = true
         defer {
             entry.isPulling = false
@@ -544,6 +555,16 @@ final class TartBackend: RunnerBackend {
         }
         log("Image pulled", runner: runner)
         try checkStop(entry)
+    }
+
+    /// Stops before `tart pull` when the image's disk plus Tart's own reserve won't fit in the
+    /// free space. Unknown sizes pass: Tart's check is the backstop.
+    private func checkSpace(for image: String) async throws {
+        guard let capacity else { return }
+        let required = await imageDefaults.defaults(for: image)?.diskBytes
+        if let shortfall = PullSpaceCheck.shortfall(image: image, requiredDiskBytes: required, freeBytes: capacity.freeDiskBytes()) {
+            throw shortfall
+        }
     }
 
     /// This boot's scripts and variables, in a folder of the runner's own that only this VM
@@ -838,7 +859,8 @@ final class TartBackend: RunnerBackend {
         host?.recordExit(
             id: entry.runnerID,
             code: failure == nil ? 0 : RunnerExit.launchFailureCode,
-            wasRequested: failure == nil
+            wasRequested: failure == nil,
+            block: Self.exitBlock(for: failure)
         )
         vmSlotFreed()
         for waiter in entry.waiters { waiter.resume() }
@@ -992,6 +1014,21 @@ final class TartBackend: RunnerBackend {
     // MARK: - Liveness
 
     var hasActiveRunners: Bool { !entries.isEmpty }
+
+    /// The images the backend itself is using right now, from its own state rather than the
+    /// runners' config: one per VM from launch (pull, clone, boot, job) to cleanup, with
+    /// `isPulling` while the runner's image pull runs.
+    var activeImages: [ActiveImage] {
+        entries.values.flatMap { entry in
+            entry.vms.map { ActiveImage(runnerID: entry.runnerID, image: $0.image, isPulling: entry.isPulling) }
+        }
+    }
+
+    struct ActiveImage: Equatable, Sendable {
+        let runnerID: String
+        let image: String
+        let isPulling: Bool
+    }
 
     func isActive(id: String) -> Bool { entries[id] != nil }
 

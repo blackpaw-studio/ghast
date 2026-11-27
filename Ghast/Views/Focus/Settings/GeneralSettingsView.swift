@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Settings › General: startup, menu bar and notifications, updates, VM isolation, the local
-/// cache, and the runners folder.
+/// cache, Tart storage, and the runners folder.
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(OpenAtLoginModel.self) private var openAtLogin
@@ -77,6 +77,8 @@ struct GeneralSettingsView: View {
             SettingsHelp(text: "Runners with Isolate network on boot their VMs through a root-owned copy of softnet kept in /usr/local/libexec/ghast.")
 
             cacheSection
+
+            TartStorageSection()
 
             FocusFormSection(caption: "Runners") {
                 FocusFormRow(label: "Runners folder") {
