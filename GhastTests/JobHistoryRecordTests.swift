@@ -80,11 +80,18 @@ import Foundation
         #expect(GuestRunInfo.parseMarker(line) == raw())
     }
 
-    @Test("a marker with bad base64 or another prefix is not a marker")
-    func badMarker() {
-        #expect(GuestRunInfo.parseMarker("ghast: run-info repository=!!!") == nil)
+    @Test("another prefix is not a marker")
+    func notAMarker() {
         #expect(GuestRunInfo.parseMarker("Running job: build") == nil)
+        #expect(GuestRunInfo.parseMarker("repository=\(b64("acme/app"))") == nil)
+    }
+
+    @Test("a field that doesn't decode is dropped on its own; the others stay")
+    func badFieldsDropOneByOne() {
+        #expect(GuestRunInfo.parseMarker("ghast: run-info repository=!!!") == [:])
         #expect(GuestRunInfo.parseMarker("ghast: run-info workflow=\(b64("CI")) bogus") == ["workflow": "CI"])
+        let line = "ghast: run-info repository=\(b64("acme/app")) workflow=!!! run_id=\(b64("7")) run_attempt=%%%"
+        #expect(GuestRunInfo.parseMarker(line) == ["repository": "acme/app", "run_id": "7"])
     }
 
     @Test("a marker line over the host's cap is never decoded: it yields no values")

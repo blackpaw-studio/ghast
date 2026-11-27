@@ -93,11 +93,28 @@ import Foundation
         ])
     }
 
-    @Test("lines that are neither are ignored")
+    @Test("a first marker with one bad field keeps its good fields, and a later forged marker is ignored")
+    func badFieldKeepsTheRest() {
+        let b64 = { (text: String) in Data(text.utf8).base64EncodedString() }
+        let tracker = GuestJobTracker()
+        tracker.receive(line: stamped("ghast: run-info repository=\(b64("acme/real")) workflow=!!! run_id=\(b64("7")) run_attempt=\(b64("1"))"))
+        tracker.receive(line: marker(repository: "acme/forged"))
+        #expect(tracker.snapshot.runInfo == ["repository": "acme/real", "run_id": "7", "run_attempt": "1"])
+    }
+
+    @Test("a first marker that decodes to nothing still locks the slot")
+    func undecodableFirstMarkerLocks() {
+        let tracker = GuestJobTracker()
+        tracker.receive(line: stamped("ghast: run-info repository=!!!"))
+        tracker.receive(line: marker(repository: "acme/forged"))
+        #expect(tracker.snapshot.runInfo == [:])
+    }
+
+    @Test("lines that aren't markers or job lines are ignored")
     func unrelated() {
         let tracker = GuestJobTracker()
         tracker.receive(line: stamped("Listening for Jobs"))
-        tracker.receive(line: "ghast: run-info repository=!!!")
+        tracker.receive(line: "run-info repository=!!!")
         #expect(tracker.snapshot == GuestJobSnapshot())
     }
 }

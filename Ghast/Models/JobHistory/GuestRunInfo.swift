@@ -41,17 +41,18 @@ struct GuestRunInfo: Sendable, Equatable {
     /// The only keys a marker may carry; any other is ignored without being decoded.
     private static let markerKeys: Set<Substring> = ["repository", "workflow", "run_id", "run_attempt"]
 
-    /// Reads a `ghast: run-info key=<base64> …` line; nil when it isn't one. A line over
-    /// `maxMarkerBytes` is a marker with no values (nothing in it is decoded). A value that
-    /// isn't valid base64 makes the whole line nil.
+    /// Reads a `ghast: run-info key=<base64> …` line; nil when it isn't one. Any marker gives
+    /// a result, so the first one can be locked in: a line over `maxMarkerBytes` has no values
+    /// (nothing in it is decoded), and a field that doesn't decode is dropped on its own.
     static func parseMarker(_ text: String) -> [String: String]? {
         guard text.hasPrefix(markerPrefix) else { return nil }
         guard text.utf8.count <= maxMarkerBytes else { return [:] }
         var values: [String: String] = [:]
         for pair in text.dropFirst(markerPrefix.count).split(separator: " ") {
-            guard let equals = pair.firstIndex(of: "="), markerKeys.contains(pair[..<equals]) else { continue }
+            guard let equals = pair.firstIndex(of: "="), markerKeys.contains(pair[..<equals]),
+                  let data = Data(base64Encoded: String(pair[pair.index(after: equals)...]))
+            else { continue }
             // A guest in the C locale clips by bytes, which can cut a character: decode leniently.
-            guard let data = Data(base64Encoded: String(pair[pair.index(after: equals)...])) else { return nil }
             values[String(pair[..<equals])] = String(decoding: data, as: UTF8.self)
         }
         return values
