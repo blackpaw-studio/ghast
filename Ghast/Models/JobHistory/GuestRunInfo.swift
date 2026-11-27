@@ -23,7 +23,7 @@ struct GuestRunInfo: Sendable, Equatable {
     var runID: Int?
     var runAttempt: Int?
 
-    private static let markerPrefix = "ghast: run-info "
+    static let markerPrefix = "ghast: run-info "
 
     static func validated(_ raw: [String: String], scope: RunnerScope) -> GuestRunInfo {
         GuestRunInfo(

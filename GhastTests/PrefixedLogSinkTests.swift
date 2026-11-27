@@ -60,4 +60,30 @@ import Foundation
         #expect(activity.lines.map(\.kind) == [.jobStarted, .jobSucceeded])
         #expect(activity.jobs.map(\.result) == [.succeeded])
     }
+
+    final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen: [String] = []
+        var all: [String] { lock.withLock { seen } }
+        func add(_ line: String) { lock.withLock { seen.append(line) } }
+    }
+
+    @Test("onLine gets each whole line without the prefix, and finish delivers a trailing partial line")
+    func onLine() {
+        let lines = Lines()
+        let sink = PrefixedLogSink(file: logFile(), prefix: "[vm a1b2c3] ", onLine: lines.add)
+
+        sink.receive("2026-11-18T10:00:00-0500 Running job: build\n2026-11-18T10:00:01-0500 Job bu")
+        #expect(lines.all == ["2026-11-18T10:00:00-0500 Running job: build"])
+        sink.receive("ild completed with result: Succeeded\nBare line\n")
+        sink.receive("tail")
+        sink.finish()
+
+        #expect(lines.all == [
+            "2026-11-18T10:00:00-0500 Running job: build",
+            "2026-11-18T10:00:01-0500 Job build completed with result: Succeeded",
+            "Bare line",
+            "tail",
+        ])
+    }
 }

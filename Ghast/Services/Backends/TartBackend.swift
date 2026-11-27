@@ -700,11 +700,17 @@ final class TartBackend: RunnerBackend {
         await withCheckedContinuation { continuation in
             let token = UUID()
             do {
-                let process = try cli.execStreaming(vm.clone, command, log: logFile(for: runner), linePrefix: vm.logPrefix) { [weak self, weak vm] code in
-                    Task { @MainActor in
-                        if let self, let vm { self.guestEnded(vm, token: token, code: code) }
+                let tracker = GuestJobTracker()
+                vm.tracker = tracker
+                let process = try cli.execStreaming(
+                    vm.clone, command, log: logFile(for: runner), linePrefix: vm.logPrefix,
+                    onLine: { tracker.receive(line: $0) },
+                    onExit: { [weak self, weak vm] code in
+                        Task { @MainActor in
+                            if let self, let vm { self.guestEnded(vm, token: token, code: code) }
+                        }
                     }
-                }
+                )
                 vm.guest = GuestRun(token: token, process: process, continuation: continuation)
                 vm.phase = .running
                 publish(entry)

@@ -296,4 +296,33 @@ struct OutputParserTests {
         #expect(state.activity.lines.count == 16)
         #expect(state.activity.lines.first?.clockText == "06:58:02")
     }
+
+    // MARK: Guest lines
+
+    @Test("jobEvent reads a job's start and result from a stamped guest line")
+    func jobEvents() {
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:00:00-0500 2026-11-16 15:00:00Z: Running job: build") == .started(name: "build"))
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:00:00-0500 Running job: Build (macOS)") == .started(name: "Build (macOS)"))
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:05:00-0500 2026-11-16 15:05:00Z: Job build completed with result: Succeeded") == .completed(name: "build", result: .succeeded))
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:05:00-0500 Job build completed with result: Failed\r") == .completed(name: "build", result: .failed))
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:05:00-0500 Job build completed with result: Canceled") == .completed(name: "build", result: .cancelled))
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:05:00-0500 Listening for Jobs") == nil)
+        #expect(OutputParser.jobEvent(in: "Running job: bare") == .started(name: "bare"))
+    }
+
+    @Test("unstamped drops the wrapper's stamp and the runner's own prefix")
+    func unstamped() {
+        #expect(OutputParser.unstamped("2026-11-16T10:00:00-0500 ghast: run-info repository=Zm9v") == "ghast: run-info repository=Zm9v")
+        #expect(OutputParser.unstamped("2026-11-16T10:00:00-0500 2026-11-16 15:00:00Z: Hello ") == "Hello")
+    }
+
+    @Test("the guest's run-info marker is not shown as an output line")
+    func markerHidden() {
+        let state = parse(
+            line("10:00:00", "[vm a1b2c3] Running job: build")
+                + line("10:00:01", "[vm a1b2c3] ghast: run-info repository=Zm9v workflow=Q0k=")
+                + line("10:00:02", "[vm a1b2c3] step output")
+        )
+        #expect(state.activity.lines.map(\.text) == ["[vm a1b2c3] Running job: build", "[vm a1b2c3] step output"])
+    }
 }

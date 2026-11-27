@@ -94,6 +94,8 @@ final class VMRun {
     var hasClaimedJob = false
     /// The guest answered its readiness probe; cleared when cleanup starts.
     var isReachable = false
+    /// What this VM's guest stream has shown of its job. Replaced when the guest command starts.
+    var tracker = GuestJobTracker()
     /// This VM's registration with the local cache, unregistered at cleanup.
     var cacheRegistration: (id: String, cache: any LocalCacheServing)?
 

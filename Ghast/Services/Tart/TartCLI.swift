@@ -43,12 +43,14 @@ protocol TartCLI: Sendable {
     /// Runs a guest command to completion and returns its status and output.
     func execOutput(_ vm: String, _ command: [String]) async throws -> ScriptResult
     /// Starts a long-lived guest command, appending its output to `log` with each line marked
-    /// with `linePrefix`; `onExit` receives its status once the last line is written.
+    /// with `linePrefix`; `onLine` gets each whole line unprefixed as it arrives; `onExit`
+    /// receives its status once the last line is written.
     func execStreaming(
         _ vm: String,
         _ command: [String],
         log: URL,
         linePrefix: String,
+        onLine: @escaping @Sendable (String) -> Void,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle
     func stop(_ vm: String, timeout: Int) async throws
@@ -154,9 +156,10 @@ struct ProcessTartCLI: TartCLI {
         _ command: [String],
         log: URL,
         linePrefix: String,
+        onLine: @escaping @Sendable (String) -> Void,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        try launchPrefixed(TartArguments.exec(vm, command), log: log, linePrefix: linePrefix, onExit: onExit)
+        try launchPrefixed(TartArguments.exec(vm, command), log: log, linePrefix: linePrefix, onLine: onLine, onExit: onExit)
     }
 
     /// Streams the output through a `PrefixedLogSink` instead of handing the process the raw
@@ -166,9 +169,10 @@ struct ProcessTartCLI: TartCLI {
         environment: [String: String]? = nil,
         log: URL,
         linePrefix: String,
+        onLine: (@Sendable (String) -> Void)? = nil,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> any RunnerProcessHandle {
-        let sink = PrefixedLogSink(file: log, prefix: linePrefix)
+        let sink = PrefixedLogSink(file: log, prefix: linePrefix, onLine: onLine)
         return try launcher.launchStreaming(
             launchSpec(arguments, log: log, environment: environment),
             onOutput: { sink.receive($0) },

@@ -38,7 +38,7 @@ struct FixtureTartCLI: TartCLI {
     func run(_ vm: String, shares: [TartShare], network: TartNetwork, log: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle { throw FixtureRefusal() }
     func exec(_ vm: String, _ command: [String]) async throws -> Int32 { throw FixtureRefusal() }
     func execOutput(_ vm: String, _ command: [String]) async throws -> ScriptResult { throw FixtureRefusal() }
-    func execStreaming(_ vm: String, _ command: [String], log: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle { throw FixtureRefusal() }
+    func execStreaming(_ vm: String, _ command: [String], log: URL, linePrefix: String, onLine: @escaping @Sendable (String) -> Void, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle { throw FixtureRefusal() }
     func stop(_ vm: String, timeout: Int) async throws { throw FixtureRefusal() }
 }
 

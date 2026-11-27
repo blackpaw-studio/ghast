@@ -41,6 +41,28 @@ enum OutputParser {
         return next
     }
 
+    // MARK: - Guest lines
+
+    /// A runner's job-level line.
+    enum JobLineEvent: Sendable, Equatable {
+        case started(name: String)
+        case completed(name: String, result: JobResult)
+    }
+
+    /// The job event in one raw guest line (`<stamp> [<runner stamp>: ]text`), if it is one.
+    static func jobEvent(in rawLine: String) -> JobLineEvent? {
+        let text = unstamped(rawLine)
+        if text.hasPrefix(jobStartPrefix) { return .started(name: String(text.dropFirst(jobStartPrefix.count))) }
+        return completedJob(in: text).map { .completed(name: $0.name, result: $0.result) }
+    }
+
+    /// A raw guest line with the wrapper's stamp and the runner's own prefix removed.
+    static func unstamped(_ rawLine: String) -> String {
+        var line = rawLine
+        if line.hasSuffix("\r") { line.removeLast() }
+        return stripRunnerPrefix(splitStamp(line).text).trimmingCharacters(in: .whitespaces)
+    }
+
     // MARK: - Lines
 
     private static func apply(_ rawLine: Data.SubSequence, startingAt byteOffset: UInt64, to state: inout ParserState) {
@@ -53,6 +75,7 @@ enum OutputParser {
         let text = stripRunnerPrefix(unprefixed).trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
 
+        if text.hasPrefix(GuestRunInfo.markerPrefix) { return }  // Ghast's own report, not output
         if apply(marker: text, at: stamped.date, to: &state) { return }
 
         let kind = classify(text)
