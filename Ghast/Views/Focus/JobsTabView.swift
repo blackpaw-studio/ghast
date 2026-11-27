@@ -97,6 +97,8 @@ struct JobHistoryRow: View {
     private static let rowCorner: CGFloat = 8
     private static let verticalPadding: CGFloat = 8
     private static let symbolSize: CGFloat = 14
+    /// Wide enough for the widest symbol, so the result words line up.
+    private static let symbolColumn: CGFloat = 18
     private static let columnSpacing: CGFloat = 12
     private static let lineSpacing: CGFloat = 2
 
@@ -109,6 +111,7 @@ struct JobHistoryRow: View {
                 Image(systemName: Self.symbol(for: record.result))
                     .font(.system(size: Self.symbolSize))
                     .foregroundStyle(Self.color(for: record.result))
+                    .frame(width: Self.symbolColumn)
             }
             .frame(width: Self.resultColumnWidth, alignment: .leading)
 
@@ -155,7 +158,7 @@ struct JobHistoryRow: View {
         case .succeeded: "checkmark.circle.fill"
         case .failed: "xmark.circle.fill"
         case .cancelled: "slash.circle"
-        case .running: "circle.dotted"
+        case .running: "play.circle.fill"
         case .didNotStart: "exclamationmark.triangle.fill"
         case .unknown: "questionmark.circle"
         }
