@@ -37,6 +37,23 @@ import Foundation
         #expect(tracker.snapshot.runInfo?["repository"] == "acme/real")
     }
 
+    @Test("once a marker is accepted a later one is skipped, not even decoded: its values never appear")
+    func laterMarkerSkipped() {
+        let tracker = GuestJobTracker()
+        tracker.receive(line: marker(repository: "acme/real"))
+        let huge = Data(repeating: 0x41, count: 2_000_000).base64EncodedString()
+        tracker.receive(line: stamped("ghast: run-info repository=\(Data("acme/forged".utf8).base64EncodedString()) evil=\(huge)"))
+        #expect(tracker.snapshot.runInfo == ["repository": "acme/real", "workflow": "CI", "run_id": "7", "run_attempt": "1"])
+    }
+
+    @Test("an oversized first marker is kept as no values, and locks the slot")
+    func oversizedFirstMarker() {
+        let tracker = GuestJobTracker()
+        let huge = Data(repeating: 0x41, count: 2_000_000).base64EncodedString()
+        tracker.receive(line: stamped("ghast: run-info repository=\(Data("acme/app".utf8).base64EncodedString()) evil=\(huge)"))
+        #expect(tracker.snapshot.runInfo == [:])
+    }
+
     @Test("a second Running job line is ignored")
     func firstJobOnly() {
         let tracker = GuestJobTracker()

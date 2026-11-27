@@ -87,5 +87,27 @@ import Foundation
         #expect(GuestRunInfo.parseMarker("ghast: run-info workflow=\(b64("CI")) bogus") == ["workflow": "CI"])
     }
 
+    @Test("a marker line over the host's cap is never decoded: it yields no values")
+    func oversizedMarker() {
+        let huge = Data(repeating: 0x41, count: 2_000_000).base64EncodedString()
+        let line = "ghast: run-info repository=\(b64("acme/app")) evil=\(huge)"
+        #expect(GuestRunInfo.parseMarker(line) == [:])
+        #expect(GuestRunInfo.parseMarker("ghast: run-info workflow=\(String(repeating: "A", count: GuestRunInfo.maxMarkerBytes))") == [:])
+    }
+
+    @Test("a marker at the cap still decodes")
+    func markerAtTheCap() {
+        let value = b64("x")
+        let padding = String(repeating: "y", count: GuestRunInfo.maxMarkerBytes - "ghast: run-info workflow=".utf8.count - value.utf8.count - " pad=".utf8.count)
+        // A short marker is far under the cap; a legit 4 KB guest line must pass.
+        #expect(GuestRunInfo.parseMarker("ghast: run-info workflow=\(value) pad=\(padding)") == ["workflow": "x"])
+    }
+
+    @Test("keys other than the four run fields are ignored")
+    func unknownKeysIgnored() {
+        let line = "ghast: run-info evil=\(b64("payload")) workflow=\(b64("CI")) run_id=\(b64("7"))"
+        #expect(GuestRunInfo.parseMarker(line) == ["workflow": "CI", "run_id": "7"])
+    }
+
     private func b64(_ text: String) -> String { Data(text.utf8).base64EncodedString() }
 }

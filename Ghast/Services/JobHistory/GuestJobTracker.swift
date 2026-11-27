@@ -38,9 +38,10 @@ final class GuestJobTracker: @unchecked Sendable {
 
     private func record(_ line: String) -> Change? {
         let text = OutputParser.unstamped(line)
-        if let values = GuestRunInfo.parseMarker(text) {
+        if GuestRunInfo.isMarker(text) {
             return lock.withLock {
-                guard current.runInfo == nil else { return nil }
+                // Only the first marker counts, so a later one is not even decoded.
+                guard current.runInfo == nil, let values = GuestRunInfo.parseMarker(text) else { return nil }
                 current.runInfo = values
                 return .runInfo(values)
             }

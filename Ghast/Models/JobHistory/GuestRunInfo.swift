@@ -24,6 +24,8 @@ struct GuestRunInfo: Sendable, Equatable {
     var runAttempt: Int?
 
     static let markerPrefix = "ghast: run-info "
+    /// The guest sends at most 4 KB of values; a longer line is not Ghast's and is never decoded.
+    static let maxMarkerBytes = markerPrefix.utf8.count + 4096
 
     static func validated(_ raw: [String: String], scope: RunnerScope) -> GuestRunInfo {
         GuestRunInfo(
@@ -34,13 +36,20 @@ struct GuestRunInfo: Sendable, Equatable {
         )
     }
 
-    /// Reads a `ghast: run-info key=<base64> …` line; nil when it isn't one. A value that
-    /// isn't valid base64 or UTF-8 ends the line's parse as nil.
+    static func isMarker(_ text: String) -> Bool { text.hasPrefix(markerPrefix) }
+
+    /// The only keys a marker may carry; any other is ignored without being decoded.
+    private static let markerKeys: Set<Substring> = ["repository", "workflow", "run_id", "run_attempt"]
+
+    /// Reads a `ghast: run-info key=<base64> …` line; nil when it isn't one. A line over
+    /// `maxMarkerBytes` is a marker with no values (nothing in it is decoded). A value that
+    /// isn't valid base64 or UTF-8 makes the whole line nil.
     static func parseMarker(_ text: String) -> [String: String]? {
         guard text.hasPrefix(markerPrefix) else { return nil }
+        guard text.utf8.count <= maxMarkerBytes else { return [:] }
         var values: [String: String] = [:]
         for pair in text.dropFirst(markerPrefix.count).split(separator: " ") {
-            guard let equals = pair.firstIndex(of: "=") else { continue }
+            guard let equals = pair.firstIndex(of: "="), markerKeys.contains(pair[..<equals]) else { continue }
             guard let data = Data(base64Encoded: String(pair[pair.index(after: equals)...])),
                   let value = String(data: data, encoding: .utf8) else { return nil }
             values[String(pair[..<equals])] = value
