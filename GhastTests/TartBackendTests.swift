@@ -43,6 +43,8 @@ final class TartHarness {
     let service: RunnerService
     let backend: TartBackend
     let softnet: FakeSoftnetChecker
+    let historyStore = InMemoryJobHistoryStore()
+    let history: JobHistory
     /// Holds the gateway lookup's deadline until a test opens it.
     let gatewayDeadline = HoldGate()
 
@@ -67,6 +69,7 @@ final class TartHarness {
         let recheck = timing.slotRecheckInterval
         let power = power
         let gatewayTimeout = timing.gatewayTimeout, gatewayDeadline = gatewayDeadline
+        let history = JobHistory(store: historyStore, clock: clock)
         let backend = TartBackend(
             cliProvider: { cli },
             api: api,
@@ -90,8 +93,10 @@ final class TartHarness {
             power: power,
             cacheProvider: { cache },
             imageDefaults: imageDefaults,
-            capacity: capacity
+            capacity: capacity,
+            history: history
         )
+        self.history = history
         self.clock = clock
         self.cli = cli
         self.api = api

@@ -101,8 +101,10 @@ final class JobHistory: JobHistoryRecording, JobHistoryDeleting {
         }
     }
 
+    /// A record finishes once: a later call (the VM's end after the live result) changes nothing.
     func finish(runnerID: String, vmID: String, result: JobHistoryResult, at end: Date) {
         update(runnerID, vmID) {
+            guard $0.result == .running else { return }
             $0.result = result
             $0.finishedAt = end
         }

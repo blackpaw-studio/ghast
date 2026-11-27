@@ -67,6 +67,21 @@ import Foundation
         #expect(saved.finishedAt == clock.now())
     }
 
+    @Test("a record finishes once")
+    func finishOnce() throws {
+        let history = makeHistory()
+        history.begin(runnerID: runner, vmID: "aaaaaa", at: clock.now())
+        history.finish(runnerID: runner, vmID: "aaaaaa", result: .failed, at: clock.now())
+        let writes = store.saveCount
+        clock.advance(by: 60)
+        history.finish(runnerID: runner, vmID: "aaaaaa", result: .unknown, at: clock.now())
+
+        let record = try #require(history.records(for: runner).first)
+        #expect(record.result == .failed)
+        #expect(record.finishedAt == clock.now().addingTimeInterval(-60))
+        #expect(store.saveCount == writes)
+    }
+
     @Test("run info with a missing field keeps what the record already has")
     func runInfoMerges() throws {
         let history = makeHistory()

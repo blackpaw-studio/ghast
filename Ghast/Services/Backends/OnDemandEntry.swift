@@ -94,6 +94,9 @@ final class VMRun {
     var hasClaimedJob = false
     /// The guest answered its readiness probe; cleared when cleanup starts.
     var isReachable = false
+    /// When the VM passed the isolation gate and so began to take a job; the start time of its
+    /// job-history row. Nil before then.
+    var historyStartedAt: Date?
     /// What this VM's guest stream has shown of its job. Replaced when the guest command starts.
     var tracker = GuestJobTracker()
     /// This VM's registration with the local cache, unregistered at cleanup.
