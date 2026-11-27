@@ -36,11 +36,18 @@ struct FocusMainView: View {
         MainSelection(storageValue: storedSelection).resolved(in: catalog, previous: nil)
     }
 
-    private var tab: Binding<DetailTab> {
+    /// The saved tab, or Output when the selected runner has no such tab (Jobs on a host runner).
+    /// A saved Jobs tab is kept, so it shows again on the next VM runner.
+    private func tab(isVM: Bool) -> Binding<DetailTab> {
         Binding(
-            get: { DetailTab(rawValue: storedTab) ?? .output },
+            get: { (DetailTab(rawValue: storedTab) ?? .output).shown(isVM: isVM) },
             set: { storedTab = $0.rawValue }
         )
+    }
+
+    private func isVMRunner(_ item: RunnerItem?) -> Bool {
+        guard let item, case let .thisMac(localID) = item.location else { return false }
+        return runnerService.localRunners.first { $0.id == localID }.map { $0.backend != .host } ?? false
     }
 
     private var listSelection: Binding<RunnerItem.ID?> {
@@ -84,7 +91,8 @@ struct FocusMainView: View {
                 .toolbar {
                     MainToolbar(
                         item: selected,
-                        tab: tab,
+                        tab: tab(isVM: isVMRunner(selected)),
+                        isVM: isVMRunner(selected),
                         state: commandState(for: selected),
                         perform: { perform($0, on: selected) },
                         actions: actions
@@ -148,7 +156,7 @@ struct FocusMainView: View {
                     runner: runner,
                     processState: runnerService.processStates[localID] ?? .stopped,
                     activity: activityStore.activity(for: localID),
-                    tab: tab.wrappedValue,
+                    tab: tab(isVM: runner.backend != .host).wrappedValue,
                     actions: actions,
                     pane: outputPane(for: localID),
                     clearOutput: { runnerService.clearOutput(id: localID) },

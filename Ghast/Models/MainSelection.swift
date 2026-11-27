@@ -64,15 +64,27 @@ extension RunnerCatalog {
     }
 }
 
-/// The local runner detail's two tabs.
+/// The local runner detail's tabs: Output and Configuration, and Jobs for a VM runner.
 enum DetailTab: String, CaseIterable, Sendable {
     case output
     case configuration
+    case jobs
 
     var title: String {
         switch self {
         case .output: return "Output"
         case .configuration: return "Configuration"
+        case .jobs: return "Jobs"
         }
+    }
+
+    /// The tabs a runner offers, in order.
+    static func tabs(isVM: Bool) -> [DetailTab] {
+        isVM ? [.output, .configuration, .jobs] : [.output, .configuration]
+    }
+
+    /// This tab, or Output when the runner has no such tab (a saved Jobs tab on a host runner).
+    func shown(isVM: Bool) -> DetailTab {
+        Self.tabs(isVM: isVM).contains(self) ? self : .output
     }
 }

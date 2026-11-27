@@ -19,6 +19,19 @@ enum DurationFormat {
         }
     }
 
+    /// A job's length with seconds kept under an hour: `48 s`, `6 min 12 s`, `1 h 03 min`; "—" when unknown.
+    static func job(_ interval: TimeInterval?) -> String {
+        guard let interval, interval >= 0 else { return unknown }
+        let total = Int(interval)
+        let secondsPerHour = secondsPerMinute * minutesPerHour
+        if total >= secondsPerHour {
+            let (hours, rest) = total.quotientAndRemainder(dividingBy: secondsPerHour)
+            return "\(hours) h \(String(format: "%02d", rest / secondsPerMinute)) min"
+        }
+        let (minutes, seconds) = total.quotientAndRemainder(dividingBy: secondsPerMinute)
+        return minutes == 0 ? "\(seconds) s" : "\(minutes) min \(String(format: "%02d", seconds)) s"
+    }
+
     /// `started just now` under a minute, then `started {n} min ago` to the nearest minute.
     static func started(elapsed: TimeInterval) -> String {
         guard elapsed >= TimeInterval(secondsPerMinute) else { return "started just now" }

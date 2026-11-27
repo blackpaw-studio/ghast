@@ -65,4 +65,18 @@ struct DurationFormatTests {
     func spokenUnknown() {
         #expect(DurationFormat.spoken(nil) == "unavailable")
     }
+
+    @Test("a job's duration keeps seconds under an hour", arguments: [
+        (0.0, "0 s"), (48.0, "48 s"), (59.4, "59 s"), (60.0, "1 min 00 s"), (372.0, "6 min 12 s"),
+        (843.0, "14 min 03 s"), (3599.0, "59 min 59 s"), (3600.0, "1 h 00 min"), (3780.0, "1 h 03 min"), (93_600.0, "26 h 00 min"),
+    ])
+    func jobDuration(seconds: Double, expected: String) {
+        #expect(DurationFormat.job(seconds) == expected)
+    }
+
+    @Test("a job duration that is unknown or negative is a dash")
+    func jobDurationUnknown() {
+        #expect(DurationFormat.job(nil) == "—")
+        #expect(DurationFormat.job(-5) == "—")
+    }
 }

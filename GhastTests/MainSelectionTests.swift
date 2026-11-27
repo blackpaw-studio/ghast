@@ -64,6 +64,23 @@ import Foundation
     }
 
     @Test func detailTabRoundTripsThroughItsRawValue() {
-        #expect(DetailTab.allCases.map { DetailTab(rawValue: $0.rawValue) } == [.output, .configuration])
+        #expect(DetailTab.allCases.map { DetailTab(rawValue: $0.rawValue) } == [.output, .configuration, .jobs])
+    }
+
+    // MARK: Detail tabs
+
+    @Test func vmRunnersGetAJobsTabAfterConfiguration() {
+        #expect(DetailTab.tabs(isVM: true) == [.output, .configuration, .jobs])
+    }
+
+    @Test func hostRunnersKeepTwoTabs() {
+        #expect(DetailTab.tabs(isVM: false) == [.output, .configuration])
+    }
+
+    @Test func aSavedJobsTabShowsOutputForAHostRunner() {
+        #expect(DetailTab.jobs.shown(isVM: false) == .output)
+        #expect(DetailTab.jobs.shown(isVM: true) == .jobs)
+        #expect(DetailTab.configuration.shown(isVM: false) == .configuration)
+        #expect(DetailTab.output.shown(isVM: true) == .output)
     }
 }

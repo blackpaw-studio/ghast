@@ -13,6 +13,7 @@ struct LocalRunnerDetail: View {
     let runnerService: RunnerService
     @Environment(\.focusContext) private var context
     @Environment(\.runnerFlowServices) private var flowServices
+    @Environment(JobHistory.self) private var jobHistory: JobHistory?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: FocusMetrics.refreshInterval(for: item.status))) { _ in
@@ -41,6 +42,8 @@ struct LocalRunnerDetail: View {
                     )
                 }
                 .focusContentLayer()
+            case .jobs:
+                JobsTabView(records: jobHistory?.records(for: runner.id) ?? [], copy: actions.copy)
             case .configuration:
                 RunnerConfigurationForm(
                     item: item,
