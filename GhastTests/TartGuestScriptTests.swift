@@ -10,7 +10,8 @@ struct TartGuestScriptTests {
 
         #expect(script.contains("'/Volumes/My Shared Files/ghast/actions-runner-osx-arm64-2.329.0.tar.gz'"))
         #expect(script.contains(#"./run.sh --jitconfig "$1""#))
-        #expect(script.contains(#"exit "${PIPESTATUS[0]}""#))
+        #expect(script.contains(#"GHAST_STATUS="${PIPESTATUS[0]}""#))
+        #expect(script.contains(#"exit "$GHAST_STATUS""#))
     }
 
     @Test("the JIT config rides in argv, never in the script text")
@@ -35,14 +36,16 @@ struct TartGuestScriptTests {
 
         #expect(script.contains("JOB='/Volumes/My Shared Files/ghast-job'"))
         #expect(script.contains(#"if [ -f "$JOB/.env" ]; then cat "$JOB/.env" >> .env || exit 1; fi"#))
-        for (file, hook) in [("pre-job.sh", "ACTIONS_RUNNER_HOOK_JOB_STARTED"), ("post-job.sh", "ACTIONS_RUNNER_HOOK_JOB_COMPLETED")] {
-            #expect(script.contains("""
-            if [ -f "$JOB/\(file)" ]; then
-                cp "$JOB/\(file)" \(file) && chmod +x \(file) || exit 1
-                echo "\(hook)=$PWD/\(file)" >> .env
-            fi
-            """))
-        }
+        #expect(script.contains("""
+        if [ -f "$JOB/post-job.sh" ]; then
+            cp "$JOB/post-job.sh" post-job.sh && chmod +x post-job.sh || exit 1
+            echo "ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$PWD/post-job.sh" >> .env
+        fi
+        """))
+        // The started hook is always Ghast's own; the user's pre-job script is copied beside it and sourced by it.
+        #expect(script.contains(#"cp "$JOB/pre-job.sh" pre-job.sh && chmod +x pre-job.sh || exit 1"#))
+        #expect(script.contains(#"echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=$PWD/ghast-job-started.sh" >> .env"#))
+        #expect(!script.contains(#"ACTIONS_RUNNER_HOOK_JOB_STARTED=$PWD/pre-job.sh"#))
         let copy = try #require(script.range(of: "$JOB/.env"))
         let extract = try #require(script.range(of: "tar xzf"))
         let run = try #require(script.range(of: "./run.sh"))
@@ -183,5 +186,160 @@ struct TartGuestScriptCacheTests {
         #expect(command.suffix(3) == ["_", "JIT", Self.url])
         #expect(!command[2].contains(Self.url))
         #expect(TartGuestScript.command(tarball: "r.tar.gz", jitConfig: "JIT").suffix(2) == ["_", "JIT"])
+    }
+}
+
+
+/// Ghast's job-started hook and the run-info watcher, run under /bin/bash in a temp folder
+/// that stands in for the guest's home and runner folder.
+@Suite("Tart guest script run info")
+struct TartGuestScriptRunInfoTests {
+    private struct Result {
+        let output: String
+        let status: Int32
+        let folder: URL
+    }
+
+    private static let runEnvironment = [
+        "GITHUB_REPOSITORY": "acme/app", "GITHUB_WORKFLOW": "CI", "GITHUB_RUN_ID": "42",
+        "GITHUB_RUN_ATTEMPT": "2", "CUSTOM_VARIABLE": "kept",
+    ]
+
+    private func folder(files: [String: String]) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("guest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (name, text) in files { try Data(text.utf8).write(to: folder.appendingPathComponent(name)) }
+        return folder
+    }
+
+    /// Runs `arguments` in `folder` as the guest would, killing it if it hangs.
+    private func run(_ arguments: [String], in folder: URL, environment: [String: String]) throws -> Result {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = arguments
+        process.currentDirectoryURL = folder
+        process.environment = environment.merging(["HOME": folder.path, "PATH": "/usr/bin:/bin"]) { $1 }
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let watchdog = DispatchWorkItem { process.terminate() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 20, execute: watchdog)
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        watchdog.cancel()
+        return Result(output: output, status: process.terminationStatus, folder: folder)
+    }
+
+    private func runHook(userScript: String?) throws -> Result {
+        var files = ["ghast-job-started.sh": TartGuestScript.jobStartedHook]
+        files["pre-job.sh"] = userScript
+        let folder = try folder(files: files.compactMapValues { $0 })
+        return try run(["--noprofile", "--norc", "-e", "-o", "pipefail", "ghast-job-started.sh"], in: folder, environment: Self.runEnvironment)
+    }
+
+    private func recordedInfo(_ folder: URL) throws -> [String: String]? {
+        let line = try String(contentsOf: folder.appendingPathComponent(".ghast-run-info"), encoding: .utf8)
+        return GuestRunInfo.parseMarker("ghast: run-info " + line.trimmingCharacters(in: .newlines))
+    }
+
+    @Test("the hook records the run, then runs the user's script with the same environment and keeps its exit code")
+    func hookChainsUserScript() throws {
+        let user = """
+        #!/bin/bash
+        env | sort > user-env.txt
+        (compgen -v; declare -F) | grep -ci ghast > ghast-leak.txt || true
+        echo "user script ran"
+        exit 3
+        """
+        let result = try runHook(userScript: user)
+
+        #expect(result.status == 3)
+        #expect(result.output == "user script ran\n")
+        #expect(try recordedInfo(result.folder) == [
+            "repository": "acme/app", "workflow": "CI", "run_id": "42", "run_attempt": "2",
+        ])
+        let seen = try String(contentsOf: result.folder.appendingPathComponent("user-env.txt"), encoding: .utf8)
+        for (name, value) in Self.runEnvironment { #expect(seen.contains("\(name)=\(value)\n")) }
+        #expect(try String(contentsOf: result.folder.appendingPathComponent("ghast-leak.txt"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) == "0")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: result.folder.path).filter { $0.hasPrefix(".ghast-run-info.") }.isEmpty)
+    }
+
+    @Test("a user script that fails midway still decides the hook's status")
+    func failingCommand() throws {
+        let result = try runHook(userScript: "#!/bin/bash\nfalse\necho unreachable\n")
+        #expect(result.status == 1)
+        #expect(!result.output.contains("unreachable"))
+    }
+
+    @Test("without a user script the hook records the run and succeeds quietly")
+    func hookAlone() throws {
+        let result = try runHook(userScript: nil)
+        #expect(result.status == 0)
+        #expect(result.output.isEmpty)
+        #expect(try recordedInfo(result.folder)?["run_id"] == "42")
+    }
+
+    @Test("a hook that can't record (unwritable home) never fails the job")
+    func recordingFailureIsHarmless() throws {
+        let folder = try folder(files: ["ghast-job-started.sh": TartGuestScript.jobStartedHook])
+        let result = try run(
+            ["--noprofile", "--norc", "-e", "ghast-job-started.sh"], in: folder,
+            environment: Self.runEnvironment.merging(["HOME": "/nonexistent-ghast-home"]) { $1 }
+        )
+        #expect(result.status == 0)
+    }
+
+    @Test("the run block prints one run-info line, exits with run.sh's status, and leaves nothing holding the stream")
+    func runBlock() throws {
+        let fakeRunner = """
+        #!/bin/bash
+        bash --noprofile --norc -e ghast-job-started.sh
+        echo "Running job: build"
+        sleep 1.5
+        exit 7
+        """
+        let folder = try folder(files: ["ghast-job-started.sh": TartGuestScript.jobStartedHook, "run.sh": fakeRunner])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.appendingPathComponent("run.sh").path)
+
+        let result = try run(["-c", TartGuestScript.runBlock, "_", "JIT"], in: folder, environment: Self.runEnvironment)
+
+        #expect(result.status == 7)
+        let markers = result.output.split(separator: "\n").filter { $0.contains("ghast: run-info ") }
+        #expect(markers.count == 1)
+        let marker = try #require(markers.first)
+        #expect(marker.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4} ghast: run-info "#, options: .regularExpression) != nil)
+        let text = String(marker.drop { $0 != "g" })
+        #expect(GuestRunInfo.parseMarker(text)?["repository"] == "acme/app")
+        #expect(result.output.contains("Running job: build"))
+    }
+
+    @Test("a stale info file in the image is removed before the run, so it is never reported")
+    func staleFile() throws {
+        let fakeRunner = "#!/bin/bash\nsleep 1.2\nexit 0\n"
+        let folder = try folder(files: ["run.sh": fakeRunner, ".ghast-run-info": "repository=Zm9v\n"])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.appendingPathComponent("run.sh").path)
+
+        let result = try run(["-c", TartGuestScript.runBlock, "_", "JIT"], in: folder, environment: [:])
+
+        #expect(result.status == 0)
+        #expect(!result.output.contains("run-info"))
+    }
+}
+
+@Suite("Tart guest script syntax")
+struct TartGuestScriptSyntaxTests {
+    @Test("the assembled script is valid bash")
+    func parses() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-n", "-c", TartGuestScript.make(tarball: "r.tar.gz")]
+        let pipe = Pipe()
+        process.standardError = pipe
+        try process.run()
+        let errors = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0, Comment(rawValue: errors))
     }
 }

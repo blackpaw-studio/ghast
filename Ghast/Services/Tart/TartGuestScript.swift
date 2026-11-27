@@ -32,14 +32,77 @@ enum TartGuestScript {
         tar xzf "$ARCHIVE" || { echo "Error: could not extract the runner package"; exit 1; }
         \(cacheBlock)
         if [ -f "$JOB/\(VMJobFiles.environmentFile)" ]; then cat "$JOB/\(VMJobFiles.environmentFile)" >> .env || exit 1; fi
-        \(hook(VMJobFiles.preJobScript, variable: "ACTIONS_RUNNER_HOOK_JOB_STARTED"))
+        \(jobStartedBlock)
         \(hook(VMJobFiles.postJobScript, variable: "ACTIONS_RUNNER_HOOK_JOB_COMPLETED"))
-        ./run.sh --jitconfig "$1" < /dev/null 2>&1 | while IFS= read -r line || [ -n "$line" ]; do
-            printf '%s %s\\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$line"
-        done
-        exit "${PIPESTATUS[0]}"
+        \(runBlock)
         """
     }
+
+    static let hookFile = "ghast-job-started.sh"
+    /// Where the hook leaves the run's identity for the watcher.
+    static let runInfoFile = ".ghast-run-info"
+
+    /// Ghast's own job-started hook, run by the runner exactly as it ran `pre-job.sh` before
+    /// (same shell, same options, same environment). It records the run's repository, workflow,
+    /// run id and attempt (base64, one line, written aside and renamed), drops its own names,
+    /// then sources the user's pre-job script when there is one, so that script's `exit` or
+    /// failing command still decides the hook's status. Ghast's writes can't fail the job. The
+    /// hook's stdout goes to the job log, so it prints nothing; `runBlock` reports the file.
+    static let jobStartedHook = #"""
+    #!/bin/bash
+    # Managed by Ghast - do not edit manually
+    ghast_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    {
+        ghast_b64() { printf '%s' "$1" | /usr/bin/base64 | tr -d '\n'; }
+        ghast_tmp="$HOME/\#(runInfoFile).$$"
+        printf 'repository=%s workflow=%s run_id=%s run_attempt=%s\n' \
+            "$(ghast_b64 "$GITHUB_REPOSITORY")" "$(ghast_b64 "$GITHUB_WORKFLOW")" \
+            "$(ghast_b64 "$GITHUB_RUN_ID")" "$(ghast_b64 "$GITHUB_RUN_ATTEMPT")" > "$ghast_tmp" \
+            && mv -f "$ghast_tmp" "$HOME/\#(runInfoFile)"
+        rm -f "$ghast_tmp"
+    } >/dev/null 2>&1 || true
+    unset -f ghast_b64
+    unset ghast_tmp
+    if [ -f "$ghast_dir/\#(VMJobFiles.preJobScript)" ]; then
+        unset ghast_dir
+        . "$(dirname "${BASH_SOURCE[0]}")/\#(VMJobFiles.preJobScript)"
+    fi
+    """#
+
+    /// Writes Ghast's hook, copies the user's pre-job script beside it (when the share has
+    /// one) and points the runner's started hook at Ghast's.
+    private static var jobStartedBlock: String {
+        """
+        cat > \(hookFile) <<'GHAST_HOOK_EOF' || exit 1
+        \(jobStartedHook)
+        GHAST_HOOK_EOF
+        chmod +x \(hookFile) || exit 1
+        if [ -f "$JOB/\(VMJobFiles.preJobScript)" ]; then
+            cp "$JOB/\(VMJobFiles.preJobScript)" \(VMJobFiles.preJobScript) && chmod +x \(VMJobFiles.preJobScript) || exit 1
+        fi
+        echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=$PWD/\(hookFile)" >> .env
+        """
+    }
+
+    /// Runs the runner and reports the run info. A background watcher waits for the hook's
+    /// file, prints one marker line (`<stamp> ghast: run-info <line>`, first 4 KB of the first
+    /// line only) and exits; it is killed after `run.sh`. The watcher's `sleep` writes nowhere
+    /// and the script exits with `run.sh`'s status, so nothing keeps the exec stream open.
+    static let runBlock = #"""
+    rm -f "$HOME/\#(runInfoFile)"
+    (
+        while [ ! -f "$HOME/\#(runInfoFile)" ]; do sleep 0.5 >/dev/null 2>&1 </dev/null; done
+        GHAST_INFO="$(head -c 4096 "$HOME/\#(runInfoFile)" 2>/dev/null | head -n 1)"
+        printf '%s ghast: run-info %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$GHAST_INFO"
+    ) &
+    GHAST_WATCHER=$!
+    ./run.sh --jitconfig "$1" < /dev/null 2>&1 | while IFS= read -r line || [ -n "$line" ]; do
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$line"
+    done
+    GHAST_STATUS="${PIPESTATUS[0]}"
+    kill "$GHAST_WATCHER" >/dev/null 2>&1
+    exit "$GHAST_STATUS"
+    """#
 
     /// Copies a job script in and points the runner's hook at it, when the share has it.
     private static func hook(_ file: String, variable: String) -> String {
