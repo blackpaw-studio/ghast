@@ -86,14 +86,20 @@ enum TartGuestScript {
 
     /// Runs the runner and reports the run info. A background watcher waits for the hook's
     /// file, prints one marker line (`<stamp> ghast: run-info <line>`, first 4 KB of the first
-    /// line only) and exits; it is killed after `run.sh`. The watcher's `sleep` writes nowhere
-    /// and the script exits with `run.sh`'s status, so nothing keeps the exec stream open.
+    /// line only) and exits. After `run.sh` the watcher is killed and awaited; if it was
+    /// killed before it printed (a run that ended between two polls) the file is read once
+    /// more and reported. A watcher that finished has printed, so a line never appears twice.
+    /// The watcher's `sleep` writes nowhere and the script exits with `run.sh`'s status, so
+    /// nothing keeps the exec stream open.
     static let runBlock = #"""
+    ghast_report() {
+        GHAST_INFO="$(head -c 4096 "$HOME/\#(runInfoFile)" 2>/dev/null | head -n 1)"
+        printf '%s ghast: run-info %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$GHAST_INFO"
+    }
     rm -f "$HOME/\#(runInfoFile)"
     (
         while [ ! -f "$HOME/\#(runInfoFile)" ]; do sleep 0.5 >/dev/null 2>&1 </dev/null; done
-        GHAST_INFO="$(head -c 4096 "$HOME/\#(runInfoFile)" 2>/dev/null | head -n 1)"
-        printf '%s ghast: run-info %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$GHAST_INFO"
+        ghast_report
     ) &
     GHAST_WATCHER=$!
     ./run.sh --jitconfig "$1" < /dev/null 2>&1 | while IFS= read -r line || [ -n "$line" ]; do
@@ -101,6 +107,8 @@ enum TartGuestScript {
     done
     GHAST_STATUS="${PIPESTATUS[0]}"
     kill "$GHAST_WATCHER" >/dev/null 2>&1
+    { wait "$GHAST_WATCHER"; } >/dev/null 2>&1
+    if [ "$?" != 0 ] && [ -f "$HOME/\#(runInfoFile)" ]; then ghast_report; fi
     exit "$GHAST_STATUS"
     """#
 

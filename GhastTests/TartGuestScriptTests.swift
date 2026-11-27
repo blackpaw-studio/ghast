@@ -315,6 +315,39 @@ struct TartGuestScriptRunInfoTests {
         #expect(result.output.contains("Running job: build"))
     }
 
+    @Test("a run.sh that ends before the watcher's next poll still gets its run info reported, once")
+    func quickRunStillReports() throws {
+        let fakeRunner = """
+        #!/bin/bash
+        bash --noprofile --norc -e ghast-job-started.sh
+        echo "Running job: build"
+        exit 3
+        """
+        let folder = try folder(files: ["ghast-job-started.sh": TartGuestScript.jobStartedHook, "run.sh": fakeRunner])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.appendingPathComponent("run.sh").path)
+
+        let result = try run(["-c", TartGuestScript.runBlock, "_", "JIT"], in: folder, environment: Self.runEnvironment)
+
+        #expect(result.status == 3)
+        let markers = result.output.split(separator: "\n").filter { $0.contains("ghast: run-info ") }
+        #expect(markers.count == 1)
+        let text = String(try #require(markers.first).drop { $0 != "g" })
+        #expect(GuestRunInfo.parseMarker(text)?["run_id"] == "42")
+        #expect(!result.output.contains("Terminated"))
+    }
+
+    @Test("with no run info recorded, nothing is reported and nothing extra is printed")
+    func nothingRecorded() throws {
+        let folder = try folder(files: ["run.sh": "#!/bin/bash\necho hello\nexit 0\n"])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.appendingPathComponent("run.sh").path)
+
+        let result = try run(["-c", TartGuestScript.runBlock, "_", "JIT"], in: folder, environment: [:])
+
+        #expect(result.status == 0)
+        #expect(result.output.split(separator: "\n").count == 1)
+        #expect(result.output.contains("hello"))
+    }
+
     @Test("a stale info file in the image is removed before the run, so it is never reported")
     func staleFile() throws {
         let fakeRunner = "#!/bin/bash\nsleep 1.2\nexit 0\n"
