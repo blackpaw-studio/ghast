@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// Service for managing local GitHub Actions runners
 @MainActor
@@ -23,6 +24,8 @@ class RunnerService {
     @ObservationIgnored let processExits: AsyncStream<RunnerProcessExit>
     @ObservationIgnored private let processExitSink: AsyncStream<RunnerProcessExit>.Continuation
     
+    @ObservationIgnored private let jobHistory: any JobHistoryDeleting
+    private static let historyLogger = Logger(subsystem: "net.evancoleman.ghast", category: "job-history")
     /// Base directory for all managed runners (the user's home directory, not sandboxed Application Support, in production)
     @ObservationIgnored private let runnersBaseDirectory: URL
     /// Where every managed runner keeps its folder.
@@ -36,6 +39,7 @@ class RunnerService {
     ///   - recoveryPolicy: The backoff and healthy-run timings for automatic restarts.
     ///   - recoverySleeper: Waits out a retry delay; the service's `sleeper` when nil.
     ///   - power: Wake events, which run a retry that came due during sleep.
+    ///   - jobHistory: Forgets a runner's job history when the runner is removed.
     init(
         defaults: UserDefaults = .standard,
         runnersDirectory: URL = RunnerService.defaultRunnersDirectory,
@@ -48,8 +52,10 @@ class RunnerService {
         tartBackend: TartBackend? = nil,
         recoveryPolicy: RecoveryPolicy = .standard,
         recoverySleeper: Sleeper? = nil,
-        power: any PowerEventSource = NoPowerEvents()
+        power: any PowerEventSource = NoPowerEvents(),
+        jobHistory: any JobHistoryDeleting = NoJobHistory()
     ) {
+        self.jobHistory = jobHistory
         self.store = RunnerStore(defaults: defaults)
         self.clock = clock
         self.bareMetal = BareMetalBackend(
@@ -141,6 +147,15 @@ class RunnerService {
         localRunners.removeAll { $0.id == id }
         processStates.removeValue(forKey: id)
         saveRunners()
+        deleteJobHistory(id)
+    }
+
+    private func deleteJobHistory(_ runnerID: String) {
+        do {
+            try jobHistory.delete(runnerID: runnerID)
+        } catch {
+            Self.historyLogger.error("Couldn't delete job history for runner \(runnerID, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
     
     /// Removes all local runners and persists the empty state
@@ -153,10 +168,12 @@ class RunnerService {
         }
         
         // Clear the array and persist the empty state
+        let removedIDs = localRunners.map(\.id)
         localRunners.removeAll()
         processStates.removeAll()
         store.discardKeptRecords()
         saveRunners()
+        removedIDs.forEach(deleteJobHistory)
     }
     
     /// Starts a runner. The runner reads as starting at once, even while the start waits for a
