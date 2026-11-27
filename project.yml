@@ -7,6 +7,11 @@ options:
   createIntermediateGroups: true
   usesTabs: false
   indentWidth: 4
+  # Icon Composer bundles are one resource for actool, not a folder of files.
+  fileTypes:
+    icon:
+      file: true
+      buildPhase: resources
 
 settings:
   MARKETING_VERSION: "2.7.0"
@@ -30,6 +35,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconFile: "AppIcon"
+        CFBundleIconName: "AppIcon"
         LSMultipleInstancesProhibited: true
         LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "Copyright © 2025 Blackpaw Studio, LLC. All rights reserved."

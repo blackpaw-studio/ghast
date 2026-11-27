@@ -1,0 +1,7 @@
+Tile gradient, sRGB
+Top: #5F3D97
+Bottom: #293553
+Direction: vertical, top to bottom
+Top sample: median RGB, x=450..574, y=115..125
+Bottom sample: median RGB, x=450..574, y=906..916
+The source includes lighting/texture; these are representative interior tile colours.
