@@ -43,16 +43,16 @@ struct GuestRunInfo: Sendable, Equatable {
 
     /// Reads a `ghast: run-info key=<base64> …` line; nil when it isn't one. A line over
     /// `maxMarkerBytes` is a marker with no values (nothing in it is decoded). A value that
-    /// isn't valid base64 or UTF-8 makes the whole line nil.
+    /// isn't valid base64 makes the whole line nil.
     static func parseMarker(_ text: String) -> [String: String]? {
         guard text.hasPrefix(markerPrefix) else { return nil }
         guard text.utf8.count <= maxMarkerBytes else { return [:] }
         var values: [String: String] = [:]
         for pair in text.dropFirst(markerPrefix.count).split(separator: " ") {
             guard let equals = pair.firstIndex(of: "="), markerKeys.contains(pair[..<equals]) else { continue }
-            guard let data = Data(base64Encoded: String(pair[pair.index(after: equals)...])),
-                  let value = String(data: data, encoding: .utf8) else { return nil }
-            values[String(pair[..<equals])] = value
+            // A guest in the C locale clips by bytes, which can cut a character: decode leniently.
+            guard let data = Data(base64Encoded: String(pair[pair.index(after: equals)...])) else { return nil }
+            values[String(pair[..<equals])] = String(decoding: data, as: UTF8.self)
         }
         return values
     }

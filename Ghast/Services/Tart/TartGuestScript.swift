@@ -48,12 +48,14 @@ enum TartGuestScript {
     /// then sources the user's pre-job script when there is one, so that script's `exit` or
     /// failing command still decides the hook's status. Ghast's writes can't fail the job. The
     /// hook's stdout goes to the job log, so it prints nothing; `runBlock` reports the file.
+    /// Each value is clipped to 200 characters before it is encoded, so the whole line stays
+    /// far under the 4 KB `runBlock` reads (a longer name would cut off the run id).
     static let jobStartedHook = #"""
     #!/bin/bash
     # Managed by Ghast - do not edit manually
     ghast_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     {
-        ghast_b64() { printf '%s' "$1" | /usr/bin/base64 | tr -d '\n'; }
+        ghast_b64() { printf '%s' "${1:0:200}" | /usr/bin/base64 | tr -d '\n'; }
         ghast_tmp="$HOME/\#(runInfoFile).$$"
         printf 'repository=%s workflow=%s run_id=%s run_attempt=%s\n' \
             "$(ghast_b64 "$GITHUB_REPOSITORY")" "$(ghast_b64 "$GITHUB_WORKFLOW")" \

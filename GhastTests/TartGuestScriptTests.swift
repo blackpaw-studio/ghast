@@ -266,6 +266,38 @@ struct TartGuestScriptRunInfoTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: result.folder.path).filter { $0.hasPrefix(".ghast-run-info.") }.isEmpty)
     }
 
+    @Test("every field is clipped in the hook, so a long workflow name can't push the run id out of the 4 KB line")
+    func hookClipsFields() throws {
+        let long = String(repeating: "w", count: 4000)
+        let folder = try folder(files: ["ghast-job-started.sh": TartGuestScript.jobStartedHook])
+        let result = try run(
+            ["--noprofile", "--norc", "-e", "ghast-job-started.sh"], in: folder,
+            environment: Self.runEnvironment.merging(["GITHUB_WORKFLOW": long]) { $1 }
+        )
+
+        #expect(result.status == 0)
+        let file = try Data(contentsOf: folder.appendingPathComponent(".ghast-run-info"))
+        #expect(file.count <= 4096)
+        let info = try #require(try recordedInfo(folder))
+        #expect(info["workflow"]?.count == 200)
+        #expect(info["run_id"] == "42")
+        #expect(info["run_attempt"] == "2")
+        #expect(info["repository"] == "acme/app")
+    }
+
+    @Test("a name cut in the middle of a character still decodes, with a replacement character")
+    func clippedMultibyteName() throws {
+        let name = String(repeating: "é", count: 150)  // 300 bytes: a byte-wise cut lands mid-character
+        let folder = try folder(files: ["ghast-job-started.sh": TartGuestScript.jobStartedHook])
+        _ = try run(
+            ["--noprofile", "--norc", "-e", "ghast-job-started.sh"], in: folder,
+            environment: Self.runEnvironment.merging(["GITHUB_WORKFLOW": name]) { $1 }
+        )
+        let info = try #require(try recordedInfo(folder))
+        #expect(info["workflow"]?.hasPrefix("é") == true)
+        #expect(info["run_id"] == "42")
+    }
+
     @Test("a user script that fails midway still decides the hook's status")
     func failingCommand() throws {
         let result = try runHook(userScript: "#!/bin/bash\nfalse\necho unreachable\n")
