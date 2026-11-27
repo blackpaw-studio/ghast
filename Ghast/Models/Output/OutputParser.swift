@@ -154,7 +154,11 @@ enum OutputParser {
 
     private static func completedJob(in text: String) -> (name: String, result: JobResult)? {
         guard text.hasPrefix(jobEndPrefix), let range = text.range(of: jobEndInfix) else { return nil }
-        let name = String(text[text.index(text.startIndex, offsetBy: jobEndPrefix.count)..<range.lowerBound])
+        // The delimiter must come after "Job " and a name: "Job completed with result: …" has
+        // neither, and slicing it would be an inverted range.
+        let nameStart = text.index(text.startIndex, offsetBy: jobEndPrefix.count)
+        guard range.lowerBound > nameStart else { return nil }
+        let name = String(text[nameStart..<range.lowerBound])
         let word = text[range.upperBound...].trimmingCharacters(in: .whitespaces).lowercased()
         switch word {
         case "succeeded": return (name, .succeeded)

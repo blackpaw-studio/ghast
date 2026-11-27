@@ -325,4 +325,25 @@ struct OutputParserTests {
         )
         #expect(state.activity.lines.map(\.text) == ["[vm a1b2c3] Running job: build", "[vm a1b2c3] step output"])
     }
+
+    // MARK: Malformed completion lines
+
+    @Test("a completion line with no job name is plain output, not a crash", arguments: [
+        "Job completed with result: Succeeded",
+        "Job  completed with result: Failed",
+        "Job",
+        "Job ",
+        "Job  completed with result: ",
+    ])
+    func nameless(text: String) {
+        #expect(OutputParser.jobEvent(in: "2026-11-16T10:00:00-0500 \(text)") == nil)
+        let state = parse(line("10:00:00", text))
+        #expect(state.activity.jobs.isEmpty)
+        #expect(state.activity.lines.map(\.kind) == [.plain])
+    }
+
+    @Test("a name that contains the delimiter still reads as a completion")
+    func delimiterInName() {
+        #expect(OutputParser.jobEvent(in: "Job a completed with result: b completed with result: Succeeded") == .completed(name: "a", result: .other))
+    }
 }
