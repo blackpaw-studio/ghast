@@ -128,4 +128,17 @@ import Foundation
         #expect(store.load(runnerID: runner).isEmpty)
         #expect(history.records(for: runner).isEmpty)
     }
+
+    @Test("loading for launch turns a stale Running record into Unknown in the store before anything reads it")
+    func loadAllAtLaunch() {
+        let stale = JobHistoryRecord(
+            id: "aaaaaa", jobName: "build", workflowName: nil, repository: nil, runID: nil, runAttempt: nil,
+            result: .running, startedAt: clock.now(), finishedAt: nil, failureMessage: nil
+        )
+        let store = InMemoryJobHistoryStore([runner: [stale]])
+
+        makeHistory(store).loadAll(runnerIDs: [runner, "no-history"])
+
+        #expect(store.load(runnerID: runner).first?.result == .unknown)
+    }
 }

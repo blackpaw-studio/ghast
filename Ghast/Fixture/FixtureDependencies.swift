@@ -126,6 +126,7 @@ struct FixtureDependencies {
         let launcher = ScriptedRunnerLauncher(exitCodes: Dictionary(
             uniqueKeysWithValues: FixtureWorld.localRunners.compactMap { spec in spec.process.exit.map { (spec.name, $0.code) } }
         ))
+        let jobHistory = JobHistory(store: InMemoryJobHistoryStore(), clock: clock)
         var dependencies = AppDependencies(
             runnerService: RunnerService(
                 defaults: defaults,
@@ -152,7 +153,8 @@ struct FixtureDependencies {
             softnetHelper: .fixture(),
             loginItemService: InertLoginItemService(status: .enabled),
             cacheStats: FixtureCacheStats(),
-            tartStorage: .fixture(clock: clock, capacity: FixtureHostCapacity())
+            tartStorage: .fixture(clock: clock, capacity: FixtureHostCapacity()),
+            jobHistory: jobHistory
         )
         // Settings.png: open at login is on and the last check found nothing new.
         dependencies.updateStatus.handle(.noUpdateFound)
@@ -164,6 +166,10 @@ struct FixtureDependencies {
         }
         if launch.screen.hasLocalRunners {
             Self.writeRunners(into: runners, service: dependencies.runnerService)
+            // The main screen's VM runner stand-in.
+            if let runner = dependencies.runnerService.localRunners.first(where: { $0.name == "dionysus-arm64" }) {
+                jobHistory.seed(FixtureJobHistory.records(now: clock.now()), runnerID: runner.id)
+            }
         }
         return FixtureDependencies(
             launch: launch,

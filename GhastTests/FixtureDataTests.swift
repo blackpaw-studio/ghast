@@ -169,5 +169,21 @@ struct FixtureDataTests {
         #expect(service.localRunners.allSatisfy { URL(fileURLWithPath: $0.path).standardizedFileURL.path.hasPrefix(scratch) })
         #expect(built.fixture.appDependencies.processLauncher is ScriptedRunnerLauncher)
     }
+
+    @Test("the main screen's VM runner has job history with every result, the running one started 3 minutes ago")
+    func seededJobHistory() throws {
+        let fixture = FixtureDependencies.make(for: FixtureLaunch(screen: .main, isDark: false), scratchRoot: makeTemporaryDirectory())
+        defer { fixture.tearDown() }
+        let runner = try #require(fixture.appDependencies.runnerService.localRunners.first { $0.name == "dionysus-arm64" })
+        let now = fixture.appDependencies.clock.now()
+
+        let records = fixture.appDependencies.jobHistory.records(for: runner.id)
+
+        #expect(Set(records.map(\.result)) == [.succeeded, .failed, .cancelled, .running, .didNotStart, .unknown])
+        #expect(records.map(\.startedAt) == records.map(\.startedAt).sorted(by: >))
+        #expect(records.first { $0.result == .running }?.startedAt == now.addingTimeInterval(-180))
+        #expect(records.first { $0.result == .didNotStart }?.failureMessage?.isEmpty == false)
+        #expect(records.filter { $0.runURL != nil }.count >= 4)
+    }
 }
 #endif

@@ -63,6 +63,8 @@ struct AppDependencies {
     let cacheSettings: CacheSettingsModel
     /// Settings › General › Tart Storage.
     let tartStorage: TartStorageModel
+    /// What each VM runner ran: the Jobs tab, and what `TartBackend` records into.
+    let jobHistory: JobHistory
     /// False in the design fixture: no cursor blink to catch mid-frame.
     var animatesCursor = true
     /// False in the design fixture: no clipboard writes or browser opens during sign-in.
@@ -98,8 +100,10 @@ struct AppDependencies {
         localCache: LocalCache? = nil,
         cacheStats: (any CacheStatsProviding)? = nil,
         tartCLI: @escaping @Sendable () async throws -> any TartCLI = { throw TartBackendError.unavailable(.missing) },
-        tartStorage: TartStorageModel? = nil
+        tartStorage: TartStorageModel? = nil,
+        jobHistory: JobHistory? = nil
     ) {
+        self.jobHistory = jobHistory ?? JobHistory(store: InMemoryJobHistoryStore(), clock: clock)
         self.localCache = localCache
         let resolvedCacheStats = cacheStats ?? localCache ?? NoLocalCache()
         self.cacheStats = resolvedCacheStats
@@ -180,6 +184,7 @@ struct AppDependencies {
     /// GitHub's runner lists load once the account is signed in (the main window), since the
     /// stored token isn't applied yet at launch. Never called under test.
     func startServices() async {
+        jobHistory.loadAll(runnerIDs: runnerService.localRunners.filter { if case .tart = $0.backend { true } else { false } }.map(\.id))
         activityStore.observe(runnerService)
         let notificationService = notificationService
         let liveEvents = activityStore.liveEvents
@@ -256,6 +261,7 @@ struct AppDependencies {
             cache: FileSystemImageCacheReader(),
             transport: RestrictedRedirectTransport(allowedHosts: GHCRClient.blobHosts)
         ))
+        let jobHistory = JobHistory(store: FileJobHistoryStore(root: JobHistory.defaultRoot), clock: clock)
         let tartBackend = TartBackend(
             cliProvider: TartBackend.systemCLIProvider(launcher: launcher),
             api: apiService,
@@ -268,10 +274,11 @@ struct AppDependencies {
             power: power,
             cacheProvider: { [weak localCache] in localCache?.server() },
             imageDefaults: imageDefaults,
-            capacity: hostCapacity
+            capacity: hostCapacity,
+            history: jobHistory
         )
         let dependencies = AppDependencies(
-            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend, recoveryPolicy: .standard, power: power),
+            runnerService: RunnerService(clock: clock, launcher: launcher, sleeper: sleeper, tartBackend: tartBackend, recoveryPolicy: .standard, power: power, jobHistory: jobHistory),
             apiService: apiService,
             authService: GitHubAuthService(apiService: apiService),
             clock: clock,
@@ -291,7 +298,8 @@ struct AppDependencies {
             loginItemService: MainAppLoginItemService(),
             updater: updater,
             localCache: localCache,
-            tartCLI: TartBackend.systemCLIProvider(launcher: launcher)
+            tartCLI: TartBackend.systemCLIProvider(launcher: launcher),
+            jobHistory: jobHistory
         )
         let updateStatus = dependencies.updateStatus
         updateEvents.onEvent = { updateStatus.handle($0) }
@@ -320,6 +328,7 @@ struct GhastApp: App {
                     .environment(\.runnerFlowServices, dependencies.flowServices)
                     .environment(dependencies.flowCoordinator)
                     .environment(dependencies.softnetHelper)
+                    .environment(dependencies.jobHistory)
                     .environment(\.mainWindowPreset, appDelegate.mainWindowPreset)
                     .environment(\.appWindowRouter, dependencies.router)
                     .installsWindowRouter(dependencies.router)

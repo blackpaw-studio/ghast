@@ -39,6 +39,10 @@ final class NoJobHistory: JobHistoryRecording, JobHistoryDeleting {
 @MainActor @Observable
 final class JobHistory: JobHistoryRecording, JobHistoryDeleting {
     static let recordCap = 200
+    /// `~/.ghast/history`.
+    static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".ghast")
+        .appendingPathComponent("history")
     private static let logger = Logger(subsystem: "net.evancoleman.ghast", category: "job-history")
 
     @ObservationIgnored private let store: any JobHistoryStoring
@@ -60,6 +64,12 @@ final class JobHistory: JobHistoryRecording, JobHistoryDeleting {
     func records(for runnerID: String) -> [JobHistoryRecord] {
         _ = revision
         return Array(load(runnerID).reversed())
+    }
+
+    /// Loads these runners now, at launch: anything left Running by the last run becomes
+    /// Unknown before a new VM can start.
+    func loadAll(runnerIDs: [String]) {
+        runnerIDs.forEach { _ = load($0) }
     }
 
     func begin(runnerID: String, vmID: String, at start: Date) {
@@ -120,6 +130,15 @@ final class JobHistory: JobHistoryRecording, JobHistoryDeleting {
         revision += 1
         try store.delete(runnerID: runnerID)
     }
+
+#if DEBUG
+    /// The design fixture's rows, shown as they are: a Running record stays Running (a real
+    /// load would call it Unknown) and nothing is written.
+    func seed(_ records: [JobHistoryRecord], runnerID: String) {
+        loaded[runnerID] = records
+        revision += 1
+    }
+#endif
 
     // MARK: - Helpers
 
