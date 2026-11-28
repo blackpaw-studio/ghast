@@ -3,16 +3,19 @@ import Foundation
 /// Appends a VM's output to the runner's log one whole line at a time, each marked with the
 /// VM's prefix (`[vm a1b2c3] `), so two VMs sharing one log stay apart. The prefix goes after
 /// a leading timestamp, where the output parser expects the text to begin. A partial line
-/// waits for its end; `finish` writes whatever is left.
+/// waits for its end; `finish` writes whatever is left. `onLine`, when given, also gets each
+/// line without the prefix, on the reading thread (so it belongs to this sink's VM alone).
 final class PrefixedLogSink: @unchecked Sendable {
     private let lock = NSLock()
     private let file: URL
     private let prefix: String
+    private let onLine: (@Sendable (String) -> Void)?
     private var pending = ""
 
-    init(file: URL, prefix: String) {
+    init(file: URL, prefix: String, onLine: (@Sendable (String) -> Void)? = nil) {
         self.file = file
         self.prefix = prefix
+        self.onLine = onLine
     }
 
     func receive(_ chunk: String) {
@@ -37,6 +40,7 @@ final class PrefixedLogSink: @unchecked Sendable {
 
     private func write(_ lines: [Substring]) {
         guard !lines.isEmpty else { return }
+        if let onLine { lines.forEach { onLine(String($0)) } }
         let text = lines.map { prefixed($0) + "\n" }.joined()
         lock.withLock {
             do {

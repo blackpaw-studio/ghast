@@ -204,7 +204,7 @@ struct ProcessTartCLITests {
         launcher.chunks = ["2026-11-18T10:00:00-0500 Listening for Jobs\n"]
 
         _ = try ProcessTartCLI(executable: tart, launcher: launcher).execStreaming(
-            "vm1", ["/bin/bash", "-c", "true"], log: file, linePrefix: "[vm a1b2c3] ", onExit: { _ in }
+            "vm1", ["/bin/bash", "-c", "true"], log: file, linePrefix: "[vm a1b2c3] ", onLine: { _ in }, onExit: { _ in }
         )
 
         let spec = try #require(launcher.specs.first)

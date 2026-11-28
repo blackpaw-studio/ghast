@@ -134,5 +134,19 @@ struct FixtureSafetyTests {
 
         #expect(try fixture.tokenStore.read() == nil)
     }
+
+    @Test("job history stays in memory, never in ~/.ghast/history")
+    func jobHistoryIsInMemory() {
+        let fixture = makeFixture()
+        defer { fixture.tearDown() }
+        let probe = "fixture-probe-\(UUID().uuidString)"
+        let file = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ghast/history/\(probe).json")
+
+        fixture.appDependencies.jobHistory.begin(runnerID: probe, vmID: "a1b2c3", at: Date())
+
+        #expect(fixture.appDependencies.jobHistory.records(for: probe).count == 1)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
 }
 #endif

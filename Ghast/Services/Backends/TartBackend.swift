@@ -58,6 +58,7 @@ final class TartBackend: RunnerBackend {
     private let imageDefaults: any TartImageDefaultsProviding
     /// Free space on Tart's volume; nil skips the check (tests, the fixture).
     private let capacity: (any HostCapacity)?
+    private let history: any JobHistoryRecording
 
     private var entries: [String: OnDemandEntry] = [:]
 
@@ -70,6 +71,7 @@ final class TartBackend: RunnerBackend {
     ///   - cacheProvider: The local Actions cache server, asked for only when a VM uses it.
     ///   - imageDefaults: Looks up an image's disk size for the free-space check before a pull.
     ///   - capacity: Reads the free space; without it a pull is never checked.
+    ///   - history: Where each VM's job is recorded, from the claim to the result.
     init(
         cliProvider: @escaping @Sendable () async throws -> any TartCLI,
         api: any GitHubAPIServiceProtocol,
@@ -85,7 +87,8 @@ final class TartBackend: RunnerBackend {
         power: any PowerEventSource = NoPowerEvents(),
         cacheProvider: @escaping @MainActor () -> (any LocalCacheServing)? = { nil },
         imageDefaults: any TartImageDefaultsProviding = NoImageDefaults(),
-        capacity: (any HostCapacity)? = nil
+        capacity: (any HostCapacity)? = nil,
+        history: any JobHistoryRecording = NoJobHistory()
     ) {
         self.cliProvider = cliProvider
         self.api = api
@@ -101,6 +104,7 @@ final class TartBackend: RunnerBackend {
         self.cacheProvider = cacheProvider
         self.imageDefaults = imageDefaults
         self.capacity = capacity
+        self.history = history
         power.observe(
             willSleep: { [weak self] in self?.systemWillSleep() },
             didWake: { [weak self] in self?.systemDidWake() }
@@ -317,6 +321,7 @@ final class TartBackend: RunnerBackend {
         } catch {
             outcome = .failed(error)
         }
+        recordOutcome(vm, outcome: outcome, entry: entry, runner: runner)
         await cleanUpUncancelled(vm, entry: entry, runner: runner)
         await finished(vm, entry: entry, runner: runner, outcome: outcome)
     }
@@ -325,6 +330,8 @@ final class TartBackend: RunnerBackend {
         let cli = try await cliProvider()
         vm.cli = cli
         guard let gatedNetwork = try await passIsolationGate(entry, runner: runner) else { return .isolationNotReady }
+        // From here the VM is taking a job: a failure before one starts is a Didn't-start row.
+        vm.historyStartedAt = clock.now()
         // Read at each boot. The VM's cache port is chosen now, so it can go in the softnet
         // rules before the VM's gateway is known; cleanup unregisters it.
         let cache = runner.usesLocalCache ? cacheProvider() : nil
@@ -333,6 +340,7 @@ final class TartBackend: RunnerBackend {
         let tarball = try await prepare(entry, runner: runner, image: image, cli: cli)
         try checkStop(entry)
         guard try await reserveSlot(vm, cli: cli) else { return .noSlot }
+        if let startedAt = vm.historyStartedAt { history.begin(runnerID: runner.id, vmID: vm.id, at: startedAt) }
         try checkStop(entry)
 
         // Recorded before the clone exists, so a crash at any later point finds it.
@@ -694,17 +702,83 @@ final class TartBackend: RunnerBackend {
         return max(backoff, Self.retryAfter(error) ?? .zero)
     }
 
+    // MARK: - Job history
+
+    /// A change the guest stream showed, saved as it happens so a running job's row is live.
+    private func record(_ change: GuestJobTracker.Change, vm: VMRun, runnerID: String, scope: RunnerScope) {
+        switch change {
+        case let .jobStarted(name):
+            history.jobStarted(runnerID: runnerID, vmID: vm.id, name: name)
+        case let .runInfo(raw):
+            history.runInfo(runnerID: runnerID, vmID: vm.id, info: GuestRunInfo.validated(raw, scope: scope))
+        case let .result(result):
+            history.finish(runnerID: runnerID, vmID: vm.id, result: Self.historyResult(result), at: clock.now())
+        }
+    }
+
+    /// Settles the VM's record once its outcome is known. The tracker already holds every
+    /// line (the stream ends before the exit is reported), so nothing can arrive later and
+    /// turn a result into Unknown. A VM that took no job and failed nothing leaves no row.
+    private func recordOutcome(_ vm: VMRun, outcome: VMOutcome, entry: OnDemandEntry, runner: LocalRunner) {
+        guard let startedAt = vm.historyStartedAt else { return }
+        let seen = vm.tracker.snapshot
+        if let name = seen.jobName {
+            history.jobStarted(runnerID: runner.id, vmID: vm.id, name: name)
+            if let raw = seen.runInfo {
+                history.runInfo(runnerID: runner.id, vmID: vm.id, info: GuestRunInfo.validated(raw, scope: runner.scope))
+            }
+            history.finish(runnerID: runner.id, vmID: vm.id, result: Self.historyResult(seen.result), at: clock.now())
+            return
+        }
+        guard let failure = Self.failure(of: outcome), !entry.isStopRequested, !failure.isCancellation else {
+            history.discard(runnerID: runner.id, vmID: vm.id)
+            return
+        }
+        let message = "Error: \(failure.localizedDescription)"
+            .split(whereSeparator: \.isNewline).first.flatMap { JobText.clean(String($0)) } ?? "Error"
+        history.didNotStart(runnerID: runner.id, vmID: vm.id, startedAt: startedAt, message: message)
+    }
+
+    private static func failure(of outcome: VMOutcome) -> (any Error)? {
+        switch outcome {
+        case .noSlot, .isolationNotReady, .abandoned, .exited(0): nil
+        case let .exited(code): TartBackendError.runnerExited(code)
+        case let .failed(error): error
+        }
+    }
+
+    /// A job's result as a row's; no result, or one the runner words oddly, is Unknown.
+    private static func historyResult(_ result: JobResult?) -> JobHistoryResult {
+        switch result {
+        case .succeeded: .succeeded
+        case .failed: .failed
+        case .cancelled: .cancelled
+        case .other, nil: .unknown
+        }
+    }
+
     // MARK: - The guest job
 
     private func runGuest(_ cli: any TartCLI, vm: VMRun, command: [String], entry: OnDemandEntry, runner: LocalRunner) async -> Int32 {
         await withCheckedContinuation { continuation in
             let token = UUID()
             do {
-                let process = try cli.execStreaming(vm.clone, command, log: logFile(for: runner), linePrefix: vm.logPrefix) { [weak self, weak vm] code in
+                let runnerID = runner.id, scope = runner.scope
+                let tracker = GuestJobTracker { [weak self, weak vm] change in
                     Task { @MainActor in
-                        if let self, let vm { self.guestEnded(vm, token: token, code: code) }
+                        if let self, let vm { self.record(change, vm: vm, runnerID: runnerID, scope: scope) }
                     }
                 }
+                vm.tracker = tracker
+                let process = try cli.execStreaming(
+                    vm.clone, command, log: logFile(for: runner), linePrefix: vm.logPrefix,
+                    onLine: { tracker.receive(line: $0) },
+                    onExit: { [weak self, weak vm] code in
+                        Task { @MainActor in
+                            if let self, let vm { self.guestEnded(vm, token: token, code: code) }
+                        }
+                    }
+                )
                 vm.guest = GuestRun(token: token, process: process, continuation: continuation)
                 vm.phase = .running
                 publish(entry)

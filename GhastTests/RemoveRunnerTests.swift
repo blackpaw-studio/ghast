@@ -173,5 +173,42 @@ import Foundation
         #expect(try await remover.remove(runner, gitHubRunnerID: nil) == .removed)
         #expect(h.service.localRunners.isEmpty)
     }
-}
 
+    // MARK: Job history
+
+    private func seedHistory(for runner: LocalRunner) throws {
+        h.history.begin(runnerID: runner.id, vmID: "a1b2c3", at: Date(timeIntervalSince1970: 1_800_000_000))
+        h.history.finish(runnerID: runner.id, vmID: "a1b2c3", result: .succeeded, at: Date(timeIntervalSince1970: 1_800_000_060))
+        #expect(h.historyStore.load(runnerID: runner.id).contains { $0.id == "a1b2c3" })
+    }
+
+    @Test func removingARunnerDeletesItsJobHistory() async throws {
+        let runner = try await runningVMRunner()
+        let other = LocalRunner(name: "other", scope: FlowHarness.org, path: h.folder("other").path, labels: [])
+        try seedHistory(for: runner)
+        h.history.begin(runnerID: other.id, vmID: "d4e5f6", at: Date(timeIntervalSince1970: 1_800_000_000))
+
+        #expect(try await remover.remove(runner, gitHubRunnerID: nil) == .removed)
+
+        #expect(h.historyStore.load(runnerID: runner.id).isEmpty)
+        #expect(h.historyStore.load(runnerID: other.id).count == 1)
+    }
+
+    @Test func removingAllRunnersDeletesTheirJobHistory() async throws {
+        let runner = try await runningVMRunner()
+        try seedHistory(for: runner)
+
+        h.service.removeAllLocalRunners()
+
+        #expect(h.historyStore.load(runnerID: runner.id).isEmpty)
+    }
+
+    @Test func stoppingARunnerKeepsItsJobHistory() async throws {
+        let runner = try await runningVMRunner()
+        try seedHistory(for: runner)
+
+        await h.service.stopRunner(id: runner.id)
+
+        #expect(h.historyStore.load(runnerID: runner.id).contains { $0.id == "a1b2c3" })
+    }
+}

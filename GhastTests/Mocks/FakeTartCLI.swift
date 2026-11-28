@@ -178,10 +178,11 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         return 0
     }
 
-    func execStreaming(_ vm: String, _ command: [String], log file: URL, linePrefix: String, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
+    func execStreaming(_ vm: String, _ command: [String], log file: URL, linePrefix: String, onLine: @escaping @Sendable (String) -> Void, onExit: @escaping @Sendable (Int32) -> Void) throws -> any RunnerProcessHandle {
         lock.withLock {
             prefixes.append(linePrefix)
             commands.append(command)
+            jobLineHandlers[vm] = onLine
         }
         log.append("exec-stream \(vm)")
         lock.withLock { jobExits[vm] = onExit }
@@ -204,6 +205,15 @@ final class FakeTartCLI: TartCLI, @unchecked Sendable {
         if let deleteError { throw deleteError }
         if let failure = lock.withLock({ deleteErrors[vm] }) { throw failure }
         lock.withLock { table.removeAll { $0.name == vm } }
+    }
+
+    private var jobLineHandlers: [String: @Sendable (String) -> Void] = [:]
+
+    /// Feeds `vm`'s guest stream a line, as the runner's output would. Does nothing before the
+    /// guest command starts.
+    func emitGuestLine(_ vm: String, _ line: String) {
+        let handler = lock.withLock { jobLineHandlers[vm] }
+        handler?(line)
     }
 
     /// Ends the guest job in `vm`, as the runner exiting would.

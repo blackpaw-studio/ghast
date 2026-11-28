@@ -17,6 +17,8 @@ struct FlowHarness {
     /// VM runners' demand: one queued job as soon as a runner starts.
     let demand: FakeDemandSources
     let service: RunnerService
+    let historyStore = InMemoryJobHistoryStore()
+    let history: JobHistory
     let runnersDirectory = makeTemporaryDirectory()
     static let org = RunnerScope.organization(login: "blackpaw-studio")
     static let tartImage = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
@@ -35,6 +37,8 @@ struct FlowHarness {
             try await api.generateJITConfig(for: runner.scope, name: name, runnerGroupID: 1, labels: [runner.name], workFolder: folder)
         }
         self.demand = demand
+        let history = JobHistory(store: historyStore, clock: SystemClock())
+        self.history = history
         let tartBackend = TartBackend(
             cliProvider: { tart },
             api: api,
@@ -44,7 +48,8 @@ struct FlowHarness {
             leases: TartLeaseStore(defaults: defaults),
             logAppender: RecordingLogAppender(),
             clock: SystemClock(),
-            sleeper: { _ in await Task.yield() }
+            sleeper: { _ in await Task.yield() },
+            history: history
         )
         // An immediate stop grace period: a stop is recorded at once.
         service = RunnerService(
@@ -54,7 +59,8 @@ struct FlowHarness {
             sleeper: { _ in },
             scanner: NoRunnerProcessScanner(),
             tartBackend: tartBackend,
-            recoverySleeper: parkedSleeper
+            recoverySleeper: parkedSleeper,
+            jobHistory: history
         )
     }
 

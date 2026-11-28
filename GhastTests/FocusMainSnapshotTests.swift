@@ -28,10 +28,12 @@ struct FocusMainSnapshotTests {
         case vmIsolationSetup, vmIsolationUnsafe, vmIsolationOutdated
         /// The Configuration tab of a VM runner on shared networking with the local cache off.
         case vmCache
+        /// The Jobs tab of a VM runner: one row of each result, and with no jobs yet.
+        case vmJobs, vmJobsEmpty
 
         var isVM: Bool {
             [.vmBooting, .vmPulling, .vmConfiguration, .vmResourcesWarning, .vmWaitingForJobs, .vmTwoJobs, .vmWaitingForSlot, .vmStandingBy, .vmHoldingStandby,
-             .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache].contains(self)
+             .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache, .vmJobs, .vmJobsEmpty].contains(self)
         }
 
         /// A VM Configuration tab: it loads its draft (and its image list) in tasks.
@@ -63,6 +65,9 @@ struct FocusMainSnapshotTests {
         defer { fixture.tearDown() }
         await fixture.seedProcessStates()
 
+        if state == .vmJobsEmpty, let runner = fixture.appDependencies.runnerService.localRunners.first(where: { $0.name == "dionysus-arm64" }) {
+            fixture.appDependencies.jobHistory.seed([], runnerID: runner.id)
+        }
         let softnetHelper = SoftnetHelperModel.fixture(state.helperStatus)
         await softnetHelper.refresh()
         let draftLoaded = AsyncStream.makeStream(of: String.self)
@@ -70,6 +75,7 @@ struct FocusMainSnapshotTests {
         let view = try content(for: state, fixture: fixture)
             .environment(\.focusContext, fixture.appDependencies.focusContext)
             .environment(softnetHelper)
+            .environment(fixture.appDependencies.jobHistory)
             .environment(\.runnerFlowServices, flowServices(fixture, for: state))
             .environment(\.onConfigurationDraftLoaded) { draftLoaded.continuation.yield($0) }
             .environment(\.onTartVersionsLoaded) { versionsLoaded.continuation.yield($0) }
@@ -160,6 +166,7 @@ struct FocusMainSnapshotTests {
             case .configuration: ("dionysus-xcode", .configuration)
             case .vmConfiguration, .vmResourcesWarning, .vmIsolationSetup, .vmIsolationUnsafe, .vmIsolationOutdated, .vmCache:
                 ("dionysus-arm64", .configuration)
+            case .vmJobs, .vmJobsEmpty: ("dionysus-arm64", .jobs)
             case .error, .restarting: ("ghast-release", .output)
             default: ("dionysus-arm64", .output)
             }
@@ -201,6 +208,8 @@ struct FocusMainSnapshotTests {
             return (onDemand(fixture), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmTwoJobs:
             return (onDemand(fixture, running: 2, liveVMs: ["ghast-1f2e3d-a1b2c3", "ghast-1f2e3d-d4e5f6"]), OutputParser.consume(twoJobsLog, into: .initial).activity)
+        case .vmJobs, .vmJobsEmpty:
+            return (onDemand(fixture, running: 1, liveVMs: ["ghast-1f2e3d-a1b2c3"]), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmWaitingForSlot:
             return (onDemand(fixture, isWaitingForSlot: true), OutputParser.consume(vmLog(booting: false), into: .initial).activity)
         case .vmPulling:

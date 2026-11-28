@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// The main window's native toolbar: the Output | Configuration switch, the selection's
+/// The main window's native toolbar: the Output | Configuration (| Jobs) switch, the selection's
 /// controls, and New Runner, in system glass groups.
 struct MainToolbar: ToolbarContent {
     let item: RunnerItem?
     @Binding var tab: DetailTab
+    /// Only a VM runner has a Jobs tab.
+    let isVM: Bool
     let state: RunnerCommandState
     let perform: (RunnerCommand) -> Void
     let actions: RunnerActions
@@ -13,7 +15,7 @@ struct MainToolbar: ToolbarContent {
         if item?.runnerLocation == .thisMac {
             ToolbarItem(placement: .principal) {
                 Picker("View", selection: $tab) {
-                    ForEach(DetailTab.allCases, id: \.self) { Text($0.title).tag($0) }
+                    ForEach(DetailTab.tabs(isVM: isVM), id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
